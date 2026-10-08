@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Tai ma nguon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Kiem tra kho ma nguon
         shell: pwsh
