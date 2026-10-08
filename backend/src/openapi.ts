@@ -7,6 +7,11 @@ const text = { type: 'string' };
 const credentials = { email: { type: 'string', format: 'email', maxLength: 254 }, password: { type: 'string', minLength: 12, maxLength: 128 } };
 const envelope = (schema: object) => object({ data: schema }, ['data']);
 const security = [{ bearerAuth: [] }];
+const requestErrors = {
+  '403': response('Origin is not allowed'),
+  '413': response('Request body too large'),
+  '415': response('Content encoding or charset is not supported'),
+};
 export const openapi = {
   openapi: '3.0.3',
   info: { title: 'API Market — Sprint 1 Auth', version: '0.1.0', description: 'Persistent SQLite Auth using team migrations. Consumer=USER, Provider=API_PROVIDER, Admin=ADMIN. Guard examples await QA Role Matrix approval.' },
@@ -22,10 +27,10 @@ export const openapi = {
     },
   },
   paths: {
-    '/api/auth/register': { post: { summary: 'Register Consumer or Provider', requestBody: body(ref('Register')), responses: { '201': response('User created', envelope(ref('User'))), '400': response('Invalid input'), '409': response('Email exists'), '429': response('Rate limited') } } },
-    '/api/auth/login': { post: { summary: 'Login (access token 15 minutes, session 7 days)', requestBody: body(ref('Login')), responses: { '200': response('Tokens', envelope(ref('Tokens'))), '400': response('Invalid input'), '401': response('Authentication failed'), '429': response('Rate limited') } } },
-    '/api/auth/refresh': { post: { summary: 'Rotate refresh token; previous token becomes invalid', requestBody: body(ref('Refresh')), responses: { '200': response('Tokens', envelope(ref('Tokens'))), '400': response('Invalid input'), '401': response('Invalid or expired refresh token'), '429': response('Rate limited') } } },
-    '/api/auth/logout': { post: { summary: 'Revoke current session, including all its access tokens', security, responses: { '204': { description: 'Logged out' }, '401': response('Authentication failed'), '429': response('Rate limited') } } },
+    '/api/auth/register': { post: { summary: 'Register Consumer or Provider', requestBody: body(ref('Register')), responses: { ...requestErrors, '201': response('User created', envelope(ref('User'))), '400': response('Invalid input'), '409': response('Email exists'), '429': response('Rate limited') } } },
+    '/api/auth/login': { post: { summary: 'Login (access token 15 minutes, session 7 days)', requestBody: body(ref('Login')), responses: { ...requestErrors, '200': response('Tokens', envelope(ref('Tokens'))), '400': response('Invalid input'), '401': response('Authentication failed'), '429': response('Rate limited') } } },
+    '/api/auth/refresh': { post: { summary: 'Rotate refresh token; previous token becomes invalid', requestBody: body(ref('Refresh')), responses: { ...requestErrors, '200': response('Tokens', envelope(ref('Tokens'))), '400': response('Invalid input'), '401': response('Invalid or expired refresh token'), '429': response('Rate limited') } } },
+    '/api/auth/logout': { post: { summary: 'Revoke current session, including all its access tokens', security, responses: { ...requestErrors, '204': { description: 'Logged out' }, '401': response('Authentication failed'), '429': response('Rate limited') } } },
     '/api/auth/me': { get: { summary: 'Current user', security, responses: { '200': response('User', envelope(ref('User'))), '401': response('Authentication failed'), '429': response('Rate limited') } } },
     ...Object.fromEntries(['consumer', 'provider', 'admin'].map(role => [`/api/access/${role}`, { get: { summary: `Provisional ${role} guard example`, security, responses: { '200': response('Access granted', envelope(object({ role: text }, ['role']))), '401': response('Authentication failed'), '403': response('Wrong role') } } }])),
   },

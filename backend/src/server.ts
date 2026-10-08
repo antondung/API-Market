@@ -1,4 +1,4 @@
-import { createApp } from './app.js';
+import { createApp, localFrontendOrigins } from './app.js';
 import { AuthService } from './auth.js';
 import { MemoryAuthStore } from './store.js';
 import { SqliteAuthStore } from './sqlite-store.js';
@@ -12,7 +12,10 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invali
 const secret = process.env.JWT_SECRET;
 const store = mode === 'sqlite' ? new SqliteAuthStore(process.env.DATABASE_PATH ?? 'data/api-market.sqlite') : new MemoryAuthStore();
 if (store instanceof SqliteAuthStore) store.migrate();
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)));
+const allowedOrigins = process.env.CORS_ORIGINS !== undefined
+  ? process.env.CORS_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
+  : process.env.NODE_ENV === 'production' ? [] : localFrontendOrigins;
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });

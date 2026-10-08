@@ -1,5 +1,6 @@
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import helmet from 'helmet';
+import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { randomUUID } from 'node:crypto';
@@ -14,8 +15,15 @@ const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Pr
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
+export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+export interface AppOptions { allowedOrigins?: string[] }
 
-export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}) {
+export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
+  const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
+  for (const origin of allowedOrigins) {
+    const url = new URL(origin);
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== origin) throw new Error('CORS origins must be exact HTTP(S) origins without paths or wildcards');
+  }
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -31,6 +39,17 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     }));
     next();
   });
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin) { callback(null, false); return; }
+      if (allowedOrigins.has(origin)) { callback(null, origin); return; }
+      callback(new ApiError(403, 'CORS_ORIGIN_DENIED', 'Origin is not allowed'));
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['X-Request-Id', 'Retry-After'],
+    credentials: false, maxAge: 600, optionsSuccessStatus: 204,
+  }));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   app.get('/openapi.json', (_req, res) => { res.json(openapi); });
@@ -83,6 +102,8 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     const apiError = error instanceof ApiError ? error
       : error?.type === 'entity.too.large' ? new ApiError(413, 'PAYLOAD_TOO_LARGE', 'Request body too large')
       : error?.type === 'entity.parse.failed' ? new ApiError(400, 'INVALID_JSON', 'Invalid JSON')
+      : error?.type === 'encoding.unsupported' ? new ApiError(415, 'UNSUPPORTED_ENCODING', 'Content encoding is not supported')
+      : error?.type === 'charset.unsupported' ? new ApiError(415, 'UNSUPPORTED_CHARSET', 'Content charset is not supported')
       : new ApiError(500, 'INTERNAL_ERROR', 'Internal server error');
     res.status(apiError.status).json({ error: { code: apiError.code, message: apiError.message, requestId: res.locals.requestId } });
   };

@@ -66,7 +66,7 @@
 
 ## 3. Kết quả kiểm tra
 
-- 18 unit/HTTP/SQLite integration test đã pass.
+- 24 unit/HTTP/SQLite integration test đã pass, gồm sáu test hồi quy cho CORS và lỗi encoding/charset.
 - TypeScript build và typecheck đã pass.
 - Kiểm tra quy chuẩn repo và dấu conflict đã pass.
 - CI GitHub của PR đã chạy thành công: https://github.com/antondung/API-Market/actions/runs/37721937995
@@ -90,7 +90,7 @@ Kết quả đối chiếu Definition of Done ngày 08/10/2026:
 | Tiêu chí | Kết quả / giới hạn |
 |---|---|
 | Hoàn thành nhiệm vụ và Acceptance Criteria | Auth/backend đã triển khai; quyền trên guard mẫu đã test, Role Matrix chính thức và acceptance sign-off còn chờ QA |
-| Test cần thiết đạt; CI xanh | 18 test pass; build/typecheck và kiểm tra repo pass; CI được kiểm tra lại trên commit bàn giao |
+| Test cần thiết đạt; CI xanh | 24 test pass; build/typecheck và kiểm tra repo pass; CI được kiểm tra lại trên commit bàn giao |
 | Không còn bug Critical/High | Không phát hiện lỗi Critical/High trong phạm vi kiểm tra; danh sách issue mở không có bug mang nhãn severity tương ứng; còn chờ xác nhận QA |
 | Tài liệu/Swagger/migration cập nhật | Đã có README, Swagger, báo cáo và bản migration đóng gói cùng backend |
 | PR vào develop; review và QA đạt | PR #30 vào develop đã mở; chưa có approval hoặc kết quả QA, chưa đạt toàn bộ tiêu chí |
@@ -99,6 +99,8 @@ Kết quả đối chiếu Definition of Done ngày 08/10/2026:
 - QA xác nhận Role Matrix và chạy acceptance/regression test.
 - Frontend tích hợp Auth theo Swagger trên môi trường chung.
 - Kiểm thử môi trường tích hợp trước khi nghiệm thu và đóng issue #2.
+
+Đã bổ sung CORS allowlist ở backend và sửa encoding/charset không hỗ trợ trả 415 thay vì 500. Chỉ sửa middleware, cấu hình, test và tài liệu backend; schema/database và các phần frontend/hạ tầng giữ theo bàn giao nhóm.
 
 Phần triển khai backend và kiểm tra local/CI đã hoàn thành. Báo cáo này không thay thế nghiệm thu QA hoặc xác nhận hoàn tất toàn bộ Sprint 1 của cả nhóm.
 

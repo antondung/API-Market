@@ -51,7 +51,11 @@ Mật khẩu dùng scrypt với salt ngẫu nhiên. Access JWT sống 15 phút; 
 
 `users.id` và `refresh_tokens.id` là INTEGER AUTOINCREMENT; JWT sub/sid dùng dạng chuỗi. `expires_at`, `revoked_at` do backend ghi theo UTC ISO 8601. Khi rotate giữ nguyên ID phiên và thời hạn, thay token_hash. Mọi kết nối bật foreign keys; WAL và busy timeout hỗ trợ các kết nối local. AuthStore được tách riêng để thay adapter khi nhóm cần đổi DB.
 
-Log chỉ gồm request ID, method, route template, status và thời gian; không ghi request/response body, headers, query hay URL tùy ý. Auth giới hạn 30 request/phút/IP. Khi deploy nhiều instance cần thay limiter bằng Redis và chốt cấu hình trusted proxy. Frontend cần chốt cách lưu refresh token/cookie và CORS với Tech Lead trước tích hợp.
+Log chỉ gồm request ID, method, route template, status và thời gian; không ghi request/response body, headers, query hay URL tùy ý. Auth giới hạn 30 request/phút/IP. Khi deploy nhiều instance cần thay limiter bằng Redis và chốt cấu hình trusted proxy. Frontend cần chốt cách lưu refresh token/cookie với Tech Lead trước tích hợp.
+
+CORS phía backend cho phép origin chính xác qua `CORS_ORIGINS`, phân cách bằng dấu phẩy, ví dụ `http://localhost:5173,http://127.0.0.1:5173`. Local mặc định cho phép hai origin này nếu không đặt biến. Production mặc định không cho phép cross-origin nếu chưa cấu hình. Đặt biến rỗng để tắt cross-origin. Không dùng wildcard hoặc URL có path. Preflight hợp lệ trả 204, cho phép GET/POST/OPTIONS cùng Content-Type/Authorization; origin ngoài danh sách trả 403 `CORS_ORIGIN_DENIED`. Client không gửi Origin vẫn dùng Auth/RBAC bình thường; CORS không thay thế xác thực. Hiện dùng Bearer token, không bật cross-origin cookie credentials.
+
+Body có encoding/charset không hỗ trợ trả 415 `UNSUPPORTED_ENCODING`/`UNSUPPORTED_CHARSET` theo format lỗi chung, thay vì 500.
 
 ## Kiểm tra và nghiệm thu
 
@@ -62,6 +66,6 @@ npm run build
 ./scripts/kiem-tra-kho-ma-nguon.ps1
 ```
 
-18 test kiểm tra HTTP Auth, unit AuthService, refresh đồng thời, logout/revocation, JWT hết hạn/giả mạo, cả ba vai trò, input sai, rate limit, log không chứa secret, migration DB trống/chạy lại, ràng buộc DB, provider profile, user khóa và persistence qua mở lại DB.
+24 test kiểm tra HTTP Auth, unit AuthService, refresh đồng thời, logout/revocation, JWT hết hạn/giả mạo, cả ba vai trò, input sai, rate limit, log không chứa secret, migration DB trống/chạy lại, ràng buộc DB, provider profile, user khóa và persistence qua mở lại DB. Sáu test hồi quy bổ sung kiểm tra CORS preflight, header trên response lỗi, từ chối origin ngoài danh sách, allowlist rỗng/cấu hình sai, encoding và charset không hỗ trợ.
 
 Backend Sprint 1 đã triển khai và kiểm tra local. Còn cần CI của PR, review, QA chốt Role Matrix và kiểm thử môi trường tích hợp trước khi đánh dấu issue #2 hoàn tất. Các route `/api/access/*` minh họa guard; áp dụng cùng guard cho các route nghiệp vụ khi được bổ sung.

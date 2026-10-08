@@ -27,7 +27,9 @@ PR bàn giao: https://github.com/antondung/API-Market/pull/30 (base: `develop`).
 | User/phiên/logout tồn tại qua mở lại DB; refresh giữa hai kết nối | PASS |
 | SQLite user khóa và phiên hết hạn bị chặn | PASS |
 
-Tổng cộng: **18 test, 18 pass, 0 fail**. `npm test` bao gồm TypeScript build. `npm run lint` (typecheck), kiểm tra quy chuẩn repo và `git diff --check` đạt. `npm audit --omit=dev` không báo vulnerability tại thời điểm kiểm tra.
+Sáu test hồi quy bổ sung cho lỗi phía backend: CORS preflight, header trên response lỗi, origin ngoài danh sách, allowlist rỗng/cấu hình sai, encoding và charset không hỗ trợ. Backend cho phép frontend origin đã cấu hình, trả 204 cho preflight và 415 cho encoding/charset không hỗ trợ.
+
+Tổng cộng sau sửa lỗi: **24 test**. `npm test` bao gồm TypeScript build. Kết quả local/CI của commit sửa lỗi được dẫn trong bàn giao PR. Phạm vi sửa là HTTP middleware, config CORS, test và tài liệu backend; không thay schema/database, frontend hoặc hạ tầng của thành viên khác.
 
 ## Kiểm tra tích hợp database
 
@@ -37,8 +39,8 @@ Tổng cộng: **18 test, 18 pass, 0 fail**. `npm test` bao gồm TypeScript bui
 
 | Tiêu chí | Bằng chứng / trạng thái |
 |---|---|
-| Nhiệm vụ và Acceptance Criteria | Backend Auth và guard đã triển khai/test; Role Matrix chính thức chưa được QA bàn giao trong repo/issue #5 |
-| Test đạt, CI xanh | 18 test local pass; CI trên commit bàn giao được dẫn ở comment issue #2 |
+| Nhiệm vụ và Acceptance Criteria | Backend Auth và guard đã triển khai/test; Tech Lead đã thêm Role Matrix trên develop tại d6441e0, QA sign-off còn chờ |
+| Test đạt, CI xanh | 24 test local pass; CI trên commit bàn giao được dẫn ở comment issue #2 |
 | Không còn bug Critical/High | Không phát hiện lỗi mức này qua kiểm tra trong báo cáo; không có issue mở mang nhãn Critical/High tại thời điểm kiểm tra; chưa thay thế xác nhận QA |
 | Tài liệu/Swagger/migration | `backend/README.md`, báo cáo công việc, tài liệu này, `/docs/`, `/openapi.json`, migration đóng gói đã cập nhật |
 | PR vào develop; review và QA đạt | PR #30 đã mở. Chưa có approval hoặc báo cáo QA nghiệm thu; tiêu chí này giữ chưa hoàn tất |
