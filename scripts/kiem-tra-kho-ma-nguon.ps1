@@ -33,10 +33,13 @@ foreach ($file in $files) {
 }
 
 $readme = Join-Path $root 'README.md'
-if (-not (Test-Path -LiteralPath $readme)) {
-    $errors.Add('Thiếu README.md ở thư mục gốc.')
-} elseif ((Get-Item -LiteralPath $readme).Length -eq 0) {
-    $errors.Add('README.md đang rỗng.')
+$branch = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { git -C $root branch --show-current }
+if ($branch -eq 'main') {
+    if (-not (Test-Path -LiteralPath $readme)) {
+        $errors.Add('Thiếu README.md ở thư mục gốc của nhánh main.')
+    } elseif ((Get-Item -LiteralPath $readme).Length -eq 0) {
+        $errors.Add('README.md trên nhánh main đang rỗng.')
+    }
 }
 
 if ($errors.Count -gt 0) {
