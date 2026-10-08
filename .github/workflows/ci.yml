@@ -1,0 +1,33 @@
+﻿name: Kiem tra tu dong
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kiem-tra-nen-tang:
+    name: Kiem tra nen tang
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Tai ma nguon
+        uses: actions/checkout@v5
+
+      - name: Kiem tra kho ma nguon
+        shell: pwsh
+        run: ./scripts/kiem-tra-kho-ma-nguon.ps1
