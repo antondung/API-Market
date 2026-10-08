@@ -14,14 +14,14 @@ const requestErrors = {
 };
 export const openapi = {
   openapi: '3.0.3',
-  info: { title: 'API Market — Sprint 1 Auth', version: '0.1.0', description: 'Persistent SQLite Auth using team migrations. Consumer=USER, Provider=API_PROVIDER, Admin=ADMIN. Guard examples await QA Role Matrix approval.' },
+  info: { title: 'API Market — Sprint 1 Auth', version: '0.1.0', description: 'Persistent PostgreSQL Auth using PR #32 migrations. Consumer=USER, Provider=API_PROVIDER, Admin=ADMIN. Guard examples await QA approval.' },
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
     schemas: {
-      Register: object({ ...credentials, name: { type: 'string', minLength: 1, maxLength: 120, description: 'Optional display name; defaults to email local part.' }, role: { type: 'string', enum: ['Consumer', 'Provider'] } }, ['email', 'password', 'role']),
+      Register: object({ ...credentials, name: { type: 'string', minLength: 1, maxLength: 100, description: 'Optional display name; defaults to email local part (up to 100 characters).' }, role: { type: 'string', enum: ['Consumer', 'Provider'] } }, ['email', 'password', 'role']),
       Login: object({ ...credentials, password: { type: 'string', minLength: 1, maxLength: 128 } }, ['email', 'password']),
       Refresh: object({ refreshToken: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' } }, ['refreshToken']),
-      User: object({ id: { type: 'string', description: 'Opaque ID; SQLite integer represented as a string' }, name: text, email: { type: 'string', format: 'email' }, role: { type: 'string', enum: ['Consumer', 'Provider', 'Admin'] } }, ['id', 'name', 'email', 'role']),
+      User: object({ id: { type: 'string', description: 'Opaque ID; PostgreSQL identity integer represented as a string' }, name: text, email: { type: 'string', format: 'email' }, role: { type: 'string', enum: ['Consumer', 'Provider', 'Admin'] } }, ['id', 'name', 'email', 'role']),
       Tokens: object({ accessToken: text, refreshToken: text, tokenType: { type: 'string', enum: ['Bearer'] }, expiresIn: { type: 'integer', example: 900 }, user: ref('User') }, ['accessToken', 'refreshToken', 'tokenType', 'expiresIn', 'user']),
       Error: object({ error: object({ code: text, message: text, requestId: text, details: { type: 'array', items: object({ field: text, message: text }, ['field', 'message']) } }, ['code', 'message', 'requestId']) }, ['error']),
     },

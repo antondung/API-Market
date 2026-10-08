@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import type { AuthStore, Session, User } from './store.js';
 
 const derive = promisify(scrypt);
@@ -17,6 +18,10 @@ export async function hashPassword(password: string) {
   return `${salt}:${key.toString('hex')}`;
 }
 async function checkPassword(password: string, encoded: string) {
+  if (/^\$2[aby]\$/.test(encoded)) {
+    if (bcrypt.truncates(password)) return false;
+    return bcrypt.compare(password, encoded);
+  }
   const [salt, value] = encoded.split(':');
   if (!salt || !value) return false;
   const actual = await derive(password, salt, 64) as Buffer;
@@ -32,7 +37,7 @@ export class AuthService {
   }
   async register(email: string, password: string, role: 'Consumer' | 'Provider', name?: string) {
     email = email.trim().toLowerCase();
-    const user: User = { id: randomUUID(), email, passwordHash: await hashPassword(password), role, active: true, name: name ?? email.split('@')[0] };
+    const user: User = { id: randomUUID(), email, passwordHash: await hashPassword(password), role, active: true, name: name ?? email.split('@')[0]?.slice(0, 100) };
     const saved = await this.store.createUser(user);
     if (!saved) throw new ApiError(409, 'EMAIL_EXISTS', 'Email already registered');
     return publicUser(saved);

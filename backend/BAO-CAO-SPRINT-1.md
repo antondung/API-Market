@@ -20,20 +20,20 @@
 
 ### Tích hợp database của Danh
 
-- Lấy commit database `5d784fc` từ nhánh `develop`.
-- Dùng hai migration `001_create_auth_schema.sql` và `002_seed_auth_data.sql` của Danh; đóng gói trong `backend/migrations/` sau khi thư mục migration gốc bị xóa khỏi `develop` tại commit `49fbc1e`.
-- Nối backend với SQLite để lưu người dùng, hồ sơ Provider và phiên đăng nhập.
+- Dùng commit PostgreSQL `656f931` trong PR #32 của Danh (đã được lấy về nhánh backend).
+- Dùng nguyên hai migration `001_create_auth_schema.sql` và `002_seed_auth_data.sql` tại `migrations/`; không sửa SQL của Danh. Bản SQLite cũ đã bỏ khỏi backend.
+- Nối backend với PostgreSQL qua node-postgres để lưu người dùng, hồ sơ Provider và phiên đăng nhập.
 - Ánh xạ vai trò: `USER` → Consumer, `API_PROVIDER` → Provider, `ADMIN` → Admin.
 - Thêm migration runner có lịch sử/checksum, tránh chạy trùng và phát hiện migration đã áp dụng bị sửa.
-- Bật foreign key, WAL và busy timeout cho kết nối SQLite.
-- Thêm lệnh setup và seed tài khoản mẫu Admin/Consumer/Provider. Secret và mật khẩu mẫu được sinh ngẫu nhiên, lưu trong `.env` được Git ignore.
+- Dùng BOOLEAN, TIMESTAMPTZ, identity ID, email_normalized và transaction/unique constraint theo schema PostgreSQL mới.
+- Setup sinh JWT secret trong `.env` được Git ignore. Seed tài khoản demo của Danh chỉ chạy qua lệnh explicit ở development; không tự chạy lúc startup hoặc migration mặc định.
 - Giữ nguyên schema của Danh; bổ sung adapter backend để sử dụng schema đó.
 
 ### Đăng ký và đăng nhập
 
 - API đăng ký cho Consumer/Provider; không cho đăng ký công khai vai trò Admin.
 - Chuẩn hóa email và kiểm tra email trùng.
-- Hash mật khẩu bằng scrypt với salt ngẫu nhiên.
+- Hash đăng ký mới bằng scrypt với salt ngẫu nhiên; hỗ trợ kiểm tra bcrypt để đăng nhập được seed pgcrypto của Danh.
 - Tạo user và hồ sơ Provider trong cùng transaction khi đăng ký Provider.
 - API đăng nhập cấp access JWT và refresh token.
 - Trả lỗi đăng nhập chung cho email không tồn tại, mật khẩu sai và tài khoản bị khóa.
@@ -66,7 +66,7 @@
 
 ## 3. Kết quả kiểm tra
 
-- 24 unit/HTTP/SQLite integration test đã pass, gồm sáu test hồi quy cho CORS và lỗi encoding/charset.
+- 27 test đã pass: 20 unit/HTTP và 7 integration test PostgreSQL thật; không còn test SQLite.
 - TypeScript build và typecheck đã pass.
 - Kiểm tra quy chuẩn repo và dấu conflict đã pass.
 - CI GitHub của PR đã chạy thành công: https://github.com/antondung/API-Market/actions/runs/37721937995
@@ -90,9 +90,9 @@ Kết quả đối chiếu Definition of Done ngày 08/10/2026:
 | Tiêu chí | Kết quả / giới hạn |
 |---|---|
 | Hoàn thành nhiệm vụ và Acceptance Criteria | Auth/backend đã triển khai; quyền trên guard mẫu đã test, Role Matrix chính thức và acceptance sign-off còn chờ QA |
-| Test cần thiết đạt; CI xanh | 24 test pass; build/typecheck và kiểm tra repo pass; CI được kiểm tra lại trên commit bàn giao |
+| Test cần thiết đạt; CI xanh | 27 test pass trên PostgreSQL thật; build/typecheck và kiểm tra repo pass; CI được kiểm tra lại trên commit bàn giao |
 | Không còn bug Critical/High | Không phát hiện lỗi Critical/High trong phạm vi kiểm tra; danh sách issue mở không có bug mang nhãn severity tương ứng; còn chờ xác nhận QA |
-| Tài liệu/Swagger/migration cập nhật | Đã có README, Swagger, báo cáo và bản migration đóng gói cùng backend |
+| Tài liệu/Swagger/migration cập nhật | README/Swagger/báo cáo đã cập nhật PostgreSQL; migration Danh giữ nguyên |
 | PR vào develop; review và QA đạt | PR #30 vào develop đã mở; chưa có approval hoặc kết quả QA, chưa đạt toàn bộ tiêu chí |
 
 - Tech Lead review PR và quyết định merge.
@@ -104,7 +104,7 @@ Kết quả đối chiếu Definition of Done ngày 08/10/2026:
 
 Phần triển khai backend và kiểm tra local/CI đã hoàn thành. Báo cáo này không thay thế nghiệm thu QA hoặc xác nhận hoàn tất toàn bộ Sprint 1 của cả nhóm.
 
-Lưu ý triển khai: module `node:sqlite` trên Node 22 có cảnh báo experimental; CI hiện kiểm tra bằng Node 22. Rate limiter hiện lưu trong bộ nhớ, cần Redis khi chạy nhiều instance. Cách lưu refresh token/cookie, CORS và trusted proxy cần chốt khi tích hợp frontend/deploy.
+Lưu ý triển khai: PostgreSQL phải được cấu hình qua DATABASE_URL; test cần PostgreSQL CLI hoặc PG_TEST_URL cho DB test riêng. Rate limiter hiện lưu trong bộ nhớ, cần Redis khi chạy nhiều instance. Cách lưu refresh token/cookie và trusted proxy cần chốt khi tích hợp frontend/deploy.
 
 ## 6. Cách chạy lại
 
@@ -118,8 +118,8 @@ npm run dev
 
 - Swagger local: http://127.0.0.1:3000/docs/
 - Hướng dẫn chi tiết: [README Backend](README.md).
-- Tài khoản mẫu: `admin@example.test`, `consumer@example.test`, `provider@example.test`.
-- Mật khẩu tương ứng nằm trong biến `SEED_ADMIN_PASSWORD`, `SEED_CONSUMER_PASSWORD`, `SEED_PROVIDER_PASSWORD` của `.env` local; không đưa chúng vào báo cáo bàn giao.
+- Tài khoản mẫu của seed Danh: `admin@example.com`, `user@example.com`, `provider@example.com`.
+- Mật khẩu demo nằm trong file SQL seed do Danh bàn giao; chỉ dùng development, không dùng production.
 
 Chạy kiểm tra:
 

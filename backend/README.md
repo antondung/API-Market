@@ -1,71 +1,65 @@
 # Backend — Sprint 1 / Issue #2
 
-Node.js 22.14+, TypeScript, Express 5 và SQLite (`node:sqlite`). Backend đóng gói hai migration Auth của Danh trong `backend/migrations/`; không đổi tên bảng/cột. Nguồn schema là commit `5d784fc`. Sau khi thư mục migration gốc bị xóa trên `develop` tại commit `49fbc1e`, bản schema backend phụ thuộc được lưu cùng backend để checkout mới vẫn khởi tạo DB được. Node 22 hiện phát cảnh báo experimental cho module SQLite; CI dùng Node 22 để kiểm tra tương thích.
+Node.js 22.14+, TypeScript, Express 5, PostgreSQL và node-postgres (`pg`). Backend sử dụng nguyên schema PostgreSQL của Danh trong PR #32, commit `656f931`, tại `migrations/`. Không sửa SQL của Danh. SQLite đã được bỏ khỏi backend.
 
 ## Chạy local
 
+Cần PostgreSQL đang chạy và database development trống. Tạo database qua công cụ PostgreSQL của máy, ví dụ:
+
 ```powershell
+createdb -U postgres api_market_dev
 npm ci
-npm run setup
+```
+
+Tạo `.env` từ `.env.example`, thay `JWT_SECRET` bằng secret ngẫu nhiên 32 byte trở lên, cấu hình `AUTH_STORE=postgres` và `DATABASE_URL` cho database của máy. Hoặc chạy `npm run setup` để sinh `.env` nếu chưa có; setup không ghi đè file có sẵn. Khi `.env` đã tồn tại từ bản SQLite, cần đổi `AUTH_STORE` và thêm `DATABASE_URL`.
+
+```powershell
+npm run db:migrate
+npm run db:seed
 npm run dev
 ```
 
-`setup` tạo `.env` nếu chưa có, sinh secret và mật khẩu mẫu ngẫu nhiên, chạy migration và seed ba tài khoản. Không ghi đè `.env` có sẵn và không in secret vào log. Không copy nguyên `.env.example` với các giá trị placeholder; nếu tự cấu hình phải thay secret/mật khẩu.
+`db:migrate` chạy schema 001 và seed ba vai trò, không tạo tài khoản demo. `db:seed` áp dụng file 002 nguyên bản của Danh, chỉ dành cho development và bị chặn ở production. Setup chỉ migrate, không tự seed tài khoản có mật khẩu demo.
 
-Swagger: http://127.0.0.1:3000/docs — OpenAPI: http://127.0.0.1:3000/openapi.json.
+Swagger: http://127.0.0.1:3000/docs/ — OpenAPI: http://127.0.0.1:3000/openapi.json.
 
-DB mặc định: `data/api-market.sqlite`, dữ liệu và phiên còn sau restart. `JWT_SECRET` phải cố định qua restart; nếu đổi khóa, access token cũ bị vô hiệu. `.env` và DB local được Git ignore. Server tự migrate khi khởi động; có thể chạy riêng `npm run db:migrate`. Migration history có checksum, chỉ áp dụng mỗi script một lần và từ chối script đã áp dụng bị sửa.
+`DATABASE_URL` ví dụ: `postgresql://postgres:your-password@127.0.0.1:5432/api_market_dev`. Không commit `.env` hoặc connection string chứa mật khẩu. Server kiểm tra schema có sẵn khi startup, không tự chạy migration/seed. Database đã được Danh khởi tạo bằng SQL trực tiếp có thể dùng ngay với server; không chạy lại schema 001 trên DB đó. Migration runner dành cho DB mới dùng bảng `backend_schema_migrations`, checksum và advisory lock để chạy lại an toàn.
 
-## Tài khoản mẫu
+## API và schema
 
-| Vai trò | Email | Mật khẩu trong `.env` |
+| Method | Endpoint | Input / yêu cầu |
 |---|---|---|
-| Admin | `admin@example.test` | `SEED_ADMIN_PASSWORD` |
-| Consumer | `consumer@example.test` | `SEED_CONSUMER_PASSWORD` |
-| Provider | `provider@example.test` | `SEED_PROVIDER_PASSWORD` |
+| POST | `/api/auth/register` | email, password (12–128 ký tự), role Consumer/Provider; name tùy chọn (1–100 ký tự) |
+| POST | `/api/auth/login` | email, password |
+| POST | `/api/auth/refresh` | refreshToken |
+| POST | `/api/auth/logout` | Authorization Bearer accessToken |
+| GET | `/api/auth/me` | Authorization Bearer accessToken |
+| GET | `/api/access/consumer`, `/api/access/provider`, `/api/access/admin` | Guard mẫu: đúng vai trò 200, sai vai trò 403, thiếu/token sai 401 |
 
-`npm run db:seed` tạo tài khoản thiếu, không reset mật khẩu hoặc dữ liệu có sẵn. Seed tài khoản chỉ dành cho local và bị chặn khi `NODE_ENV=production`. Migration của Danh chỉ seed vai trò; backend bổ sung seed tài khoản dùng hash mật khẩu.
+API trả role Consumer/Provider/Admin; DB tương ứng USER/API_PROVIDER/ADMIN. ID PostgreSQL là INTEGER IDENTITY, API/JWT dùng chuỗi. `is_active` là BOOLEAN; thời gian phiên là TIMESTAMPTZ. Email truy vấn theo `email_normalized` và unique constraint của Danh. Đăng ký Provider tạo user và hồ sơ trong cùng transaction; lỗi ở bước profile rollback user. Name giới hạn 100 ký tự theo schema mới.
 
-## API bàn giao frontend
+Mật khẩu đăng ký mới vẫn dùng scrypt có salt; login hỗ trợ cả scrypt và bcrypt của `pgcrypto` trong seed Danh. Bcrypt không chấp nhận mật khẩu vượt 72 byte để tránh truncation. Access JWT sống 15 phút; phiên refresh sống 7 ngày từ login. DB chỉ lưu SHA-256 của refresh token. Rotate dùng UPDATE có điều kiện nguyên tử; logout và user khóa có hiệu lực ở lần xác thực kế tiếp, kể cả access token đã cấp.
 
-| Method | URL | Input / yêu cầu |
-|---|---|---|
-| POST | `/api/auth/register` | `email`, `password` (12–128 ký tự), `role` Consumer/Provider; `name` tùy chọn (1–120 ký tự) |
-| POST | `/api/auth/login` | `email`, `password` |
-| POST | `/api/auth/refresh` | `refreshToken` |
-| POST | `/api/auth/logout` | Header `Authorization: Bearer <accessToken>` |
-| GET | `/api/auth/me` | Header Bearer |
-| GET | `/api/access/consumer`, `/api/access/provider`, `/api/access/admin` | Ví dụ guard: đúng vai trò trả 200, sai vai trò trả 403, thiếu/token sai trả 401 |
+## Tài khoản seed development
 
-Đăng ký trả `201 {data: {id, name, email, role}}`; login/refresh trả `{data: {accessToken, refreshToken, tokenType, expiresIn, user}}`. Logout trả 204. Lỗi trả `{error: {code, message, requestId, details?}}`. ID là chuỗi, frontend không giả định UUID. Thiếu `name` dùng phần trước @ của email. Email được trim và chuyển lowercase. Provider signup tạo user và `api_providers` trong cùng transaction.
+File `migrations/002_seed_auth_data.sql` của Danh cung cấp `admin@example.com`, `user@example.com`, `provider@example.com`; mật khẩu demo được mô tả trong chính file seed. Chúng đã được kiểm tra đăng nhập qua bcrypt. Đây là credential công khai cho demo, không dùng trong production. File SQL của Danh giữ nguyên.
 
-Mật khẩu dùng scrypt với salt ngẫu nhiên. Access JWT sống 15 phút; phiên refresh sống 7 ngày tính từ login, không kéo dài khi refresh. Refresh token ngẫu nhiên 256 bit, DB lưu SHA-256 và rotate một lần bằng câu UPDATE có điều kiện nguyên tử. Logout thu hồi toàn bộ phiên, chặn cả access token đã cấp. Mỗi lần xác thực kiểm tra DB user active và phiên chưa revoked/expired. Đăng ký công khai không cho tạo Admin. Sai mật khẩu, email không tồn tại và tài khoản khóa trả cùng lỗi đăng nhập chung.
+## HTTP, CORS và logging
 
-## Mapping schema của Danh
+`CORS_ORIGINS` là danh sách origin chính xác, phân cách bằng dấu phẩy. Local mặc định cho phép `http://localhost:5173,http://127.0.0.1:5173`; production mặc định không mở cross-origin. Đặt rỗng để tắt. Không dùng wildcard/path. Preflight hợp lệ trả 204, hỗ trợ GET/POST/OPTIONS và Content-Type/Authorization; origin ngoài danh sách trả 403. Không bật cookie credentials; CORS không thay Auth/RBAC.
 
-| API role | Database role |
-|---|---|
-| Consumer | USER |
-| Provider | API_PROVIDER |
-| Admin | ADMIN |
+Lỗi có envelope `{error:{code,message,requestId,details?}}`. Encoding/charset không hỗ trợ trả 415. Log chỉ ghi request ID, method, route template, status và thời gian, không ghi body/header/query chứa secret. Auth giới hạn 30 request/phút/IP; nhiều instance cần limiter Redis và trusted proxy do nhóm chốt.
 
-`users.id` và `refresh_tokens.id` là INTEGER AUTOINCREMENT; JWT sub/sid dùng dạng chuỗi. `expires_at`, `revoked_at` do backend ghi theo UTC ISO 8601. Khi rotate giữ nguyên ID phiên và thời hạn, thay token_hash. Mọi kết nối bật foreign keys; WAL và busy timeout hỗ trợ các kết nối local. AuthStore được tách riêng để thay adapter khi nhóm cần đổi DB.
-
-Log chỉ gồm request ID, method, route template, status và thời gian; không ghi request/response body, headers, query hay URL tùy ý. Auth giới hạn 30 request/phút/IP. Khi deploy nhiều instance cần thay limiter bằng Redis và chốt cấu hình trusted proxy. Frontend cần chốt cách lưu refresh token/cookie với Tech Lead trước tích hợp.
-
-CORS phía backend cho phép origin chính xác qua `CORS_ORIGINS`, phân cách bằng dấu phẩy, ví dụ `http://localhost:5173,http://127.0.0.1:5173`. Local mặc định cho phép hai origin này nếu không đặt biến. Production mặc định không cho phép cross-origin nếu chưa cấu hình. Đặt biến rỗng để tắt cross-origin. Không dùng wildcard hoặc URL có path. Preflight hợp lệ trả 204, cho phép GET/POST/OPTIONS cùng Content-Type/Authorization; origin ngoài danh sách trả 403 `CORS_ORIGIN_DENIED`. Client không gửi Origin vẫn dùng Auth/RBAC bình thường; CORS không thay thế xác thực. Hiện dùng Bearer token, không bật cross-origin cookie credentials.
-
-Body có encoding/charset không hỗ trợ trả 415 `UNSUPPORTED_ENCODING`/`UNSUPPORTED_CHARSET` theo format lỗi chung, thay vì 500.
-
-## Kiểm tra và nghiệm thu
+## Test PostgreSQL thật
 
 ```powershell
-npm run lint
 npm test
-npm run build
+npm run lint
 ./scripts/kiem-tra-kho-ma-nguon.ps1
 ```
 
-24 test kiểm tra HTTP Auth, unit AuthService, refresh đồng thời, logout/revocation, JWT hết hạn/giả mạo, cả ba vai trò, input sai, rate limit, log không chứa secret, migration DB trống/chạy lại, ràng buộc DB, provider profile, user khóa và persistence qua mở lại DB. Sáu test hồi quy bổ sung kiểm tra CORS preflight, header trên response lỗi, từ chối origin ngoài danh sách, allowlist rỗng/cấu hình sai, encoding và charset không hỗ trợ.
+`npm test` build TypeScript và chạy unit/HTTP cùng PostgreSQL integration test. Nếu không đặt `PG_TEST_URL`, test runner dùng PostgreSQL CLI (`pg_config`, `initdb`, `pg_ctl`) để tạo server tạm trên loopback, chạy test rồi dừng/xóa đúng thư mục tạm. PostgreSQL CLI phải được cài sẵn.
 
-Backend Sprint 1 đã triển khai và kiểm tra local. Còn cần CI của PR, review, QA chốt Role Matrix và kiểm thử môi trường tích hợp trước khi đánh dấu issue #2 hoàn tất. Các route `/api/access/*` minh họa guard; áp dụng cùng guard cho các route nghiệp vụ khi được bổ sung.
+Cũng có thể đặt `PG_TEST_URL` đến database test riêng; test tạo/xóa schema `auth_test_*`, cài pgcrypto vào public nếu thiếu. Không trỏ test vào database production. Bộ test gồm 20 test unit/HTTP và 7 test PostgreSQL: migration trống/rerun, seed bcrypt/full guard matrix, unique email/name/BOOLEAN/identity, rollback provider, refresh cạnh tranh/persistence, user khóa/phiên hết hạn và dùng schema đã khởi tạo bằng SQL trực tiếp.
+
+PR #30 chờ review và QA. PR #32 của Danh là dependency schema, chưa tự merge thay Danh hoặc Tech Lead. Dữ liệu SQLite local cũ không được xóa hoặc tự chuyển sang PostgreSQL.

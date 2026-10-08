@@ -11,7 +11,7 @@ import { openapi } from './openapi.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
-const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Provider']), name: z.string().trim().min(1).max(120).optional() }).strict();
+const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Provider']), name: z.string().trim().min(1).max(100).optional() }).strict();
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
