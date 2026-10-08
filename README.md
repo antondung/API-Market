@@ -36,14 +36,6 @@ Deadline nội bộ đặt trước ngày kết thúc sprint 1 ngày. Ngày cu�
 
 Mỗi thành viên có một GitHub Issue cho từng sprint, tổng cộng 25 issue. Issue ghi rõ backlog liên quan, effort, đầu ra và phụ thuộc. Milestone sprint dùng deadline nội bộ. GitHub Project là bảng theo dõi chung.
 
-| Sprint | Tấn Dũng | Tùng Dương | Hải Dương | Danh | Vân |
-|---|---|---|---|---|---|
-| 1 | 9 điểm | 10 điểm | 10 điểm | 8 điểm | 8 điểm |
-| 2 | 12 điểm | 12 điểm | 12 điểm | 10 điểm | 11 điểm |
-| 3 | 11 điểm | 12 điểm | 12 điểm | 8 điểm | 11 điểm |
-| 4 | 11 điểm | 14 điểm | 14 điểm | 13 điểm | 15 điểm |
-| 5 | 7 điểm | 7 điểm | 8 điểm | 7 điểm | 8 điểm |
-
 ## Quy trình Git
 
 - `main`: nhánh chính, chỉ nhận thay đổi đã kiểm duyệt qua Pull Request. Không push trực tiếp.
