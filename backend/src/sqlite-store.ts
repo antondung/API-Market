@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AuthStore, Role, Session, User } from './store.js';
 
-const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../migrations');
+const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../backend/migrations');
 const dbRoles: Record<Role, string> = { Consumer: 'USER', Provider: 'API_PROVIDER', Admin: 'ADMIN' };
 const apiRoles: Record<string, Role> = { USER: 'Consumer', API_PROVIDER: 'Provider', ADMIN: 'Admin' };
 const userQuery = 'SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id';

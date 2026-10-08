@@ -1,6 +1,6 @@
 # Backend — Sprint 1 / Issue #2
 
-Node.js 22.14+, TypeScript, Express 5 và SQLite (`node:sqlite`). Backend dùng nguyên hai migration Auth của Danh trong `migrations/`; không đổi tên bảng/cột. Node 22 hiện phát cảnh báo experimental cho module SQLite; CI dùng Node 22 để kiểm tra tương thích.
+Node.js 22.14+, TypeScript, Express 5 và SQLite (`node:sqlite`). Backend đóng gói hai migration Auth của Danh trong `backend/migrations/`; không đổi tên bảng/cột. Nguồn schema là commit `5d784fc`. Sau khi thư mục migration gốc bị xóa trên `develop` tại commit `49fbc1e`, bản schema backend phụ thuộc được lưu cùng backend để checkout mới vẫn khởi tạo DB được. Node 22 hiện phát cảnh báo experimental cho module SQLite; CI dùng Node 22 để kiểm tra tương thích.
 
 ## Chạy local
 
