@@ -69,7 +69,7 @@
 - 27 test đã pass: 20 unit/HTTP và 7 integration test PostgreSQL thật; không còn test SQLite.
 - TypeScript build và typecheck đã pass.
 - Kiểm tra quy chuẩn repo và dấu conflict đã pass.
-- CI GitHub của PR đã chạy thành công: https://github.com/antondung/API-Market/actions/runs/37721937995
+- CI GitHub chạy thành công trên commit PostgreSQL `92deb54`: https://github.com/antondung/API-Market/actions/runs/37725684329
 - Đã chạy thử server thật cho cả ba tài khoản mẫu: login, guard đúng vai trò, logout và chặn access token sau logout đều đạt.
 
 Các trường hợp đã kiểm tra gồm: đăng ký trùng đồng thời, không cho đăng ký Admin, mật khẩu sai, token giả mạo/hết hạn, refresh đồng thời, logout thu hồi token, user bị khóa, sai quyền, JSON lỗi, request quá lớn, giới hạn request, log không chứa secret, migration từ DB trống/chạy lại, ràng buộc DB và dữ liệu tồn tại sau mở lại database.
@@ -77,8 +77,9 @@ Các trường hợp đã kiểm tra gồm: đăng ký trùng đồng thời, kh
 ## 4. Git và bàn giao
 
 - Nhánh làm việc: `feature/2-backend-auth`.
-- Commit triển khai backend: `bc3fe27`.
-- Commit đồng bộ `develop` và giải quyết xung đột README: `6c2490c`.
+- Commit tích hợp PostgreSQL và cập nhật test: `a99bfa4`.
+- Commit sửa PostgreSQL test runner trên Linux CI: `92deb54`.
+- Schema nguồn: PR #32 của Danh, commit `656f931`; PR này còn mở, chưa merge vào `develop` tại thời điểm kiểm tra.
 - Đã push code lên GitHub và mở PR #30 vào `develop`.
 - Đã giải quyết xung đột do README gốc bị xóa trên `develop`; hướng dẫn backend nằm trong `backend/README.md`.
 - Không commit database local, `.env`, mật khẩu hoặc JWT secret.
