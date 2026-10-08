@@ -16,7 +16,7 @@ try {
     const port = server.address().port;
     await new Promise(res => server.close(res));
     run(join(bin, 'initdb'), ['-D', directory, '-U', 'postgres', '--auth=trust', '--encoding=UTF8', '--no-locale']);
-    run(join(bin, 'pg_ctl'), ['-D', directory, '-l', join(directory, 'server.log'), '-o', `-h 127.0.0.1 -p ${port}`, '-w', 'start'], { stdio: 'ignore' });
+    run(join(bin, 'pg_ctl'), ['-D', directory, '-l', join(directory, 'server.log'), '-o', `-h 127.0.0.1 -p ${port} -c unix_socket_directories=`, '-w', 'start'], { stdio: 'ignore' });
     started = true;
     databaseUrl = `postgresql://postgres@127.0.0.1:${port}/postgres`;
   }
