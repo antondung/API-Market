@@ -61,7 +61,11 @@ Mỗi thành viên có một GitHub Issue cho từng sprint, tổng cộng 25 is
 - Tài liệu/Swagger/UI state được cập nhật.
 - Đã review và chạy được trên môi trường tích hợp.
 
-## Quản lý công việc
+## Chạy Backend Sprint 1
+
+Backend dùng Node.js 22.14+, TypeScript, Express và SQLite theo schema Auth của nhóm. Chạy `npm ci`, `npm run setup`, `npm run dev`; Swagger tại `http://127.0.0.1:3000/docs`. Xem [hướng dẫn Backend](backend/README.md) để cấu hình, dùng tài khoản mẫu và chạy test.
+
+## Liên kết quản lý công việc
 
 - [Issues](https://github.com/antondung/API-Market/issues)
 - [Milestones](https://github.com/antondung/API-Market/milestones)
