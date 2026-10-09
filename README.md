@@ -8,6 +8,18 @@ Luồng Consumer: **Tìm kiếm → Đọc tài liệu → Thử API → Đăng 
 
 Luồng Provider: **Xác minh → Đăng API → Sinh tài liệu → Cấu hình gói → Gửi duyệt → Phân phối → Theo dõi usage/doanh thu**.
 
+## Chạy nhanh bằng Docker
+
+```powershell
+Copy-Item .env.docker.example .env.docker   # rồi đổi JWT_SECRET
+docker compose --env-file .env.docker up --build -d
+docker compose --env-file .env.docker run --rm migrate --seed   # tài khoản demo, tùy chọn
+```
+
+Backend: http://localhost:3000 · Swagger: http://localhost:3000/docs/
+
+Chi tiết tại [docs/04-docker.md](docs/04-docker.md).
+
 Phạm vi MVP dùng thanh toán sandbox; không xử lý tiền thật. API Key chỉ hiện đầy đủ một lần và DB chỉ lưu hash. Playground chỉ gọi endpoint đã đăng ký. Log không lưu Authorization, cookie, API key hoặc dữ liệu nhạy cảm không cần thiết.
 
 ## Tài liệu dự án
@@ -17,6 +29,7 @@ Phạm vi MVP dùng thanh toán sandbox; không xử lý tiền thật. API Key 
 | [Kiến trúc hệ thống](docs/01-kien-truc-he-thong.md) | Control Plane – Data Plane – Background Worker, tech stack, luồng xử lý request qua Gateway, mô hình dữ liệu, bảo mật, CI/CD, rủi ro |
 | [Role & phân quyền](docs/02-role-va-phan-quyen.md) | 3 role hệ thống, Role Matrix, ma trận chặn truy cập, 5 vai trò thành viên, RACI, quy tắc chung |
 | [Quy trình làm việc](docs/03-quy-trinh-lam-viec.md) | Quy ước Git, CI/CD, quy ước code, QA & quản lý bug, nhịp sprint, checklist merge/release |
+| [Docker](docs/04-docker.md) | Một lệnh dựng cả hệ thống FE–BE–DB–Redis, migration/seed, xử lý sự cố |
 | [Backend](backend/README.md) | Chạy backend, cấu hình môi trường, API Auth, test PostgreSQL |
 
 ## Thành viên và vai trò

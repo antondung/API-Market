@@ -1,0 +1,174 @@
+﻿# Docker Compose cho môi trường development — EN-05
+#
+# Một lệnh dựng cả hệ thống:
+#   docker compose --env-file .env.docker up --build -d
+#
+# Thứ tự khởi động: postgres + redis (healthy) -> migrate (chạy xong) -> backend
+#
+# Sau khi dựng:
+#   Backend   http://localhost:3000        (Swagger: http://localhost:3000/docs/)
+#   PostgreSQL localhost:5432
+#   Redis     localhost:6379
+#   Frontend  http://localhost:5173        (cần --profile frontend)
+#
+# Tài khoản demo (chạy thủ công, chỉ development):
+#   docker compose --env-file .env.docker run --rm migrate --seed
+#
+# Dừng hệ thống:            docker compose --env-file .env.docker down
+# Dừng và xóa dữ liệu:      docker compose --env-file .env.docker down -v
+
+name: api-market
+
+services:
+  # =========================================
+  # PostgreSQL — dữ liệu lâu dài
+  # =========================================
+  postgres:
+    image: postgres:17-alpine
+    container_name: api-market-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-api_market_dev}
+      # Seed dùng pgcrypto để hash mật khẩu bằng bcrypt
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-api_market_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - api-market
+
+  # =========================================
+  # Redis — bộ đếm rate limit và quota
+  # Sprint 1 chưa dùng, thêm sẵn cho Sprint 4 (US-23)
+  # =========================================
+  redis:
+    image: redis:7-alpine
+    container_name: api-market-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - api-market
+
+  # =========================================
+  # Backend API — Control Plane
+  # =========================================
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: api-market-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      AUTH_STORE: postgres
+      # Trong mạng nội bộ của compose, host là tên service "postgres"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-api_market_dev}
+      PORT: 3000
+      # Phải bind 0.0.0.0 để truy cập được từ ngoài container
+      HOST: 0.0.0.0
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - copy .env.docker.example to .env.docker and set a random value}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - api-market
+
+  # =========================================
+  # Migration — chạy một lần rồi thoát
+  #
+  # Service này KHÔNG có profile nên `docker compose up` sẽ chạy nó một lần
+  # rồi container dừng. Migration là idempotent (có checksum + history) nên
+  # chạy lại nhiều lần vẫn an toàn.
+  #
+  # Mặc định chỉ chạy 001_create_auth_schema.sql và tạo 3 role.
+  # KHÔNG tự seed tài khoản demo — phải gọi thủ công:
+  #   docker compose run --rm migrate --seed
+  # =========================================
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.migrate
+    container_name: api-market-migrate
+    restart: "no"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-api_market_dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - api-market
+
+  # =========================================
+  # Frontend — React SPA phục vụ bằng nginx
+  # Sprint 1 chưa có mã nguồn frontend (issue #3).
+  # Service nằm sau profile "frontend" nên `docker compose up` không dựng nó,
+  # tránh lỗi build khi thư mục frontend/ còn trống.
+  # Khi frontend đã có mã nguồn, chạy:
+  #   docker compose --profile frontend up --build
+  # =========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
+    container_name: api-market-frontend
+    restart: unless-stopped
+    profiles: ["frontend"]
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - api-market
+
+volumes:
+  postgres-data:
+    name: api-market-postgres-data
+  redis-data:
+    name: api-market-redis-data
+
+networks:
+  api-market:
+    name: api-market-network
+    driver: bridge

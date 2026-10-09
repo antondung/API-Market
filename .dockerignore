@@ -1,0 +1,61 @@
+# Giảm kích thước build context gửi tới Docker daemon.
+# Không ảnh hưởng tới file nào được COPY trong Dockerfile — chỉ loại bỏ
+# những thứ không bao giờ cần cho image.
+
+# =========================================
+# Dependency và build output
+# =========================================
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+**/coverage/
+
+# =========================================
+# Môi trường và secret — không bao giờ đưa vào image
+# =========================================
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# =========================================
+# Git và CI
+# =========================================
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# =========================================
+# Tài liệu — không cần trong image
+# =========================================
+docs/
+*.md
+!backend/README.md
+
+# =========================================
+# Dữ liệu local và log
+# =========================================
+data/
+*.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# =========================================
+# IDE và hệ điều hành
+# =========================================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# =========================================
+# Docker
+# =========================================
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
