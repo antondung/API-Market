@@ -2,7 +2,7 @@
 
 - Thành viên: Nguyễn Như Tùng Dương — GitHub: @Tungdota53
 - Dự án: API Market
-- Ngày cập nhật: 08/10/2026
+- Ngày cập nhật: 09/10/2026
 - Phạm vi: Backend Sprint 1 — Issue #2
 - Issue: https://github.com/antondung/API-Market/issues/2
 - Pull Request: https://github.com/antondung/API-Market/pull/30
@@ -69,7 +69,7 @@
 - 27 test đã pass: 20 unit/HTTP và 7 integration test PostgreSQL thật; không còn test SQLite.
 - TypeScript build và typecheck đã pass.
 - Kiểm tra quy chuẩn repo và dấu conflict đã pass.
-- CI GitHub chạy thành công trên commit PostgreSQL `92deb54`: https://github.com/antondung/API-Market/actions/runs/37725684329
+- CI GitHub chạy thành công trên commit bàn giao `865d313`: https://github.com/antondung/API-Market/actions/runs/37725763217
 - Đã chạy thử server thật cho cả ba tài khoản mẫu: login, guard đúng vai trò, logout và chặn access token sau logout đều đạt.
 
 Các trường hợp đã kiểm tra gồm: đăng ký trùng đồng thời, không cho đăng ký Admin, mật khẩu sai, token giả mạo/hết hạn, refresh đồng thời, logout thu hồi token, user bị khóa, sai quyền, JSON lỗi, request quá lớn, giới hạn request, log không chứa secret, migration từ DB trống/chạy lại, ràng buộc DB và dữ liệu tồn tại sau mở lại database.
@@ -79,27 +79,27 @@ Các trường hợp đã kiểm tra gồm: đăng ký trùng đồng thời, kh
 - Nhánh làm việc: `feature/2-backend-auth`.
 - Commit tích hợp PostgreSQL và cập nhật test: `a99bfa4`.
 - Commit sửa PostgreSQL test runner trên Linux CI: `92deb54`.
-- Schema nguồn: PR #32 của Danh, commit `656f931`; PR này còn mở, chưa merge vào `develop` tại thời điểm kiểm tra.
-- Đã push code lên GitHub và mở PR #30 vào `develop`.
+- Schema nguồn: PR #32 của Danh, commit `656f931`; PR đã merge vào `develop` ngày 08/10/2026.
+- PR #30 đã được Tấn Dũng (@antondung) approve và merge vào `develop` ngày 08/10/2026 lúc 21:33 (giờ Việt Nam).
 - Đã giải quyết xung đột do README gốc bị xóa trên `develop`; hướng dẫn backend nằm trong `backend/README.md`.
 - Không commit database local, `.env`, mật khẩu hoặc JWT secret.
 
 ## 5. Việc còn cần nhóm xác nhận
 
-Kết quả đối chiếu Definition of Done ngày 08/10/2026:
+Kết quả đối chiếu Definition of Done ngày 09/10/2026:
 
 | Tiêu chí | Kết quả / giới hạn |
 |---|---|
-| Hoàn thành nhiệm vụ và Acceptance Criteria | Auth/backend đã triển khai; quyền trên guard mẫu đã test, Role Matrix chính thức và acceptance sign-off còn chờ QA |
+| Hoàn thành nhiệm vụ và Acceptance Criteria | Auth/backend đã triển khai; quyền trên guard mẫu đã test. Tài liệu role có tại docs/02-role-va-phan-quyen.md; acceptance sign-off và xác nhận áp dụng Role Matrix còn chờ QA |
 | Test cần thiết đạt; CI xanh | 27 test pass trên PostgreSQL thật; build/typecheck và kiểm tra repo pass; CI được kiểm tra lại trên commit bàn giao |
 | Không còn bug Critical/High | Không phát hiện lỗi Critical/High trong phạm vi kiểm tra; danh sách issue mở không có bug mang nhãn severity tương ứng; còn chờ xác nhận QA |
 | Tài liệu/Swagger/migration cập nhật | README/Swagger/báo cáo đã cập nhật PostgreSQL; migration Danh giữ nguyên |
-| PR vào develop; review và QA đạt | PR #30 vào develop đã mở; chưa có approval hoặc kết quả QA, chưa đạt toàn bộ tiêu chí |
+| PR vào develop; review và QA đạt | PR #30 đã approve và merge; chưa có báo cáo nghiệm thu QA, nên tiêu chí tổng hợp còn chờ |
 
-- Tech Lead review PR và quyết định merge.
-- QA xác nhận Role Matrix và chạy acceptance/regression test.
-- Frontend tích hợp Auth theo Swagger trên môi trường chung.
-- Kiểm thử môi trường tích hợp trước khi nghiệm thu và đóng issue #2.
+- Review và merge backend: đã hoàn thành tại [PR #30](https://github.com/antondung/API-Market/pull/30).
+- QA xác nhận Role Matrix và chạy acceptance/regression test: chờ kết quả của Vân tại [issue #5](https://github.com/antondung/API-Market/issues/5).
+- Hải Dương nhận Swagger và kiểm thử tích hợp Auth trên môi trường chung; Tùng Dương xử lý lỗi backend phát sinh nếu có.
+- Sau khi QA nghiệm thu đạt, cập nhật mục DoD cuối và đóng [issue #2](https://github.com/antondung/API-Market/issues/2). Issue còn mở tại thời điểm kiểm tra.
 
 Đã bổ sung CORS allowlist ở backend và sửa encoding/charset không hỗ trợ trả 415 thay vì 500. Chỉ sửa middleware, cấu hình, test và tài liệu backend; schema/database và các phần frontend/hạ tầng giữ theo bàn giao nhóm.
 
