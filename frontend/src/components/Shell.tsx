@@ -1,15 +1,64 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Menu, UserRound, X } from "lucide-react";
+import {
+  Activity,
+  BadgeCheck,
+  BadgeDollarSign,
+  Boxes,
+  ChartNoAxesCombined,
+  CirclePlus,
+  ClipboardCheck,
+  CreditCard,
+  FileCheck2,
+  GitBranch,
+  History,
+  KeyRound,
+  LayoutDashboard,
+  Library,
+  LogOut,
+  Menu,
+  ScrollText,
+  Send,
+  ServerCog,
+  ShieldCheck,
+  Store,
+  Upload,
+  UserRound,
+  Users,
+  UsersRound,
+  WalletCards,
+  X,
+} from "lucide-react";
 import { t, useLanguage } from "../i18n";
 import { useStore } from "../features/store";
-import type { Role } from "../lib/types";
+import { pagesFor, workspacePath } from "../lib/navigation";
+import type { IconName } from "../lib/navigation";
 
-const workspace: Record<Role, string> = {
-  consumer: "/app/overview",
-  provider: "/provider/overview",
-  admin: "/admin/overview",
+const icons: Record<IconName, typeof LayoutDashboard> = {
+  overview: LayoutDashboard,
+  marketplace: Store,
+  subscriptions: Library,
+  keys: KeyRound,
+  usage: ChartNoAxesCombined,
+  history: History,
+  guard: ShieldCheck,
+  apis: Boxes,
+  create: CirclePlus,
+  endpoints: GitBranch,
+  import: Upload,
+  plans: BadgeDollarSign,
+  review: Send,
+  subscribers: UsersRound,
+  analytics: Activity,
+  revenue: WalletCards,
+  verification: BadgeCheck,
+  compliance: FileCheck2,
+  users: Users,
+  reports: ClipboardCheck,
+  payments: CreditCard,
+  monitoring: ServerCog,
+  audit: ScrollText,
 };
 export default function Shell({ children }: { children: ReactNode }) {
   const { language, setLanguage } = useLanguage();
@@ -17,7 +66,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const inWorkspace = /^\/(app|provider|admin|account)(\/|$)/.test(
+  const inWorkspace = /^\/(app|provider|admin|account|checkout)(\/|$)/.test(
     location.pathname,
   );
   return (
@@ -100,15 +149,30 @@ export default function Shell({ children }: { children: ReactNode }) {
       )}
       {inWorkspace && session && (
         <aside className={`hub-sidebar ${open ? "open" : ""}`}>
-          <div className="workspace-heading">{t("Workspace")}</div>
-          <nav>
-            <NavLink
-              to={workspace[session.role]}
-              onClick={() => setOpen(false)}
-            >
-              <LayoutDashboard size={18} />
-              {t("Overview")}
-            </NavLink>
+          <nav aria-label={t("Workspace navigation")}>
+            {[...new Set(pagesFor(session.role).map((page) => page.group))].map(
+              (group) => (
+                <section className="sidebar-section" key={group}>
+                  <div className="workspace-heading">{t(group)}</div>
+                  {pagesFor(session.role)
+                    .filter((page) => page.group === group)
+                    .map((page) => {
+                      const Icon = icons[page.icon];
+                      return (
+                        <NavLink
+                          to={page.path}
+                          onClick={() => setOpen(false)}
+                          key={page.path}
+                        >
+                          <Icon size={18} aria-hidden="true" />
+                          {t(page.title)}
+                        </NavLink>
+                      );
+                    })}
+                </section>
+              ),
+            )}
+            <div className="workspace-heading">{t("Account")}</div>
             <NavLink to="/account" onClick={() => setOpen(false)}>
               <UserRound size={18} />
               {t("My account")}

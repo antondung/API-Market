@@ -6,37 +6,31 @@ import Auth from "./features/Auth";
 import Profile from "./features/Account";
 import { useStore } from "./features/store";
 import { t, useLanguage } from "./i18n";
+import { pagesFor, productPages, workspacePath } from "./lib/navigation";
 import type { Role } from "./lib/types";
 
-const workspace: Record<
-  Role,
-  { path: string; title: string; description: string }
-> = {
+const workspace: Record<Role, { title: string; description: string }> = {
   consumer: {
-    path: "/app/overview",
     title: "Consumer workspace",
-    description:
-      "Your account is ready. Marketplace and API access will appear here when the backend services are available.",
+    description: "Discover APIs and manage your subscriptions, keys and usage.",
   },
   provider: {
-    path: "/provider/overview",
     title: "Provider workspace",
     description:
-      "Your provider account is ready. API publishing will appear here when the backend service is available.",
+      "Publish APIs and manage plans, subscribers and service health.",
   },
   admin: {
-    path: "/admin/overview",
     title: "Admin workspace",
     description:
-      "Your administrator account is ready. Management tools will appear here when their backend services are available.",
+      "Review and operate users, providers, APIs and platform activity.",
   },
 };
 
 export function Protected({
-  role,
+  roles,
   children,
 }: {
-  role?: Role;
+  roles?: Role[];
   children: ReactNode;
 }) {
   useLanguage();
@@ -55,7 +49,8 @@ export function Protected({
         to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
       />
     );
-  if (role && session.role !== role) return <Navigate replace to="/403" />;
+  if (roles && !roles.includes(session.role))
+    return <Navigate replace to="/403" />;
   return children;
 }
 
@@ -74,7 +69,7 @@ function Home() {
         <div className="flex flex-wrap gap-3 mt-7">
           <Link
             className="hub-button primary"
-            to={session ? workspace[session.role].path : "/register"}
+            to={session ? workspacePath[session.role] : "/register"}
           >
             {t(session ? "Open workspace" : "Create account")}
           </Link>
@@ -105,7 +100,7 @@ function Workspace({ role }: { role: Role }) {
     <>
       <h1 className="hub-page-heading">{t(content.title)}</h1>
       <p className="hub-subtitle">{t(content.description)}</p>
-      <div className="release-grid">
+      <div className="release-grid workspace-summary">
         <section className="hub-panel">
           <h2>{t("Account status")}</h2>
           <p className="status-ready">{t("Connected to backend")}</p>
@@ -136,7 +131,66 @@ function Workspace({ role }: { role: Role }) {
           </Link>
         </section>
       </div>
+      <section
+        className="workspace-section"
+        aria-labelledby="workspace-features"
+      >
+        <div className="section-heading">
+          <div>
+            <h2 id="workspace-features">{t("Workspace features")}</h2>
+            <p>{t("Open a feature to view its current empty state.")}</p>
+          </div>
+          <Link className="hub-button" to="/marketplace">
+            {t("Explore APIs")}
+          </Link>
+        </div>
+        <div className="feature-grid">
+          {pagesFor(role)
+            .filter((page) => page.path !== workspacePath[role])
+            .map((page) => (
+              <Link className="feature-card" to={page.path} key={page.path}>
+                <span className="feature-card-mark" aria-hidden="true">
+                  /
+                </span>
+                <strong>{t(page.title)}</strong>
+                <small>{t("Waiting for backend integration")}</small>
+              </Link>
+            ))}
+        </div>
+      </section>
     </>
+  );
+}
+
+function EmptyFeature({ title, backTo }: { title: string; backTo?: string }) {
+  const { session } = useStore();
+  const destination = backTo || (session ? workspacePath[session.role] : "/");
+  return (
+    <section className="feature-page">
+      <header>
+        <span className="hub-badge">{t("FEATURE WORKSPACE")}</span>
+        <h1 className="hub-page-heading">{t(title)}</h1>
+        <p className="hub-subtitle">
+          {t(
+            "This feature is ready for real data when its backend endpoint is connected.",
+          )}
+        </p>
+      </header>
+      <div className="empty-state" role="status">
+        <span className="empty-state-mark" aria-hidden="true">
+          /
+        </span>
+        <h2>{t("No data yet")}</h2>
+        <p>
+          {t(
+            "There are no records to display. Sample data has been removed from this release.",
+          )}
+        </p>
+        <Link className="hub-button primary" to={destination}>
+          {t(session ? "Back to overview" : "Back to home")}
+        </Link>
+      </div>
+    </section>
   );
 }
 
@@ -164,16 +218,28 @@ const titles: Record<string, string> = {
   "/account": "Account",
   "/marketplace": "Marketplace",
   "/pricing": "Pricing",
+  "/compare": "Compare APIs",
+  "/checkout": "Checkout",
   "/403": "Access denied",
   "/app/overview": "Consumer workspace",
   "/provider/overview": "Provider workspace",
   "/admin/overview": "Admin workspace",
 };
+for (const page of productPages) titles[page.path] = page.title;
 function PageTitle() {
   const { language } = useLanguage();
   const location = useLocation();
   useEffect(() => {
-    document.title = `${t(titles[location.pathname] || "Page not found")} · API Hub`;
+    const title =
+      titles[location.pathname] ||
+      (location.pathname.endsWith("/docs")
+        ? "API documentation"
+        : location.pathname.endsWith("/playground")
+          ? "API playground"
+          : /^\/apis\/[^/]+$/.test(location.pathname)
+            ? "API details"
+            : "Page not found");
+    document.title = `${t(title)} · API Hub`;
     window.scrollTo(0, 0);
   }, [location.pathname, language]);
   return null;
@@ -189,9 +255,33 @@ export default function App() {
         <Route path="/register" element={<Auth register />} />
         <Route
           path="/marketplace"
-          element={<Unavailable title="Marketplace" />}
+          element={<EmptyFeature title="Marketplace" />}
         />
-        <Route path="/pricing" element={<Unavailable title="Pricing" />} />
+        <Route path="/pricing" element={<EmptyFeature title="Pricing" />} />
+        <Route
+          path="/compare"
+          element={<EmptyFeature title="Compare APIs" />}
+        />
+        <Route
+          path="/apis/:apiId"
+          element={<EmptyFeature title="API details" />}
+        />
+        <Route
+          path="/apis/:apiId/docs"
+          element={<EmptyFeature title="API documentation" />}
+        />
+        <Route
+          path="/apis/:apiId/playground"
+          element={<EmptyFeature title="API playground" />}
+        />
+        <Route
+          path="/checkout"
+          element={
+            <Protected roles={["consumer", "provider"]}>
+              <EmptyFeature title="Checkout" />
+            </Protected>
+          }
+        />
         <Route
           path="/account"
           element={
@@ -203,14 +293,43 @@ export default function App() {
         {(Object.keys(workspace) as Role[]).map((role) => (
           <Route
             key={role}
-            path={workspace[role].path}
+            path={workspacePath[role]}
             element={
-              <Protected role={role}>
+              <Protected roles={[role]}>
                 <Workspace role={role} />
               </Protected>
             }
           />
         ))}
+        {productPages
+          .filter((page) => page.path !== workspacePath[page.roles[0]])
+          .map((page) => (
+            <Route
+              key={page.path}
+              path={page.path}
+              element={
+                <Protected roles={page.roles}>
+                  <EmptyFeature title={page.title} />
+                </Protected>
+              }
+            />
+          ))}
+        <Route
+          path="/app/profile"
+          element={<Navigate replace to="/account" />}
+        />
+        <Route
+          path="/app/settings"
+          element={<Navigate replace to="/account" />}
+        />
+        <Route
+          path="/provider/workspace"
+          element={<Navigate replace to="/provider/overview" />}
+        />
+        <Route
+          path="/admin/console"
+          element={<Navigate replace to="/admin/overview" />}
+        />
         <Route path="/403" element={<Unavailable title="Access denied" />} />
         <Route path="*" element={<Unavailable title="Page not found" />} />
       </Routes>

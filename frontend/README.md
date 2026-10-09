@@ -1,6 +1,6 @@
 # API Hub frontend
 
-Frontend chính thức cho phạm vi backend hiện có, viết bằng React và TypeScript. Bản phát hành này hỗ trợ đăng ký Consumer/Provider, đăng nhập, làm mới phiên, đăng xuất, kiểm tra vai trò, khung workspace và hồ sơ chỉ đọc bằng API thật.
+Frontend chính thức viết bằng React và TypeScript. Bản phát hành giữ đầy đủ khung sản phẩm theo ba vai trò; xác thực và hồ sơ dùng API thật, các nghiệp vụ chưa có endpoint hiển thị trạng thái trống.
 
 ## Chạy local
 
@@ -36,9 +36,10 @@ node scripts/check-backend-auth.mjs
 - Access token và refresh token theo contract backend; tự làm mới phiên, retry 401 một lần và thu hồi phiên khi đăng xuất.
 - Consumer, Provider và Admin vào đúng workspace theo vai trò backend trả về.
 - Hồ sơ hiển thị danh tính backend ở chế độ chỉ đọc.
-- Marketplace và Pricing có route chính thức nhưng hiển thị trạng thái chưa khả dụng cho đến khi backend bàn giao API.
+- Dashboard và menu đầy đủ cho Consumer, Provider và Admin.
+- Marketplace, API detail, documentation, playground, checkout cùng các trang nghiệp vụ theo vai trò có route chính thức và trạng thái trống cho đến khi backend bàn giao API.
 
-Frontend không còn seed data, local demo store, đăng nhập đổi vai trò, payment sandbox, request giả, API key giả, analytics giả hoặc màn hình Stitch showcase. Các chức năng Sprint 2–5 sẽ được thêm khi có API contract tương ứng.
+Frontend không còn seed data, local demo store, đăng nhập đổi vai trò, payment sandbox, request giả, API key giả, analytics giả hoặc màn hình Stitch showcase. Khi có API contract, dữ liệu thật được nối vào khung trang hiện có.
 
 ## Bảo mật và giới hạn
 

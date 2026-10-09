@@ -7,6 +7,7 @@ import Auth from "../features/Auth";
 import { StoreProvider } from "../features/store";
 import App from "../App";
 import { request, ApiError } from "../lib/api-client";
+import { pagesFor, productPages } from "../lib/navigation";
 import {
   clearAuth,
   signIn,
@@ -291,17 +292,35 @@ describe("Release routing", () => {
     ).toBeTruthy();
     expect(localStorage.length).toBe(1); // language preference only
   });
-  it("shows an honest unavailable state instead of catalog sample data", async () => {
+  it("shows an honest empty state instead of catalog sample data", async () => {
     mountApp("/marketplace");
     expect(
       await screen.findByRole("heading", { name: "Marketplace" }),
     ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "This service is not available in the current backend release.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("No data yet")).toBeTruthy();
     expect(screen.queryByText(/Neural LLM/i)).toBeNull();
+  });
+  it("keeps the complete product navigation without duplicate routes", () => {
+    expect(new Set(productPages.map((page) => page.path)).size).toBe(
+      productPages.length,
+    );
+    expect(pagesFor("consumer").map((page) => page.path)).toContain(
+      "/app/keys",
+    );
+    expect(pagesFor("provider").map((page) => page.path)).toEqual(
+      expect.arrayContaining([
+        "/provider/apis",
+        "/provider/analytics",
+        "/app/subscriptions",
+      ]),
+    );
+    expect(pagesFor("admin").map((page) => page.path)).toEqual(
+      expect.arrayContaining([
+        "/admin/users",
+        "/admin/reports",
+        "/admin/audit",
+      ]),
+    );
   });
   it("restores a Provider and blocks the Consumer workspace", async () => {
     fetchMock.mockResolvedValueOnce(json({ data: tokens }));

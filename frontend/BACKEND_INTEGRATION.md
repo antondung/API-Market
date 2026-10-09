@@ -13,7 +13,7 @@ Ngày cập nhật: 09/10/2026. Backend đối chiếu: nhánh `develop`, commit
 
 Frontend gửi Bearer token với `credentials: omit` theo CORS contract hiện tại. Vai trò luôn lấy từ backend. Password đăng ký dài 12–128 ký tự, tên tối đa 100 ký tự. Các lỗi 401, 403, 409, 429, validation và lỗi mạng có thông báo tiếng Việt/Anh.
 
-Marketplace, API management, API key, playground, subscription, payment, usage, analytics, Cost Guard, Provider verification/publishing, Admin users/audit và report/moderation chưa có endpoint trên backend đã đối chiếu. Frontend không mô phỏng các nghiệp vụ này. Route public đã có chỉ hiển thị trạng thái chưa khả dụng.
+Marketplace, API management, API key, playground, subscription, payment, usage, analytics, Cost Guard, Provider verification/publishing, Admin users/audit và report/moderation chưa có endpoint trên backend đã đối chiếu. Frontend giữ đầy đủ route, menu và trạng thái trống cho các nghiệp vụ này nhưng không mô phỏng dữ liệu hoặc thao tác thành công.
 
 ## Biến môi trường
 

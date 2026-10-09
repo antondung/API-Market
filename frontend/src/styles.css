@@ -171,6 +171,12 @@ input::placeholder {
 }
 .hub-sidebar nav {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.sidebar-section + .sidebar-section {
+  margin-top: 18px;
 }
 .hub-sidebar nav a {
   display: flex;
@@ -390,6 +396,100 @@ input::placeholder {
   gap: 24px;
   max-width: 980px;
 }
+.workspace-summary {
+  margin-bottom: 36px;
+}
+.workspace-section {
+  max-width: 1180px;
+}
+.section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+.section-heading h2 {
+  font-size: 24px;
+  margin: 0 0 6px;
+}
+.section-heading p {
+  color: #5f5d6d;
+  margin: 0;
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.feature-card {
+  min-height: 132px;
+  padding: 20px;
+  border: 1px solid #e0deea;
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.feature-card:hover {
+  border-color: #6c5ce7;
+  background: #fbfaff;
+}
+.feature-card-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e3dfff;
+  color: #2a14b4;
+  font-weight: 700;
+}
+.feature-card small {
+  color: #777586;
+}
+.feature-page {
+  max-width: 1040px;
+}
+.public-main > .feature-page {
+  margin: 0 auto;
+  padding: 72px 24px;
+}
+.empty-state {
+  min-height: 360px;
+  border: 1px dashed #c7c4d7;
+  border-radius: 10px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+}
+.empty-state-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #e3dfff;
+  color: #2a14b4;
+  font-size: 22px;
+  font-weight: 700;
+}
+.empty-state h2 {
+  margin: 18px 0 8px;
+  font-size: 24px;
+}
+.empty-state p {
+  max-width: 540px;
+  margin: 0 0 24px;
+  color: #5f5d6d;
+  line-height: 1.6;
+}
 .status-ready {
   display: inline-flex;
   border-radius: 99px;
@@ -508,8 +608,13 @@ input::placeholder {
   }
   .auth-layout,
   .release-hero,
-  .release-grid {
+  .release-grid,
+  .feature-grid {
     grid-template-columns: 1fr;
+  }
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .auth-art {
     display: none;
