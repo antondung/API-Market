@@ -160,6 +160,7 @@ export function authError(error: unknown): string {
   if (!(error instanceof ApiError))
     return "Cannot connect to the backend. Please try again.";
   const messages: Record<string, string> = {
+    BACKEND_NOT_CONFIGURED: "Backend URL is not configured.",
     UNAUTHORIZED: "Incorrect credentials or expired session.",
     EMAIL_EXISTS: "This email is already registered.",
     RATE_LIMITED: "Too many attempts. Please wait a minute.",
@@ -171,4 +172,15 @@ export function authError(error: unknown): string {
     messages[error.code] ||
     "The backend could not complete this request. Please try again."
   );
+}
+
+export function safeReturnTo(value: string | null, fallback = "/app/overview") {
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    /[\\\r\n]/.test(value)
+  )
+    return fallback;
+  return value;
 }

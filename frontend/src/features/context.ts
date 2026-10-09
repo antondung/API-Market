@@ -1,13 +1,11 @@
 import { createContext, useContext } from "react";
-import type { Session, DemoData } from "../lib/types";
+import type { Session } from "../lib/types";
+
 type Store = {
   session: Session | null;
   ready: boolean;
   login: (session: Session) => void;
   logout: () => void;
-  data: DemoData;
-  update: (fn: (data: DemoData) => DemoData) => void;
-  toast: (text: string) => void;
   notice: string;
 };
 export const Context = createContext<Store | null>(null);

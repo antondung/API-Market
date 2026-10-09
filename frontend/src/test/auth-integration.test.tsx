@@ -1,10 +1,11 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 vi.hoisted(() => vi.stubEnv("VITE_API_BASE_URL", "http://127.0.0.1:3000"));
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import Auth from "../features/Auth";
 import { StoreProvider } from "../features/store";
+import App from "../App";
 import { request, ApiError } from "../lib/api-client";
 import {
   clearAuth,
@@ -13,6 +14,7 @@ import {
   restoreAuth,
   authenticatedRequest,
   signOut,
+  safeReturnTo,
 } from "../lib/auth-api";
 
 const user = {
@@ -44,7 +46,7 @@ afterEach(() => {
 });
 
 describe("Backend auth contract", () => {
-  it("uses Bearer tokens, omits cookies and stores no password in localStorage", async () => {
+  it("uses Bearer tokens, omits cookies and stores no password in browser storage", async () => {
     fetchMock
       .mockResolvedValueOnce(json({ data: tokens }))
       .mockResolvedValueOnce(json({ data: user }))
@@ -63,7 +65,11 @@ describe("Backend auth contract", () => {
       headers: { Authorization: "Bearer access-1" },
     });
     expect(fetchMock.mock.calls[2][0]).toContain("/api/access/provider");
-    expect(localStorage.getItem("api-hub-demo-session")).toBeNull();
+    expect(
+      [...Array(localStorage.length)].map((_, index) =>
+        localStorage.key(index),
+      ),
+    ).toEqual(["api-hub-language"]);
     expect(sessionStorage.getItem("api-market-auth")).not.toContain(
       "test-password-123",
     );
@@ -178,6 +184,18 @@ describe("Backend auth contract", () => {
       message: "Email already registered",
     });
   });
+  it("accepts only internal return paths", () => {
+    expect(safeReturnTo("/app/overview?from=login")).toBe(
+      "/app/overview?from=login",
+    );
+    for (const path of [
+      "https://evil.test",
+      "//evil.test",
+      "/\\evil.test",
+      "/\nattack",
+    ])
+      expect(safeReturnTo(path)).toBe("/app/overview");
+  });
 });
 describe("Backend auth UI", () => {
   function mount(register = false) {
@@ -189,12 +207,10 @@ describe("Backend auth UI", () => {
       </MemoryRouter>,
     );
   }
-  it("hides demo role switching and demo login in backend mode", () => {
+  it("does not let users select a role while signing in", () => {
     mount();
     expect(screen.queryByRole("combobox")).toBeNull();
-    expect(
-      screen.queryByText("Explore without entering credentials"),
-    ).toBeNull();
+    expect(screen.queryByText("Admin · demo only")).toBeNull();
   });
   it("registers a Provider without creating a local session", async () => {
     const events = userEvent.setup();
@@ -255,5 +271,48 @@ describe("Backend auth UI", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "This email is already registered.",
     );
+  });
+});
+
+describe("Release routing", () => {
+  function mountApp(path: string) {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <StoreProvider>
+          <App />
+        </StoreProvider>
+      </MemoryRouter>,
+    );
+  }
+  it("redirects guests from protected workspaces to login", async () => {
+    mountApp("/app/overview");
+    expect(
+      await screen.findByRole("heading", { name: "Welcome back to API HUB" }),
+    ).toBeTruthy();
+    expect(localStorage.length).toBe(1); // language preference only
+  });
+  it("shows an honest unavailable state instead of catalog sample data", async () => {
+    mountApp("/marketplace");
+    expect(
+      await screen.findByRole("heading", { name: "Marketplace" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This service is not available in the current backend release.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Neural LLM/i)).toBeNull();
+  });
+  it("restores a Provider and blocks the Consumer workspace", async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: tokens }));
+    await signIn(user.email, "password");
+    fetchMock
+      .mockResolvedValueOnce(json({ data: user }))
+      .mockResolvedValueOnce(json({ data: { role: "Provider" } }));
+    mountApp("/app/overview");
+    await waitFor(() => expect(document.title).toBe("Access denied · API Hub"));
+    expect(
+      screen.queryByRole("heading", { name: "Consumer workspace" }),
+    ).toBeNull();
   });
 });

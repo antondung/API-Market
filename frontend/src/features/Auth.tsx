@@ -1,22 +1,21 @@
-import { t, useLanguage } from "../i18n";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useStore } from "./store";
-import { safeReturnTo } from "../lib/demo";
-import type { Role } from "../lib/types";
 import { Button, Field } from "../components/ui";
-import { backendEnabled } from "../lib/api-client";
+import { t, useLanguage } from "../i18n";
 import {
-  registerAccount,
-  signIn,
-  restoreAuth,
-  clearAuth,
   authError,
+  clearAuth,
+  registerAccount,
+  restoreAuth,
+  safeReturnTo,
+  signIn,
 } from "../lib/auth-api";
+import type { Role } from "../lib/types";
+import { useStore } from "./store";
+
 export default function Auth({ register = false }: { register?: boolean }) {
   useLanguage();
-
   const { login } = useStore();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -30,6 +29,7 @@ export default function Auth({ register = false }: { register?: boolean }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -41,116 +41,57 @@ export default function Auth({ register = false }: { register?: boolean }) {
       setError("Accept the account terms to continue.");
       return;
     }
-    if (
-      backendEnabled
-        ? (register && password.length < 12) || password.length > 128
-        : password.length < 8
-    ) {
-      setError(
-        backendEnabled
-          ? "Registration passwords must contain 12 to 128 characters."
-          : "Use at least 8 characters for the demo password.",
-      );
+    if ((register && password.length < 12) || password.length > 128) {
+      setError("Registration passwords must contain 12 to 128 characters.");
       return;
     }
     setBusy(true);
     setError("");
     setSuccess("");
-    if (backendEnabled) {
-      try {
-        if (register) {
-          await registerAccount(name.trim(), email.trim(), password, role);
-          setSuccess("Account created. Sign in to continue.");
-          setPassword("");
-          setConfirmation("");
-          return;
-        }
-        await signIn(email.trim(), password);
-        const identity = await restoreAuth();
-        login(identity);
-        const fallback =
-          identity.role === "admin"
-            ? "/admin/overview"
-            : identity.role === "provider"
-              ? "/provider/overview"
-              : "/app/overview";
-        const returnTo = safeReturnTo(params.get("returnTo"), fallback);
-        const targetRole = returnTo.startsWith("/admin/")
-          ? "admin"
-          : returnTo.startsWith("/provider/")
-            ? "provider"
-            : returnTo.startsWith("/app/")
-              ? "consumer"
-              : identity.role;
-        navigate(targetRole === identity.role ? returnTo : fallback);
-      } catch (error) {
-        clearAuth();
-        setError(authError(error));
-      } finally {
-        setBusy(false);
+    try {
+      if (register) {
+        await registerAccount(name.trim(), email.trim(), password, role);
+        setSuccess("Account created. Sign in to continue.");
+        setPassword("");
+        setConfirmation("");
+        return;
       }
-      return;
+      await signIn(email.trim(), password);
+      const identity = await restoreAuth();
+      login(identity);
+      const fallback =
+        identity.role === "admin"
+          ? "/admin/overview"
+          : identity.role === "provider"
+            ? "/provider/overview"
+            : "/app/overview";
+      const returnTo = safeReturnTo(params.get("returnTo"), fallback);
+      const targetRole = returnTo.startsWith("/admin/")
+        ? "admin"
+        : returnTo.startsWith("/provider/")
+          ? "provider"
+          : returnTo.startsWith("/app/")
+            ? "consumer"
+            : identity.role;
+      navigate(targetRole === identity.role ? returnTo : fallback);
+    } catch (reason) {
+      clearAuth();
+      setError(authError(reason));
+    } finally {
+      setBusy(false);
     }
-    await new Promise((r) => setTimeout(r, 400));
-    login({
-      name: name || email.split("@")[0],
-      email,
-      role,
-      expiresAt: Date.now() + 30 * 60 * 1000,
-    });
-    navigate(
-      safeReturnTo(
-        params.get("returnTo"),
-        role === "admin"
-          ? "/admin/overview"
-          : role === "provider"
-            ? "/provider/overview"
-            : "/app/overview",
-      ),
-    );
   }
-  function demoLogin(value: Role) {
-    login({
-      name: "Alex Developer",
-      email: `${value}@demo.apihub.test`,
-      role: value,
-      expiresAt: Date.now() + 30 * 60 * 1000,
-    });
-    navigate(
-      safeReturnTo(
-        params.get("returnTo"),
-        value === "admin"
-          ? "/admin/overview"
-          : value === "provider"
-            ? "/provider/overview"
-            : "/app/overview",
-      ),
-    );
-  }
+
   return (
     <div className="auth-layout">
       <section className="auth-art">
-        <span className="hub-badge">{t("DEVELOPER-FIRST INFRASTRUCTURE")}</span>
+        <span className="hub-badge">{t("SECURE API WORKSPACE")}</span>
         <h1 className="mt-6">
           {t("Build with clarity.")}
           <br />
           <span className="text-primary">{t("Scale with confidence.")}</span>
         </h1>
-        <p>
-          {t("One workspace to discover APIs, test integrations")}
-          <br />
-          {t("and keep your usage under control.")}
-        </p>
-        <div className="terminal">
-          <span className="text-emerald-400">{t("$")}</span>{" "}
-          {t(" apihub connect")}
-          <br />
-          <span className="text-slate-400">
-            {t("// Discover → Test → Integrate → Monitor")}
-          </span>
-          <br />
-          {t("Workspace ready. Let’s build.")}
-        </div>
+        <p>{t("One account for discovering, publishing and managing APIs.")}</p>
       </section>
       <section className="auth-form">
         <h2 className="text-headline-md font-headline-md">
@@ -169,35 +110,35 @@ export default function Auth({ register = false }: { register?: boolean }) {
         </p>
         <form onSubmit={submit}>
           {register && (
-            <Field label={t("Full name")}>
+            <Field label="Full name">
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(event) => setName(event.target.value)}
                 required
+                maxLength={100}
                 autoComplete="name"
-                maxLength={backendEnabled ? 100 : undefined}
               />
             </Field>
           )}
-          <Field label={t("Email address")}>
+          <Field label="Email address">
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               required
               autoComplete="email"
               placeholder={t("you@company.com")}
             />
           </Field>
-          <Field label={t("Password")}>
+          <Field label="Password">
             <div className="flex gap-2">
               <input
                 type={show ? "text" : "password"}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
                 required
+                maxLength={128}
                 autoComplete={register ? "new-password" : "current-password"}
-                maxLength={backendEnabled ? 128 : undefined}
               />
               <Button
                 type="button"
@@ -208,36 +149,32 @@ export default function Auth({ register = false }: { register?: boolean }) {
               </Button>
             </div>
           </Field>
-          {(register || !backendEnabled) && (
-            <Field label={t(register ? "I want to…" : "Demo workspace role")}>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as Role)}
-              >
-                <option value="consumer">{t("Consume APIs")}</option>
-                <option value="provider">{t("Provide APIs")}</option>
-                {!register && (
-                  <option value="admin">{t("Admin · demo only")}</option>
-                )}
-              </select>
-            </Field>
-          )}
           {register && (
             <>
-              <Field label={t("Confirm password")}>
+              <Field label="I want to…">
+                <select
+                  value={role}
+                  onChange={(event) => setRole(event.target.value as Role)}
+                >
+                  <option value="consumer">{t("Consume APIs")}</option>
+                  <option value="provider">{t("Provide APIs")}</option>
+                </select>
+              </Field>
+              <Field label="Confirm password">
                 <input
                   type={show ? "text" : "password"}
                   autoComplete="new-password"
                   required
+                  maxLength={128}
                   value={confirmation}
-                  onChange={(e) => setConfirmation(e.target.value)}
+                  onChange={(event) => setConfirmation(event.target.value)}
                 />
               </Field>
               <label className="flex gap-3 text-sm my-5">
                 <input
                   type="checkbox"
                   checked={terms}
-                  onChange={(e) => setTerms(e.target.checked)}
+                  onChange={(event) => setTerms(event.target.checked)}
                 />
                 {t("I accept the account terms and privacy notice.")}
               </label>
@@ -259,43 +196,19 @@ export default function Auth({ register = false }: { register?: boolean }) {
           <Button type="submit" className="primary w-full" disabled={busy}>
             {t(
               busy
-                ? "Signing in…"
+                ? "Please wait…"
                 : register
-                  ? backendEnabled
-                    ? "Create account"
-                    : "Create demo account"
+                  ? "Create account"
                   : "Sign in to workspace",
             )}
           </Button>
         </form>
-        {!backendEnabled && (
-          <p className="text-body-sm text-on-surface-variant mt-4">
-            {t(
-              "Demo mode: passwords are never sent or stored. Role selection here is only for previewing the frontend.",
-            )}
-          </p>
-        )}
         <p className="text-body-md mt-5">
-          {t(register ? "Already have an account?" : "New to API HUB?")}
-          {t(" ")}
+          {t(register ? "Already have an account?" : "New to API HUB?")}{" "}
           <Link className="text-primary" to={register ? "/login" : "/register"}>
             {t(register ? "Sign in" : "Create account")}
           </Link>
         </p>
-        {!backendEnabled && (
-          <div className="border-t border-outline-variant/30 mt-6 pt-5">
-            <p className="text-body-sm text-on-surface-variant mb-3">
-              {t("Explore without entering credentials")}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {(["consumer", "provider", "admin"] as const).map((r) => (
-                <Button key={r} onClick={() => demoLogin(r)}>
-                  {t(r)}
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
       </section>
     </div>
   );

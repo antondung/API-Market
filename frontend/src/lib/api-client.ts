@@ -7,19 +7,17 @@ export class ApiError extends Error {
     super(message);
   }
 }
-export const backendEnabled = Boolean(
-  import.meta.env.VITE_API_BASE_URL?.trim(),
-);
+const base = import.meta.env.VITE_API_BASE_URL?.trim();
 export async function request<T>(
   path: string,
   options: RequestInit = {},
   signal?: AbortSignal,
 ): Promise<T> {
-  const base = import.meta.env.VITE_API_BASE_URL as string | undefined;
   if (!base)
     throw new ApiError(
       0,
-      "Backend URL is not configured. The application is using demo data.",
+      "Backend URL is not configured.",
+      "BACKEND_NOT_CONFIGURED",
     );
   const response = await fetch(
     `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`,
