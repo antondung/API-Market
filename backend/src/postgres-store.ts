@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AuthStore, Role, Session, User } from './store.js';
+import type { AdminUserRecord, AuthStore, ListUsersQuery, ListUsersResult, Role, Session, User } from './store.js';
 
 const migrationDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../migrations');
 const dbRoles: Record<Role, string> = { Consumer: 'USER', Provider: 'API_PROVIDER', Admin: 'ADMIN' };
@@ -18,6 +18,15 @@ function toUser(row: Record<string, unknown> | undefined): User | undefined {
 function toSession(row: Record<string, unknown> | undefined): Session | undefined {
   return row && { id: String(row.id), userId: String(row.user_id), refreshHash: String(row.token_hash),
     expiresAt: new Date(row.expires_at as string | Date).getTime(), revoked: row.revoked_at !== null };
+}
+function toAdminRecord(row: Record<string, unknown>): AdminUserRecord {
+  const role = apiRoles[String(row.role_name)];
+  if (!role) throw new Error('Unsupported database role');
+  return {
+    id: String(row.id), name: String(row.name), email: String(row.email), role,
+    active: row.is_active === true,
+    createdAt: new Date(row.created_at as string | Date).toISOString(),
+  };
 }
 export class PostgresAuthStore implements AuthStore {
   readonly pool: Pool;
@@ -83,5 +92,61 @@ export class PostgresAuthStore implements AuthStore {
     return result.rowCount === 1;
   }
   async revokeSession(id: string) { await this.pool.query('UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE id=$1 AND revoked_at IS NULL', [id]); }
-  async close() { await this.pool.end(); }
-}
+    async listUsers(query: ListUsersQuery): Promise<ListUsersResult> {
+      const conditions: string[] = [];
+      const values: unknown[] = [];
+      const needle = query.search?.trim();
+      if (needle) {
+        values.push(`%${needle}%`);
+        // Tìm theo email hoặc tên; ILIKE để không phân biệt hoa thường.
+        conditions.push(`(u.email ILIKE $${values.length} OR u.name ILIKE $${values.length})`);
+      }
+      if (query.role) {
+        values.push(dbRoles[query.role]);
+        conditions.push(`r.name = $${values.length}`);
+      }
+      if (query.active !== undefined) {
+        values.push(query.active);
+        conditions.push(`u.is_active = $${values.length}`);
+      }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+      const totalResult = await this.pool.query(
+        `SELECT COUNT(*)::int AS total FROM users u JOIN roles r ON r.id = u.role_id ${where}`, values);
+      const offset = (query.page - 1) * query.pageSize;
+      const rows = await this.pool.query(
+        `SELECT u.id, u.name, u.email, u.is_active, u.created_at, r.name AS role_name
+         FROM users u JOIN roles r ON r.id = u.role_id ${where}
+         ORDER BY u.created_at DESC, u.id DESC
+         LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, query.pageSize, offset]);
+      return {
+        items: rows.rows.map(toAdminRecord),
+        total: totalResult.rows[0]?.total ?? 0,
+        page: query.page,
+        pageSize: query.pageSize,
+      };
+    }
+    async setUserActive(id: string, active: boolean) {
+      let result;
+      try {
+        result = await this.pool.query(
+          `UPDATE users SET is_active=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2 RETURNING id`, [active, id]);
+      } catch (error) {
+        // PostgreSQL dùng IDENTITY (INTEGER); id không phải số sẽ lỗi 22P02.
+        // Coi như không tìm thấy thay vì để lộ lỗi 500.
+        if ((error as { code?: string }).code === '22P02') return undefined;
+        throw error;
+      }
+      if (!result.rows[0]) return undefined;
+      const row = await this.pool.query(
+        `SELECT u.id, u.name, u.email, u.is_active, u.created_at, r.name AS role_name
+         FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id=$1`, [id]);
+      return row.rows[0] ? toAdminRecord(row.rows[0]) : undefined;
+    }
+    async revokeAllSessions(userId: string) {
+      const result = await this.pool.query(
+        'UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND revoked_at IS NULL', [userId]);
+      return result.rowCount ?? 0;
+    }
+    async close() { await this.pool.end(); }
+  }

@@ -117,3 +117,116 @@ test('adapter uses database initialized directly with Danh SQL without recreatin
     assert.equal(tokens.user.role,'Consumer');
   } finally { await f.close(); }
 });
+test('admin lists, searches, filters and paginates users from PostgreSQL', async () => {
+  const f = await fixture();
+  try {
+    await f.store.migrate();
+    const auth = new AuthService(f.store, secret);
+    await auth.register('alice@example.test', password, 'Consumer', 'Alice Nguyen');
+    await auth.register('bob@example.test', password, 'Provider', 'Bob Tran');
+    await auth.register('carol@example.test', password, 'Consumer', 'Carol Le');
+
+    const firstPage = await f.store.listUsers({ page: 1, pageSize: 2 });
+    assert.equal(firstPage.total, 3);
+    assert.equal(firstPage.items.length, 2);
+    assert.equal(firstPage.page, 1);
+    assert.equal(firstPage.pageSize, 2);
+    for (const item of firstPage.items) {
+      assert.equal(typeof item.createdAt, 'string');
+      assert.ok(!Number.isNaN(Date.parse(item.createdAt)));
+      assert.equal((item as unknown as { passwordHash?: string }).passwordHash, undefined);
+    }
+
+    const secondPage = await f.store.listUsers({ page: 2, pageSize: 2 });
+    assert.equal(secondPage.items.length, 1);
+    const ids = new Set([...firstPage.items, ...secondPage.items].map(item => item.id));
+    assert.equal(ids.size, 3);
+
+    const byName = await f.store.listUsers({ search: 'nguyen', page: 1, pageSize: 20 });
+    assert.equal(byName.total, 1);
+    assert.equal(byName.items[0]!.email, 'alice@example.test');
+
+    const byEmail = await f.store.listUsers({ search: 'BOB@', page: 1, pageSize: 20 });
+    assert.equal(byEmail.total, 1);
+    assert.equal(byEmail.items[0]!.role, 'Provider');
+
+    const providers = await f.store.listUsers({ role: 'Provider', page: 1, pageSize: 20 });
+    assert.equal(providers.total, 1);
+    assert.equal(providers.items[0]!.email, 'bob@example.test');
+
+    const activeOnly = await f.store.listUsers({ active: true, page: 1, pageSize: 20 });
+    assert.equal(activeOnly.total, 3);
+    const inactiveOnly = await f.store.listUsers({ active: false, page: 1, pageSize: 20 });
+    assert.equal(inactiveOnly.total, 0);
+  } finally { await f.close(); }
+});
+test('locking a user in PostgreSQL revokes sessions and blocks login, access and refresh', async () => {
+  const f = await fixture();
+  try {
+    await f.store.migrate();
+    const auth = new AuthService(f.store, secret);
+    const created = await auth.register('lockme@example.test', password, 'Consumer');
+    const tokens = await auth.login('lockme@example.test', password);
+
+    const locked = await auth.setUserActive('999', created.id, false);
+    assert.equal(locked.user.active, false);
+    assert.equal(locked.revokedSessions, 1);
+
+    await assert.rejects(auth.login('lockme@example.test', password));
+    await assert.rejects(auth.authenticate(tokens.accessToken));
+    await assert.rejects(auth.refresh(tokens.refreshToken));
+
+    const unlocked = await auth.setUserActive('999', created.id, true);
+    assert.equal(unlocked.user.active, true);
+    assert.equal(unlocked.revokedSessions, 0);
+    await auth.login('lockme@example.test', password);
+    await assert.rejects(auth.authenticate(tokens.accessToken));
+  } finally { await f.close(); }
+});
+test('non-numeric id returns not found instead of a database error', async () => {
+  const f = await fixture();
+  try {
+    await f.store.migrate();
+    const auth = new AuthService(f.store, secret);
+    await assert.rejects(auth.setUserActive('999', 'not-a-number', false), (e: unknown) => (e as { status?: number }).status === 404);
+    assert.equal(await f.store.setUserActive('not-a-number', false), undefined);
+  } finally { await f.close(); }
+});
+test('admin endpoints work end to end against PostgreSQL with real role guards', async () => {
+  const f = await fixture();
+  try {
+    await f.store.migrate(true);
+    const auth = new AuthService(f.store, secret);
+    const app = createApp(auth);
+
+    const adminLogin = await request(app).post('/api/auth/login').send({ email: 'admin@example.com', password: 'Admin@123' }).expect(200);
+    const adminToken = adminLogin.body.data.accessToken as string;
+    const consumerLogin = await request(app).post('/api/auth/login').send({ email: 'user@example.com', password: 'User@123' }).expect(200);
+    const consumerToken = consumerLogin.body.data.accessToken as string;
+
+    const list = await request(app).get('/api/admin/users?pageSize=50').auth(adminToken, { type: 'bearer' }).expect(200);
+    assert.equal(list.body.data.total, 3);
+    const consumer = list.body.data.items.find((item: { email: string }) => item.email === 'user@example.com');
+    assert.ok(consumer);
+    assert.equal(consumer.role, 'Consumer');
+
+    await request(app).get('/api/admin/users').auth(consumerToken, { type: 'bearer' }).expect(403);
+
+    const locked = await request(app)
+      .patch(`/api/admin/users/${consumer.id}/active`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ active: false })
+      .expect(200);
+    assert.equal(locked.body.data.user.active, false);
+
+    await request(app).post('/api/auth/login').send({ email: 'user@example.com', password: 'User@123' }).expect(401);
+    await request(app).get('/api/auth/me').auth(consumerToken, { type: 'bearer' }).expect(401);
+
+    await request(app)
+      .patch(`/api/admin/users/${consumer.id}/active`)
+      .auth(adminToken, { type: 'bearer' })
+      .send({ active: true })
+      .expect(200);
+    await request(app).post('/api/auth/login').send({ email: 'user@example.com', password: 'User@123' }).expect(200);
+  } finally { await f.close(); }
+});

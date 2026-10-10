@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'no
 import { promisify } from 'node:util';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import type { AuthStore, Session, User } from './store.js';
+import type { AdminUserRecord, AuthStore, ListUsersQuery, ListUsersResult, Session, User } from './store.js';
 
 const derive = promisify(scrypt);
 const refreshHash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -88,4 +88,27 @@ export class AuthService {
     return { user: publicUser(user), sessionId: session.id };
   }
   async logout(sessionId: string) { await this.store.revokeSession(sessionId); }
-}
+
+    // =========================================
+    // Quản trị người dùng (US-04)
+    // =========================================
+
+    async listUsers(query: ListUsersQuery): Promise<ListUsersResult> {
+      return this.store.listUsers(query);
+    }
+
+    /**
+     * Khóa hoặc mở khóa tài khoản.
+     * Khi khóa, thu hồi toàn bộ phiên để access token đã cấp mất hiệu lực ngay
+     * ở lần xác thực kế tiếp (AC US-04 #4).
+     */
+    async setUserActive(actorId: string, targetId: string, active: boolean) {
+      if (actorId === targetId) {
+        throw new ApiError(409, 'CANNOT_MODIFY_SELF', 'Không thể khóa tài khoản của chính mình');
+      }
+      const updated = await this.store.setUserActive(targetId, active);
+      if (!updated) throw new ApiError(404, 'USER_NOT_FOUND', 'Không tìm thấy người dùng');
+      const revokedSessions = active ? 0 : await this.store.revokeAllSessions(targetId);
+      return { user: updated, revokedSessions };
+    }
+  }

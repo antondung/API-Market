@@ -14,6 +14,17 @@ const password = z.string().min(12).max(128);
 const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Provider']), name: z.string().trim().min(1).max(100).optional() }).strict();
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
+// Truy vấn danh sách người dùng cho Admin (US-04).
+const listUsersSchema = z.object({
+  search: z.string().trim().max(254).optional(),
+  role: z.enum(['Consumer', 'Provider', 'Admin']).optional(),
+  active: z.enum(['true', 'false']).transform(value => value === 'true').optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+const setActiveSchema = z.object({ active: z.boolean() }).strict();
+// PostgreSQL dùng IDENTITY (số) nhưng store memory dùng UUID, nên chấp nhận cả hai.
+const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 export interface AppOptions { allowedOrigins?: string[] }
@@ -45,7 +56,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
       if (allowedOrigins.has(origin)) { callback(null, origin); return; }
       callback(new ApiError(403, 'CORS_ORIGIN_DENIED', 'Origin is not allowed'));
     },
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
@@ -86,12 +97,29 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     res.status(204).end();
   });
   app.get('/api/auth/me', requireAuth, (_req, res) => { res.json({ data: res.locals.identity.user }); });
-  // Provisional guard examples; real dashboard permissions await QA Role Matrix.
-  for (const role of ['Consumer', 'Provider', 'Admin'] as const) {
-    app.get(`/api/access/${role.toLowerCase()}`, requireAuth, requireRole(role), (_req, res) => {
-      res.json({ data: { role } });
+
+    // =========================================
+    // Admin quản lý người dùng (US-04)
+    // Chỉ ADMIN truy cập được; sai vai trò trả 403.
+    // =========================================
+    const requireAdmin: RequestHandler[] = [requireAuth, requireRole('Admin')];
+    app.get('/api/admin/users', ...requireAdmin, async (req, res) => {
+      const query = listUsersSchema.parse(req.query);
+      res.json({ data: await auth.listUsers(query) });
     });
-  }
+    app.patch('/api/admin/users/:id/active', ...requireAdmin, async (req, res) => {
+      const id = userIdSchema.parse(req.params.id);
+      const input = setActiveSchema.parse(req.body);
+      const result = await auth.setUserActive(res.locals.identity.user.id, id, input.active);
+      res.json({ data: result });
+    });
+
+    // Provisional guard examples; real dashboard permissions await QA Role Matrix.
+    for (const role of ['Consumer', 'Provider', 'Admin'] as const) {
+      app.get(`/api/access/${role.toLowerCase()}`, requireAuth, requireRole(role), (_req, res) => {
+        res.json({ data: { role } });
+      });
+    }
   app.use((_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'Route not found')));
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof z.ZodError) {
