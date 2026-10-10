@@ -30,7 +30,13 @@ Phạm vi MVP dùng thanh toán sandbox; không xử lý tiền thật. API Key 
 | [Role & phân quyền](docs/02-role-va-phan-quyen.md) | 3 role hệ thống, Role Matrix, ma trận chặn truy cập, 5 vai trò thành viên, RACI, quy tắc chung |
 | [Quy trình làm việc](docs/03-quy-trinh-lam-viec.md) | Quy ước Git, CI/CD, quy ước code, QA & quản lý bug, nhịp sprint, checklist merge/release |
 | [Docker](docs/04-docker.md) | Một lệnh dựng cả hệ thống FE–BE–DB–Redis, migration/seed, xử lý sự cố |
+| [Quy trình quản lý bug](docs/05-quy-trinh-quan-ly-bug.md) | Vòng đời bug, 4 mức severity, template bug report |
+| [Kiểm thử Sprint 1](docs/test/Sprint1_TestReport.md) | Test Plan, Test Cases, Test Report, Acceptance Criteria |
+| [Tài liệu frontend](docs/frontend-guide.md) | Kiến trúc, auth, hợp đồng API, mô hình dữ liệu, i18n, design system |
 | [Backend](backend/README.md) | Chạy backend, cấu hình môi trường, API Auth, test PostgreSQL |
+| [Frontend](frontend/README.md) | Chạy frontend, cấu trúc code, tích hợp backend |
+
+Mục lục đầy đủ: [docs/README.md](docs/README.md)
 
 ## Thành viên và vai trò
 
