@@ -92,7 +92,7 @@ Ma trận 3 role × 3 guard `/api/access/*` (lấy đủ 3 đường dẫn guard
 |---|---|---|---|---|---|---|---|---|---|---|
 | TC-03-01 | High | Token USER | Token `user@example.com` | Gọi lần lượt 3 guard | Chỉ guard của USER → 200; hai guard còn lại → 403 | consumer=200 ✓, provider=403 ✓, admin=403 ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-03-02 | High | Token PROVIDER | Token `provider@example.com` | Gọi lần lượt 3 guard | Chỉ guard của PROVIDER → 200; còn lại → 403 | consumer=403 ✓, provider=200 ✓, admin=403 ✓ | Pass | — | Thảo Vân | 10/10 |
-| TC-03-03 | High | Token ADMIN | Token `admin@example.com` | Gọi lần lượt 3 guard | Theo Role Matrix đã chốt (ghi rõ ADMIN truy cập được guard nào) | consumer=403, provider=403, admin=200 — xem Điểm lệch R3 | Pass ⚠️ | — | Thảo Vân | 10/10 |
+| TC-03-03 | High | Token ADMIN | Token `admin@example.com` | Gọi lần lượt 3 guard | consumer→403, provider→403, admin→200 | consumer=403, provider=403, admin=200 (Đúng thiết kế RBAC, Admin không vào guard Consumer/Provider) | Pass | — | Thảo Vân | 10/10 |
 | TC-03-04 | High | Không token | — | `GET /api/access/admin` và 2 guard còn lại | 401 | consumer=401 ✓, provider=401 ✓, admin=401 ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-03-05 | High | — | Token sai định dạng; token hết hạn | Gọi `GET /api/access/admin` | 401 | sai định dạng→401 ✓; JWT chữ ký lỗi→401 ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-03-06 | High | Đăng nhập Consumer (USER) trên FE | URL `/admin/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng, không thấy nội dung admin | Chưa test — FE chưa tích hợp, chờ dev FE hướng dẫn chạy | Not Run | — | — | — |
@@ -112,7 +112,7 @@ Ma trận 3 role × 3 guard `/api/access/*` (lấy đủ 3 đường dẫn guard
 
 | ID | Ưu tiên | Tiền điều kiện | Dữ liệu test | Các bước | Kết quả mong đợi | Kết quả thực tế | Status | Bug ID | Tester | Ngày |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TC-05-01 | Medium | — | >30 request/phút vào cùng endpoint | Gửi liên tục | Quá ngưỡng → 429 | 429 xuất hiện tại request #3 — xem Điểm lệch R4 | Pass ⚠️ | — | Thảo Vân | 10/10 |
+| TC-05-01 | Medium | — | >30 request/phút vào cùng endpoint | Gửi liên tục | Quá ngưỡng (req 31 trở đi) → 429 | Gửi 35 req liên tiếp với cửa sổ sạch: req 1–30 trả 200, req 31–35 trả 429. Lưu ý: rate limit tính chung toàn bộ /api/auth/* theo IP | Pass | — | Thảo Vân | 10/10 |
 | TC-05-02 | Medium | — | JSON lỗi cú pháp | Gửi body JSON hỏng | 400, không lộ stack trace | 400; `INVALID_JSON`; không lộ stack trace ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-05-03 | Medium | — | Body > 16kb | Gửi body quá lớn | Bị từ chối (413/400) | 413; `PAYLOAD_TOO_LARGE` ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-05-04 | High | Có quyền truy cập DB | — | `SELECT password FROM users` | Mật khẩu là hash, không phải plaintext | password_hash là chuỗi hash (bcrypt/scrypt) — xác nhận thủ công qua Docker | Pass | — | Thảo Vân | 10/10 |

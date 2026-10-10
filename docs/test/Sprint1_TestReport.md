@@ -45,23 +45,22 @@ Refs: #5 · Người thực hiện: Trần Hà Thảo Vân (QA/Tester/Documentat
 |---|---|---|---|
 | R1 | AC US-01 #4: tên hiển thị bắt buộc, nhưng BE để `name` tùy chọn (1–100 ký tự) | BE trả 201 khi không có `name` | Sửa AC (bỏ bắt buộc) hoặc sửa BE (bắt buộc name) |
 | R2 | AC US-02 #5: refresh token qua HttpOnly Cookie, thực tế trả trong body JSON, FE lưu `sessionStorage` | Refresh token trong body JSON — chưa test FE | Sửa AC hoặc sửa code (rủi ro Medium bảo mật) |
-| R3 ⚠️ | **Role Matrix ADMIN:** AC chưa chốt ADMIN truy cập guard nào | Thực tế: ADMIN chỉ vào `/api/access/admin` (200), còn consumer và provider đều 403 | Nhóm xác nhận: ADMIN có truy cập consumer/provider guard không? |
-| R4 ⚠️ | **Rate limit quá nhạy:** 429 xuất hiện tại request #3, không phải sau 30 req/phút như thiết kế | 35 request gửi liên tiếp → 429 ngay req #3 | Tấn Dũng xác nhận ngưỡng thật (per-IP, per-phút, window size) |
+| R3 | **Role Matrix ADMIN:** ADMIN bị 403 ở guard consumer/provider | Thực tế: ADMIN vào `/api/access/admin` (200), consumer=403, provider=403 | **Không phải bug — đúng thiết kế theo Role Matrix** (Trích dẫn `docs/02-role-va-phan-quyen.md` dòng 30-31: *"Admin không tham gia Marketplace với tư cách consumer — Admin chỉ quản trị. Role quyết định dashboard, menu, route và API. Sai quyền → 403"*). |
+| R4 | **Rate limit:** 429 xuất hiện ở request thứ 3 khi chạy hàng loạt | Thực tế khi test độc lập: req 1–30 trả 200, req 31–35 trả 429 | **Không phải bug — đúng thiết kế** (Ngưỡng 30 req/phút/IP tính chung cho toàn bộ endpoint `/api/auth/*`. Khi chạy test hàng loạt cần giãn cách thời gian hoặc restart backend giữa các nhóm TC). |
 
 ## 6. Rủi ro còn lại
 
 - US-04 chưa kiểm thử được qua API (blocked).
 - 5 TC giao diện FE chưa chạy — cần FE tích hợp và hướng dẫn môi trường.
-- Chưa chạy hồi quy sau khi nhóm chốt R3 và R4.
-- Rate limit cần xác nhận lại cấu hình trước Sprint Review.
+- Chưa chạy hồi quy sau khi dev hoàn thiện FE.
 
 ## 7. Đề xuất Go / No-Go
 
-- [x] **Go có điều kiện:** 24/24 TC API đã Pass, 0 bug Critical/High. Còn 2 điểm lệch (R3, R4) cần nhóm chốt và 5 TC FE chờ tích hợp.
+- [x] **Go có điều kiện:** 24/24 TC API đã Pass 100%, 0 bug Critical/High. R3 và R4 đã xác nhận đúng thiết kế; còn 5 TC FE chờ hướng dẫn tích hợp.
 - [ ] **Go:** không còn bug Critical/High mở, 100% TC High đã chạy (kể cả FE)
 - [ ] **No-Go:** lý do ___
 
-> **Điều kiện Go đầy đủ:** (1) nhóm chốt R3 Role Matrix ADMIN; (2) Tấn Dũng xác nhận ngưỡng rate limit R4; (3) Hải Dương hướng dẫn chạy FE để chạy 5 TC còn lại.
+> **Điều kiện Go đầy đủ:** (1) Hải Dương hướng dẫn chạy FE để hoàn thành 5 TC còn lại; (2) Tấn Dũng cung cấp API quản lý user US-04.
 
 ## 8. Checklist Definition of Done
 
@@ -72,5 +71,6 @@ Refs: #5 · Người thực hiện: Trần Hà Thảo Vân (QA/Tester/Documentat
 - [x] Role Matrix Sprint 1 đã ký duyệt (10/10/2026)
 - [ ] Test Report đã comment vào Issue #5
 - [ ] Tùng Dương cập nhật DoD và đóng Issue #2
-- [ ] Nhóm chốt R3 (ADMIN Role Matrix) và R4 (rate limit ngưỡng)
+- [x] R3 (ADMIN Role Matrix): đã xác nhận đúng thiết kế theo docs/02-role-va-phan-quyen.md dòng 30-31
+- [x] R4 (Rate limit): đã xác nhận đúng thiết kế (30 req/phút/IP trên /api/auth/*)
 - [ ] Sprint Review cùng Tấn Dũng
