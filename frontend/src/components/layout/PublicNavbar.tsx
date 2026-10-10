@@ -78,10 +78,10 @@ export const PublicNavbar: React.FC = () => {
 
           {/* Workspace Button */}
           <Link
-            to={getDashboardPath(currentUser.role)}
+            to={getDashboardPath(currentUser?.role ?? 'USER')}
             className="h-9 px-3.5 bg-primary text-on-primary rounded-xl text-[13px] font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.98] whitespace-nowrap flex-shrink-0"
           >
-            <span>{getDashboardLabel(currentUser.role)}</span>
+            <span>{getDashboardLabel(currentUser?.role ?? 'USER')}</span>
             <span className="material-symbols-outlined text-[17px]">arrow_forward</span>
           </Link>
         </div>

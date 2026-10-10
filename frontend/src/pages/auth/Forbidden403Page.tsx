@@ -11,14 +11,11 @@ export const Forbidden403Page: React.FC = () => {
 
   const handleSwitchRole = () => {
     if (user?.role === 'USER') {
-      login('provider');
-      navigate('/provider');
+      if (login('provider', 'API_PROVIDER').success) navigate('/provider');
     } else if (user?.role === 'API_PROVIDER') {
-      login('admin');
-      navigate('/admin');
+      if (login('admin', 'ADMIN').success) navigate('/admin');
     } else {
-      login('consumer');
-      navigate('/dashboard');
+      if (login('consumer', 'USER').success) navigate('/dashboard');
     }
   };
 

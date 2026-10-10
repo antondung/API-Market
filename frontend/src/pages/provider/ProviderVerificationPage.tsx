@@ -8,14 +8,16 @@ import { useLanguage } from '../../i18n';
 export const ProviderVerificationPage: React.FC = () => {
   const { verifications, submitProviderVerification } = useApp();
   const { currentUser } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { t } = useLanguage();
 
-  const currentVer = verifications.find(v => v.providerId === currentUser.id);
+  const currentVer = verifications.find(v => v.providerId === user.id);
 
-  const [companyName, setCompanyName] = useState(currentVer?.companyName || currentUser.company || '');
+  const [companyName, setCompanyName] = useState(currentVer?.companyName || user.company || '');
   const [businessLicense, setBusinessLicense] = useState(currentVer?.businessLicense || '');
   const [taxCode, setTaxCode] = useState(currentVer?.taxCode || '');
-  const [contactEmail, setContactEmail] = useState(currentVer?.contactEmail || currentUser.email || '');
+  const [contactEmail, setContactEmail] = useState(currentVer?.contactEmail || user.email || '');
   const [website, setWebsite] = useState(currentVer?.website || '');
   const [agreementChecked, setAgreementChecked] = useState(false);
   const [submittedMessage, setSubmittedMessage] = useState(false);

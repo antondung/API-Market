@@ -18,6 +18,8 @@ import {
 
 export const SessionSimulatorPage: React.FC = () => {
   const { currentUser, backendOnline } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { t } = useLanguage();
 
   const [accessTokenTtl, setAccessTokenTtl] = useState(840);
@@ -170,9 +172,9 @@ export const SessionSimulatorPage: React.FC = () => {
   };
 
   const sampleJwtPayload = {
-    sub: currentUser.id,
-    email: currentUser.email,
-    role: currentUser.role,
+    sub: user.id,
+    email: user.email,
+    role: user.role,
     iss: "https://auth.apihub.io",
     aud: "https://gateway.apihub.io",
     iat: Math.floor(Date.now() / 1000) - (900 - accessTokenTtl),

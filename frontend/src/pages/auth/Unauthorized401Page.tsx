@@ -14,13 +14,18 @@ export const Unauthorized401Page: React.FC = () => {
   const [email, setEmail] = useState('developer@apihub.dev');
   const [password, setPassword] = useState('••••••••••••');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setTimeout(() => {
-      login('consumer');
+      const res = login('consumer', 'USER');
       setLoading(false);
+      if (!res.success) {
+        setError(res.error ?? 'Không thể đăng nhập nhanh ở môi trường này.');
+        return;
+      }
       navigate(returnUrl);
     }, 500);
   };
@@ -101,38 +106,46 @@ export const Unauthorized401Page: React.FC = () => {
               </div>
             </div>
 
+            {error && (
+              <p role="alert" className="text-body-sm text-error bg-error/5 border border-error/20 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
+
             <Button type="submit" variant="primary" size="lg" className="w-full mt-2" loading={loading} icon={<span className="material-symbols-outlined text-base">login</span>}>
               {t('Sign In to Continue')}
             </Button>
           </form>
 
-          {/* Role Bypass Options for Sandbox */}
+          {/* Tuy chon dang nhap nhanh: chi hien o moi truong development */}
+          {import.meta.env.DEV && (
           <div className="pt-2 border-t border-outline-variant/20 flex flex-col gap-2">
             <span className="text-[11px] font-mono text-outline uppercase tracking-wider text-center">{t('Fast Dev Login Bypass')}</span>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => { login('consumer'); navigate('/dashboard'); }}
+                onClick={() => { if (login('consumer', 'USER').success) navigate('/dashboard'); }}
                 className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high rounded text-xs font-medium text-on-surface transition-colors"
               >
                 {t('Consumer')}
               </button>
               <button
                 type="button"
-                onClick={() => { login('provider'); navigate('/provider'); }}
+                onClick={() => { if (login('provider', 'API_PROVIDER').success) navigate('/provider'); }}
                 className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high rounded text-xs font-medium text-on-surface transition-colors"
               >
                 {t('Provider')}
               </button>
               <button
                 type="button"
-                onClick={() => { login('admin'); navigate('/admin'); }}
+                onClick={() => { if (login('admin', 'ADMIN').success) navigate('/admin'); }}
                 className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high rounded text-xs font-medium text-on-surface transition-colors"
               >
                 {t('Admin')}
               </button>
             </div>
           </div>
+          )}
 
           {/* Footer info */}
           <div className="pt-2 flex items-center justify-between text-xs text-outline">

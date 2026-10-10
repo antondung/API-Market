@@ -65,6 +65,7 @@ interface RoleSwitcherProps {
 
 export const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ className = '' }) => {
   const { currentUser, switchRole } = useAuth();
+  const currentRole = currentUser?.role ?? 'USER';
   const { language } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,7 +88,7 @@ export const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ className = '' }) =>
     };
   }, []);
 
-  const currentOption = ROLE_OPTIONS.find(o => o.role === currentUser.role) || ROLE_OPTIONS[0];
+  const currentOption = ROLE_OPTIONS.find(o => o.role === currentRole) || ROLE_OPTIONS[0];
 
   return (
     <div
@@ -136,7 +137,7 @@ export const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ className = '' }) =>
           {/* Options */}
           <div className="p-1 space-y-1" role="listbox">
             {ROLE_OPTIONS.map((opt) => {
-              const isSelected = opt.role === currentUser.role;
+              const isSelected = opt.role === currentRole;
               return (
                 <button
                   key={opt.role}

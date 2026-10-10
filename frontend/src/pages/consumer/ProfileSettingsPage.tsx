@@ -8,15 +8,18 @@ export const ProfileSettingsPage: React.FC = () => {
   const { currentUser, setCurrentUser } = useAuth();
   const { t } = useLanguage();
 
-  const [name, setName] = useState(currentUser.name);
-  const [company, setCompany] = useState(currentUser.company || '');
-  const [twoFactor, setTwoFactor] = useState(currentUser.twoFactorEnabled);
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
+
+  const [name, setName] = useState(user.name);
+  const [company, setCompany] = useState(user.company || '');
+  const [twoFactor, setTwoFactor] = useState(user.twoFactorEnabled);
   const [successMsg, setSuccessMsg] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setCurrentUser({
-      ...currentUser,
+      ...user,
       name,
       company,
       twoFactorEnabled: twoFactor
@@ -37,14 +40,14 @@ export const ProfileSettingsPage: React.FC = () => {
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 lg:p-8 shadow-sm">
         <div className="flex items-center gap-5 mb-8 pb-6 border-b border-outline-variant/20">
           <div className="w-16 h-16 rounded-2xl bg-primary text-on-primary flex items-center justify-center font-bold text-2xl shadow-sm">
-            {currentUser.name.charAt(0)}
+            {user.name.charAt(0)}
           </div>
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-headline-sm font-bold text-on-surface">{currentUser.name}</h2>
-              <Badge variant="primary">{currentUser.role}</Badge>
+              <h2 className="text-headline-sm font-bold text-on-surface">{user.name}</h2>
+              <Badge variant="primary">{user.role}</Badge>
             </div>
-            <p className="text-body-sm text-on-surface-variant font-code-sm">{currentUser.email}</p>
+            <p className="text-body-sm text-on-surface-variant font-code-sm">{user.email}</p>
           </div>
         </div>
 
