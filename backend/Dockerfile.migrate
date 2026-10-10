@@ -1,0 +1,38 @@
+# Image dùng cho việc chạy migration và seed.
+# Tái sử dụng tầng builder vì cần tsx để chạy TypeScript trực tiếp.
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY backend ./backend
+COPY migrations ./migrations
+COPY scripts ./scripts
+
+RUN npm run build
+
+
+# =========================================
+# Tầng runtime cho công cụ database
+# =========================================
+FROM node:22-alpine AS runtime
+
+WORKDIR /app
+
+# Giữ cả devDependency vì database-cli.ts chạy qua tsx
+COPY package.json package-lock.json ./
+RUN npm ci && npm cache clean --force
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/backend ./backend
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+
+USER node
+
+# Mặc định chỉ chạy migration. Truyền --seed để thêm tài khoản demo development.
+CMD ["node", "--import", "tsx", "backend/src/database-cli.ts"]

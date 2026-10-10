@@ -8,7 +8,35 @@ Luồng Consumer: **Tìm kiếm → Đọc tài liệu → Thử API → Đăng 
 
 Luồng Provider: **Xác minh → Đăng API → Sinh tài liệu → Cấu hình gói → Gửi duyệt → Phân phối → Theo dõi usage/doanh thu**.
 
+## Chạy nhanh bằng Docker
+
+```powershell
+Copy-Item .env.docker.example .env.docker   # rồi đổi JWT_SECRET
+docker compose --env-file .env.docker up --build -d
+docker compose --env-file .env.docker run --rm migrate --seed   # tài khoản demo, tùy chọn
+```
+
+Backend: http://localhost:3000 · Swagger: http://localhost:3000/docs/
+
+Chi tiết tại [docs/04-docker.md](docs/04-docker.md).
+
 Phạm vi MVP dùng thanh toán sandbox; không xử lý tiền thật. API Key chỉ hiện đầy đủ một lần và DB chỉ lưu hash. Playground chỉ gọi endpoint đã đăng ký. Log không lưu Authorization, cookie, API key hoặc dữ liệu nhạy cảm không cần thiết.
+
+## Tài liệu dự án
+
+| Tài liệu | Nội dung |
+|---|---|
+| [Kiến trúc hệ thống](docs/01-kien-truc-he-thong.md) | Control Plane – Data Plane – Background Worker, tech stack, luồng xử lý request qua Gateway, mô hình dữ liệu, bảo mật, CI/CD, rủi ro |
+| [Role & phân quyền](docs/02-role-va-phan-quyen.md) | 3 role hệ thống, Role Matrix, ma trận chặn truy cập, 5 vai trò thành viên, RACI, quy tắc chung |
+| [Quy trình làm việc](docs/03-quy-trinh-lam-viec.md) | Quy ước Git, CI/CD, quy ước code, QA & quản lý bug, nhịp sprint, checklist merge/release |
+| [Docker](docs/04-docker.md) | Một lệnh dựng cả hệ thống FE–BE–DB–Redis, migration/seed, xử lý sự cố |
+| [Quy trình quản lý bug](docs/05-quy-trinh-quan-ly-bug.md) | Vòng đời bug, 4 mức severity, template bug report |
+| [Kiểm thử Sprint 1](docs/test/Sprint1_TestReport.md) | Test Plan, Test Cases, Test Report, Acceptance Criteria |
+| [Tài liệu frontend](docs/frontend-guide.md) | Kiến trúc, auth, hợp đồng API, mô hình dữ liệu, i18n, design system |
+| [Backend](backend/README.md) | Chạy backend, cấu hình môi trường, API Auth, test PostgreSQL |
+| [Frontend](frontend/README.md) | Chạy frontend, cấu trúc code, tích hợp backend |
+
+Mục lục đầy đủ: [docs/README.md](docs/README.md)
 
 ## Thành viên và vai trò
 
@@ -43,6 +71,8 @@ Mỗi thành viên có một GitHub Issue cho từng sprint, tổng cộng 25 is
 - Nhánh công việc: `feature/<issue>-<ten-ngan>`, `fix/<issue>-<ten-ngan>`, `docs/<issue>-<ten-ngan>`.
 - Cuối sprint: Tech Lead và QA kiểm tra bản trên `develop`; đạt yêu cầu mới tạo Pull Request `develop` → `main`.
 - Pull Request vào `main` cần ít nhất 1 approval, giải quyết hết conversation, không force-push hoặc xóa nhánh.
+
+> `README.md` này chỉ tồn tại trên `main`. Nhánh `develop` không giữ bản sao để tránh xung đột khi merge; script `scripts/kiem-tra-kho-ma-nguon.ps1` chỉ bắt buộc README trên nhánh `main`.
 
 ### Chu trình bàn giao
 
