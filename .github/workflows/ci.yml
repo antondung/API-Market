@@ -72,7 +72,26 @@ jobs:
       - run: npm test --if-present
       - run: npm run build --if-present
 
-  python:
+    frontend:
+      name: Frontend
+      needs: phat-hien
+      if: needs.phat-hien.outputs.node == 'true'
+      runs-on: ubuntu-latest
+      defaults:
+        run:
+          working-directory: frontend
+      steps:
+        - uses: actions/checkout@v5
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: npm
+            cache-dependency-path: frontend/package-lock.json
+        - run: npm ci
+        - run: npm run lint
+        - run: npm run build
+
+    python:
     name: Python
     needs: phat-hien
     if: needs.phat-hien.outputs.python == 'true'
@@ -200,7 +219,7 @@ jobs:
   ket-qua:
     name: Kiem tra nen tang
     if: always()
-    needs: [phat-hien, nen-tang, node, python, java-maven, java-gradle, dotnet, go, rust, php, ruby, cpp]
+    needs: [phat-hien, nen-tang, node, frontend, python, java-maven, java-gradle, dotnet, go, rust, php, ruby, cpp]
     runs-on: ubuntu-latest
     steps:
       - name: Tong hop ket qua
