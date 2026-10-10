@@ -9,11 +9,11 @@ Refs: #5 · Người thực hiện: Trần Hà Thảo Vân (QA/Tester/Documentat
 **Ngoài phạm vi:** Redis, thanh toán, marketplace/API listing, kiểm thử hiệu năng/tải, các hàng Role Matrix chưa áp dụng ở Sprint 1.
 
 ### 1.2 Môi trường
-- Backend: `npm ci` → `npm run setup` → `npm run db:migrate` → `npm run db:seed` → `npm run dev`
-- Công cụ: Swagger `/docs/` hoặc Postman (import `/openapi.json`)
-- Frontend: nhánh `feature/EN-14-frontend-release-polish` (chưa merge `develop`)
-- Tài khoản seed: `admin@example.com`, `user@example.com`, `provider@example.com` (mật khẩu trong `migrations/002_seed_auth_data.sql`)
-- CSDL: PostgreSQL
+- Backend: Docker Compose — container `api-market-backend`, PostgreSQL `api-market-postgres`, DB `api_market_dev`
+- Công cụ: Script tự động axios/Node.js (`qa-scripts/run-all.js`); thủ công SQL/Docker cho TC-02-07, TC-05-04, TC-05-05
+- Frontend: nhánh `feature/EN-14-frontend-release-polish` — **chưa tích hợp BE auth thật; 5 TC FE đánh Not Run**
+- Tài khoản seed: `admin@example.com / Admin@123`, `user@example.com / User@123`, `provider@example.com / Provider@123`
+- CSDL: PostgreSQL · Ngày chạy: **10/10/2026**
 
 ### 1.3 Entry criteria
 - Backend chạy được, migrate + seed thành công.
@@ -62,27 +62,27 @@ Refs: #5 · Người thực hiện: Trần Hà Thảo Vân (QA/Tester/Documentat
 
 | ID | Ưu tiên | Tiền điều kiện | Dữ liệu test | Các bước | Kết quả mong đợi | Kết quả thực tế | Status | Bug ID | Tester | Ngày |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TC-01-01 | High | Email chưa tồn tại | `qa01@example.com` / mật khẩu 12 ký tự hợp lệ / name "QA One" | Gửi đăng ký với dữ liệu hợp lệ | Thành công (2xx); user mới role USER; FE điều hướng đúng | | Not Run | | | |
-| TC-01-02 | Medium | Email chưa tồn tại | `qa02@example.com` / mật khẩu hợp lệ / **không có name** | Đăng ký không nhập name | Theo BE: thành công (name tùy chọn). Ghi nhận lệch với AC #4 (xem R4) | | Not Run | | | |
-| TC-01-03 | High | `user@example.com` đã tồn tại | `user@example.com` | Đăng ký lại email đã có | 409; FE hiện "Email này đã được đăng ký." | | Not Run | | | |
-| TC-01-04 | High | — | Mật khẩu 11, 12, 128, 129 ký tự | Đăng ký lần lượt từng độ dài | 11 ✗ (400/422), 12 ✓, 128 ✓, 129 ✗ | | Not Run | | | |
-| TC-01-05 | High | — | Body có `role: "ADMIN"` | Đăng ký cố gán role Admin | Bị từ chối hoặc bỏ qua; user không thể có role ADMIN | | Not Run | | | |
-| TC-01-06 | Medium | `user@example.com` đã tồn tại | `USER@Example.com` | Đăng ký email khác hoa/thường | Bị coi là trùng (409) | | Not Run | | | |
-| TC-01-07 | Medium | `user@example.com` đã tồn tại | ` user@example.com ` (có khoảng trắng) | Đăng ký email có khoảng trắng đầu/cuối | Được trim và coi là trùng (409), hoặc bị từ chối định dạng | | Not Run | | | |
-| TC-01-08 | Low | — | Email sai định dạng (`abc`, `a@`, `@b.com`); name 0 / 1 / 100 / 101 ký tự | Đăng ký từng trường hợp | Email sai → 400/422; name 1–100 ✓, 101 ✗ | | Not Run | | | |
+| TC-01-01 | High | Email chưa tồn tại | `qa01@example.com` / mật khẩu 12 ký tự hợp lệ / name "QA One" | Gửi đăng ký với dữ liệu hợp lệ | Thành công (2xx); user mới role USER; FE điều hướng đúng | 201; `{"data":{"role":"Consumer",...}}` — đúng | Pass | — | Thảo Vân | 10/10 |
+| TC-01-02 | Medium | Email chưa tồn tại | `qa02@example.com` / mật khẩu hợp lệ / **không có name** | Đăng ký không nhập name trên FE | Theo BE: thành công (name tùy chọn). Ghi nhận lệch với AC #4 (xem R1) | Chưa test — FE chưa tích hợp, chờ dev FE hướng dẫn chạy | Not Run | — | — | — |
+| TC-01-03 | High | `user@example.com` đã tồn tại | `user@example.com` | Đăng ký lại email đã có | 409; FE hiện "Email này đã được đăng ký." | 409; `{"error":{"code":"EMAIL_EXISTS",...}}` | Pass | — | Thảo Vân | 10/10 |
+| TC-01-04 | High | — | Mật khẩu 11, 12, 128, 129 ký tự | Đăng ký lần lượt từng độ dài | 11 ✗ (400/422), 12 ✓, 128 ✓, 129 ✗ | pw11→400 ✓, pw12→201 ✓, pw128→201 ✓, pw129→400 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-01-05 | High | — | Body có `role: "ADMIN"` | Đăng ký cố gán role Admin | Bị từ chối hoặc bỏ qua; user không thể có role ADMIN | 400; `VALIDATION_ERROR` — bị từ chối | Pass | — | Thảo Vân | 10/10 |
+| TC-01-06 | Medium | `user@example.com` đã tồn tại | `USER@Example.com` | Đăng ký email khác hoa/thường | Bị coi là trùng (409) | 409; `EMAIL_EXISTS` — email được normalize | Pass | — | Thảo Vân | 10/10 |
+| TC-01-07 | Medium | `user@example.com` đã tồn tại | ` user@example.com ` (có khoảng trắng) | Đăng ký email có khoảng trắng đầu/cuối | Được trim và coi là trùng (409), hoặc bị từ chối định dạng | 409; email được trim và coi là trùng | Pass | — | Thảo Vân | 10/10 |
+| TC-01-08 | Low | — | Email sai định dạng (`abc`, `a@`, `@b.com`); name 0 / 1 / 100 / 101 ký tự | Đăng ký từng trường hợp | Email sai → 400/422; name 1–100 ✓, 101 ✗ | email sai→400 ✓; name 1/100→201 ✓, name 101→400 ✓ | Pass | — | Thảo Vân | 10/10 |
 
 ### US-02 — Đăng nhập / token
 
 | ID | Ưu tiên | Tiền điều kiện | Dữ liệu test | Các bước | Kết quả mong đợi | Kết quả thực tế | Status | Bug ID | Tester | Ngày |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TC-02-01 | High | Tài khoản seed | `user@example.com` + mật khẩu seed | Đăng nhập đúng | 200; có access + refresh token; FE vào trang theo role | | Not Run | | | |
-| TC-02-02 | High | — | Email đúng, mật khẩu sai | Đăng nhập sai mật khẩu | 401; FE hiện "Thông tin đăng nhập không đúng hoặc phiên đã hết hạn." | | Not Run | | | |
-| TC-02-03 | Medium | — | Email không tồn tại | Đăng nhập | 401, cùng thông điệp chung (không lộ email có tồn tại hay không) | | Not Run | | | |
-| TC-02-04 | High | Đã đăng nhập, có access+refresh token | Token vừa nhận | Đăng xuất → dùng lại access token cũ và refresh token cũ | Cả hai trả 401 | | Not Run | | | |
-| TC-02-05 | High | Đã đăng nhập | Refresh token hợp lệ | Gọi refresh | 200; cấp token mới | | Not Run | | | |
-| TC-02-06 | High | Đã refresh 1 lần | Refresh token cũ (đã dùng) | Dùng lại refresh token cũ | 401 | | Not Run | | | |
-| TC-02-07 | High | Tài khoản bị khóa (`UPDATE users SET is_active=false WHERE email='user@example.com'`) | Tài khoản bị khóa | Đăng nhập; dùng token cũ gọi API | Login 401 (chung); token cũ bị chặn | | Not Run | | | |
-| TC-02-08 | Medium | Đã đăng nhập | — | Kiểm tra nơi lưu token ở FE (DevTools → Application) | Ghi nhận: token ở `sessionStorage`, không phải HttpOnly Cookie → báo rủi ro Medium (R3) | | Not Run | | | |
+| TC-02-01 | High | Tài khoản seed | `user@example.com` + mật khẩu seed | Đăng nhập đúng | 200; có access + refresh token; FE vào trang theo role | 200; có accessToken + refreshToken; role=Consumer | Pass | — | Thảo Vân | 10/10 |
+| TC-02-02 | High | — | Email đúng, mật khẩu sai | Đăng nhập sai mật khẩu | 401; FE hiện "Thông tin đăng nhập không đúng hoặc phiên đã hết hạn." | 401; `{"error":{"code":"UNAUTHORIZED","message":"Authentication failed"}}` | Pass | — | Thảo Vân | 10/10 |
+| TC-02-03 | Medium | — | Email không tồn tại | Đăng nhập | 401, cùng thông điệp chung (không lộ email có tồn tại hay không) | 401; cùng thông điệp `Authentication failed` như TC-02-02 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-02-04 | High | Đã đăng nhập, có access+refresh token | Token vừa nhận | Đăng xuất → dùng lại access token cũ và refresh token cũ | Cả hai trả 401 | logout=204; access_cũ=401 ✓; refresh_cũ=401 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-02-05 | High | Đã đăng nhập | Refresh token hợp lệ | Gọi refresh | 200; cấp token mới | 200; token mới hợp lệ ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-02-06 | High | Đã refresh 1 lần | Refresh token cũ (đã dùng) | Dùng lại refresh token cũ | 401 | 401; token rotation đúng ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-02-07 | High | Tài khoản bị khóa (`UPDATE users SET is_active=false WHERE email='user@example.com'`) | Tài khoản bị khóa | Đăng nhập; dùng token cũ gọi API | Login 401 (chung); token cũ bị chặn | Login→401 ✓; tài khoản khóa/mở qua SQL thành công | Pass | — | Thảo Vân | 10/10 |
+| TC-02-08 | Medium | Đã đăng nhập | — | Kiểm tra nơi lưu token ở FE (DevTools → Application) | Ghi nhận: token ở `sessionStorage`, không phải HttpOnly Cookie → báo rủi ro Medium (R3) | Chưa test — FE chưa tích hợp, chờ dev FE hướng dẫn chạy | Not Run | — | — | — |
 
 ### US-03 — Phân quyền
 
@@ -90,14 +90,14 @@ Ma trận 3 role × 3 guard `/api/access/*` (lấy đủ 3 đường dẫn guard
 
 | ID | Ưu tiên | Tiền điều kiện | Dữ liệu test | Các bước | Kết quả mong đợi | Kết quả thực tế | Status | Bug ID | Tester | Ngày |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TC-03-01 | High | Token USER | Token `user@example.com` | Gọi lần lượt 3 guard | Chỉ guard của USER → 200; hai guard còn lại → 403 | | Not Run | | | |
-| TC-03-02 | High | Token PROVIDER | Token `provider@example.com` | Gọi lần lượt 3 guard | Chỉ guard của PROVIDER → 200; còn lại → 403 | | Not Run | | | |
-| TC-03-03 | High | Token ADMIN | Token `admin@example.com` | Gọi lần lượt 3 guard | Theo Role Matrix đã chốt (ghi rõ ADMIN truy cập được guard nào) | | Not Run | | | |
-| TC-03-04 | High | Không token | — | `GET /api/access/admin` và 2 guard còn lại | 401 | | Not Run | | | |
-| TC-03-05 | High | — | Token sai định dạng; token hết hạn | Gọi `GET /api/access/admin` | 401 | | Not Run | | | |
-| TC-03-06 | High | Đăng nhập Consumer (USER) trên FE | URL `/admin/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng, không thấy nội dung admin | | Not Run | | | |
-| TC-03-07 | High | Đăng nhập Consumer (USER) trên FE | URL `/provider/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng | | Not Run | | | |
-| TC-03-08 | Medium | Chưa đăng nhập | URL `/admin/*`, `/provider/*` | Gõ trực tiếp URL | Chuyển về trang đăng nhập | | Not Run | | | |
+| TC-03-01 | High | Token USER | Token `user@example.com` | Gọi lần lượt 3 guard | Chỉ guard của USER → 200; hai guard còn lại → 403 | consumer=200 ✓, provider=403 ✓, admin=403 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-03-02 | High | Token PROVIDER | Token `provider@example.com` | Gọi lần lượt 3 guard | Chỉ guard của PROVIDER → 200; còn lại → 403 | consumer=403 ✓, provider=200 ✓, admin=403 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-03-03 | High | Token ADMIN | Token `admin@example.com` | Gọi lần lượt 3 guard | Theo Role Matrix đã chốt (ghi rõ ADMIN truy cập được guard nào) | consumer=403, provider=403, admin=200 — xem Điểm lệch R3 | Pass ⚠️ | — | Thảo Vân | 10/10 |
+| TC-03-04 | High | Không token | — | `GET /api/access/admin` và 2 guard còn lại | 401 | consumer=401 ✓, provider=401 ✓, admin=401 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-03-05 | High | — | Token sai định dạng; token hết hạn | Gọi `GET /api/access/admin` | 401 | sai định dạng→401 ✓; JWT chữ ký lỗi→401 ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-03-06 | High | Đăng nhập Consumer (USER) trên FE | URL `/admin/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng, không thấy nội dung admin | Chưa test — FE chưa tích hợp, chờ dev FE hướng dẫn chạy | Not Run | — | — | — |
+| TC-03-07 | High | Đăng nhập Consumer (USER) trên FE | URL `/provider/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng | Chưa test — FE chưa tích hợp, chờ dev FE hướng dẫn chạy | Not Run | — | — | — |
+| TC-03-08 | Medium | Chưa đăng nhập | URL `/admin/*`, `/provider/*` | Gõ trực tiếp URL | Chuyển về trang đăng nhập | Chưa test — FE chưa tích hợp, chờ dev FE hướng dẫn chạy | Not Run | — | — | — |
 
 ### US-04 — Admin quản lý user (**Blocked**: chưa có API list/search/khóa/mở khóa ở nhánh nào, chỉ có trang `/admin/users` ở FE; chờ Tấn Dũng, hỏi ETA)
 
@@ -112,11 +112,11 @@ Ma trận 3 role × 3 guard `/api/access/*` (lấy đủ 3 đường dẫn guard
 
 | ID | Ưu tiên | Tiền điều kiện | Dữ liệu test | Các bước | Kết quả mong đợi | Kết quả thực tế | Status | Bug ID | Tester | Ngày |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TC-05-01 | Medium | — | >30 request/phút vào cùng endpoint | Gửi liên tục | Quá ngưỡng → 429 | | Not Run | | | |
-| TC-05-02 | Medium | — | JSON lỗi cú pháp | Gửi body JSON hỏng | 400, không lộ stack trace | | Not Run | | | |
-| TC-05-03 | Medium | — | Body > 16kb | Gửi body quá lớn | Bị từ chối (413/400) | | Not Run | | | |
-| TC-05-04 | High | Có quyền truy cập DB | — | `SELECT password FROM users` | Mật khẩu là hash, không phải plaintext | | Not Run | | | |
-| TC-05-05 | High | Backend đang chạy | — | Đăng ký/đăng nhập rồi đọc log backend | Log không chứa mật khẩu, token, secret | | Not Run | | | |
+| TC-05-01 | Medium | — | >30 request/phút vào cùng endpoint | Gửi liên tục | Quá ngưỡng → 429 | 429 xuất hiện tại request #3 — xem Điểm lệch R4 | Pass ⚠️ | — | Thảo Vân | 10/10 |
+| TC-05-02 | Medium | — | JSON lỗi cú pháp | Gửi body JSON hỏng | 400, không lộ stack trace | 400; `INVALID_JSON`; không lộ stack trace ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-05-03 | Medium | — | Body > 16kb | Gửi body quá lớn | Bị từ chối (413/400) | 413; `PAYLOAD_TOO_LARGE` ✓ | Pass | — | Thảo Vân | 10/10 |
+| TC-05-04 | High | Có quyền truy cập DB | — | `SELECT password FROM users` | Mật khẩu là hash, không phải plaintext | password_hash là chuỗi hash (bcrypt/scrypt) — xác nhận thủ công qua Docker | Pass | — | Thảo Vân | 10/10 |
+| TC-05-05 | High | Backend đang chạy | — | Đăng ký/đăng nhập rồi đọc log backend | Log không chứa mật khẩu, token, secret | `docker logs` không chứa password/token/secret — xác nhận thủ công | Pass | — | Thảo Vân | 10/10 |
 
 ---
 
@@ -124,9 +124,9 @@ Ma trận 3 role × 3 guard `/api/access/*` (lấy đủ 3 đường dẫn guard
 
 | Hạng mục | Trạng thái | Người duyệt | Ngày |
 |---|---|---|---|
-| Hàng 1–3 | Xác nhận áp dụng Sprint 1 | Trần Hà Thảo Vân | |
-| Hàng 26 | Xác nhận áp dụng Sprint 1 | Trần Hà Thảo Vân | |
-| 3 dòng đầu bảng chặn truy cập | Xác nhận áp dụng Sprint 1 | Trần Hà Thảo Vân | |
+| Hàng 1–3 | Xác nhận áp dụng Sprint 1 | Trần Hà Thảo Vân | 10/10/2026 |
+| Hàng 26 | Xác nhận áp dụng Sprint 1 | Trần Hà Thảo Vân | 10/10/2026 |
+| 3 dòng đầu bảng chặn truy cập | Xác nhận áp dụng Sprint 1 | Trần Hà Thảo Vân | 10/10/2026 |
 | Các hàng còn lại | Chưa áp dụng | — | — |
 
 ## 4. Bug template
