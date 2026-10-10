@@ -1,4 +1,4 @@
-# Backend — Sprint 1 / Issue #2
+﻿# Backend — Sprint 1 / Issue #2
 
 Node.js 22.14+, TypeScript, Express 5, PostgreSQL và node-postgres (`pg`). Backend sử dụng nguyên schema PostgreSQL của Danh trong PR #32, commit `656f931`, tại `migrations/`. Không sửa SQL của Danh. SQLite đã được bỏ khỏi backend.
 
@@ -34,11 +34,29 @@ Swagger: http://127.0.0.1:3000/docs/ — OpenAPI: http://127.0.0.1:3000/openapi.
 | POST | `/api/auth/refresh` | refreshToken |
 | POST | `/api/auth/logout` | Authorization Bearer accessToken |
 | GET | `/api/auth/me` | Authorization Bearer accessToken |
+| GET | `/api/admin/users` | **Admin**. Query: `search` (email/tên, không phân biệt hoa thường), `role`, `active`, `page` (>=1), `pageSize` (1-100). Trả `{items, total, page, pageSize}` |
+| PATCH | `/api/admin/users/{id}/active` | **Admin**. Body `{active: boolean}`. Khóa tài khoản thu hồi toàn bộ phiên; không tự khóa chính mình (409) |
 | GET | `/api/access/consumer`, `/api/access/provider`, `/api/access/admin` | Guard mẫu: đúng vai trò 200, sai vai trò 403, thiếu/token sai 401 |
 
 API trả role Consumer/Provider/Admin; DB tương ứng USER/API_PROVIDER/ADMIN. ID PostgreSQL là INTEGER IDENTITY, API/JWT dùng chuỗi. `is_active` là BOOLEAN; thời gian phiên là TIMESTAMPTZ. Email truy vấn theo `email_normalized` và unique constraint của Danh. Đăng ký Provider tạo user và hồ sơ trong cùng transaction; lỗi ở bước profile rollback user. Name giới hạn 100 ký tự theo schema mới.
 
 Mật khẩu đăng ký mới vẫn dùng scrypt có salt; login hỗ trợ cả scrypt và bcrypt của `pgcrypto` trong seed Danh. Bcrypt không chấp nhận mật khẩu vượt 72 byte để tránh truncation. Access JWT sống 15 phút; phiên refresh sống 7 ngày từ login. DB chỉ lưu SHA-256 của refresh token. Rotate dùng UPDATE có điều kiện nguyên tử; logout và user khóa có hiệu lực ở lần xác thực kế tiếp, kể cả access token đã cấp.
+
+### Quản trị người dùng (US-04)
+
+`GET /api/admin/users` trả về bản ghi **không chứa `passwordHash`**. Sắp xếp theo `created_at DESC, id DESC` để bản ghi mới nhất lên đầu. `total` là tổng số bản ghi khớp bộ lọc, không phải số bản ghi trong trang.
+
+`PATCH /api/admin/users/{id}/active` với `active: false` sẽ:
+
+1. Đặt `is_active = false` và cập nhật `updated_at`.
+2. Thu hồi **toàn bộ** refresh token của người dùng đó.
+3. Trả `revokedSessions` là số phiên đã thu hồi.
+
+Access token đã cấp mất hiệu lực ở lần xác thực kế tiếp vì `authenticate()` kiểm tra `is_active` và trạng thái phiên. Mở khóa (`active: true`) **không** hồi sinh token cũ — người dùng phải đăng nhập lại.
+
+Admin **không thể tự khóa** tài khoản của mình (409 `CANNOT_MODIFY_SELF`), tránh tự khóa và mất quyền quản trị.
+
+ID không tồn tại trả 404 `USER_NOT_FOUND`. Với PostgreSQL, id không phải số được xử lý như không tìm thấy (404) thay vì lỗi 500.
 
 ## Tài khoản seed development
 
@@ -60,6 +78,6 @@ npm run lint
 
 `npm test` build TypeScript và chạy unit/HTTP cùng PostgreSQL integration test. Nếu không đặt `PG_TEST_URL`, test runner dùng PostgreSQL CLI (`pg_config`, `initdb`, `pg_ctl`) để tạo server tạm trên loopback, chạy test rồi dừng/xóa đúng thư mục tạm. PostgreSQL CLI phải được cài sẵn.
 
-Cũng có thể đặt `PG_TEST_URL` đến database test riêng; test tạo/xóa schema `auth_test_*`, cài pgcrypto vào public nếu thiếu. Không trỏ test vào database production. Bộ test gồm 20 test unit/HTTP và 7 test PostgreSQL: migration trống/rerun, seed bcrypt/full guard matrix, unique email/name/BOOLEAN/identity, rollback provider, refresh cạnh tranh/persistence, user khóa/phiên hết hạn và dùng schema đã khởi tạo bằng SQL trực tiếp.
+Cũng có thể đặt `PG_TEST_URL` đến database test riêng; test tạo/xóa schema `auth_test_*`, cài pgcrypto vào public nếu thiếu. Không trỏ test vào database production. Bộ test gồm 29 test unit/HTTP và 11 test PostgreSQL: migration trống/rerun, seed bcrypt/full guard matrix, unique email/name/BOOLEAN/identity, rollback provider, refresh cạnh tranh/persistence, user khóa/phiên hết hạn, dùng schema đã khởi tạo bằng SQL trực tiếp, và quản trị người dùng (list/search/filter/pagination, khóa/mở khóa, thu hồi phiên, guard 403, id không hợp lệ).
 
 PR #30 chờ review và QA. PR #32 của Danh là dependency schema, chưa tự merge thay Danh hoặc Tech Lead. Dữ liệu SQLite local cũ không được xóa hoặc tự chuyển sang PostgreSQL.
