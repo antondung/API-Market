@@ -7,11 +7,18 @@ import { useLanguage } from '../../i18n';
 
 export const TrySandboxPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { apis, tryGrants, useTryGrant, executeGatewayCall } = useApp();
+  const { apis, tryGrants, consumeTryGrant, executeGatewayCall } = useApp();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
   const api = apis.find(a => a.id === id);
+
+  // Hooks phải gọi vô điều kiện, trước mọi early return (Rules of Hooks).
+  const remaining = api ? (tryGrants[api.id] ?? 8) : 0;
+  const maxGrants = 10;
+  const [testResult, setTestResult] = useState<any | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [exhausted, setExhausted] = useState(remaining <= 0);
 
   if (!api) {
     return (
@@ -28,13 +35,6 @@ export const TrySandboxPage: React.FC = () => {
     );
   }
 
-  const remaining = tryGrants[api.id] ?? 8;
-  const maxGrants = 10;
-
-  const [testResult, setTestResult] = useState<any | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [exhausted, setExhausted] = useState(remaining <= 0);
-
   const handleTestCall = async () => {
     if (remaining <= 0) {
       setExhausted(true);
@@ -42,7 +42,7 @@ export const TrySandboxPage: React.FC = () => {
     }
 
     setTesting(true);
-    const { remaining: newRemaining, allowed } = useTryGrant(api.id);
+    const { remaining: newRemaining, allowed } = consumeTryGrant(api.id);
     if (!allowed) {
       setExhausted(true);
       setTesting(false);
@@ -103,7 +103,7 @@ export const TrySandboxPage: React.FC = () => {
             </span>
           </div>
           <div className="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden">
-            <div 
+            <div
               className={`h-full rounded-full transition-all duration-300 ${
                 remaining <= 2 ? 'bg-error' : 'bg-primary'
               }`}

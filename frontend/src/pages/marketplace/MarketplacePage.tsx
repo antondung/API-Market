@@ -44,7 +44,7 @@ export const MarketplacePage: React.FC = () => {
       .filter(api => {
         // Only show published in marketplace (or draft if testing)
         if (api.status !== 'Published' && api.status !== 'Draft') return false;
-        
+
         // Category filter
         if (selectedCategory !== 'All' && api.category !== selectedCategory) return false;
 
@@ -103,7 +103,7 @@ export const MarketplacePage: React.FC = () => {
               className="w-full bg-transparent text-body-md text-on-surface placeholder:text-outline focus:outline-none"
             />
             {searchQuery && (
-              <button 
+              <button
                 onClick={() => setSearchQuery('')}
                 className="text-on-surface-variant hover:text-on-surface mr-2 text-[16px]"
               >
@@ -145,8 +145,8 @@ export const MarketplacePage: React.FC = () => {
             </h4>
             <div className="space-y-1">
               {categories.map(cat => {
-                const count = cat === 'All' 
-                  ? apis.length 
+                const count = cat === 'All'
+                  ? apis.length
                   : apis.filter(a => a.category === cat).length;
                 const isSelected = selectedCategory === cat;
                 return (
@@ -301,8 +301,8 @@ export const MarketplacePage: React.FC = () => {
                             <span className="material-symbols-outlined text-[26px]">{api.icon}</span>
                           </div>
                           <div className="min-w-0">
-                            <Link 
-                              to={`/api/${api.id}`} 
+                            <Link
+                              to={`/api/${api.id}`}
                               className="text-headline-sm font-headline-sm font-bold text-on-surface hover:text-primary transition-colors flex items-center gap-1.5 truncate"
                             >
                               {api.name}

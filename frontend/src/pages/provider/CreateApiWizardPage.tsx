@@ -35,7 +35,7 @@ export const CreateApiWizardPage: React.FC = () => {
   const [domainVerified, setDomainVerified] = useState(false);
   const [verifyingDomain, setVerifyingDomain] = useState(false);
   const [verificationToken] = useState(`platform-verification=apihub_sec_${Math.random().toString(36).substring(2, 10)}`);
-  
+
   const [processesPersonalData, setProcessesPersonalData] = useState(false);
   const [selectedDataTypes, setSelectedDataTypes] = useState<string[]>([]);
   const [legalConfirmed, setLegalConfirmed] = useState(false);
@@ -173,7 +173,7 @@ export const CreateApiWizardPage: React.FC = () => {
         {step === 1 && (
           <div className="space-y-5">
             <h2 className="text-headline-sm font-bold text-on-surface">{t('Step 1: General API Metadata')}</h2>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('API Product Name')}</label>

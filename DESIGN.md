@@ -1,6 +1,6 @@
 # API HUB — Design System & UI/UX Architecture
 
-> **Tài liệu đặc tả kiến trúc thiết kế (Design System & UI/UX Guidelines)** cho nền tảng **API Marketplace & Management Platform**.  
+> **Tài liệu đặc tả kiến trúc thiết kế (Design System & UI/UX Guidelines)** cho nền tảng **API Marketplace & Management Platform**.
 > Được đúc kết và chuẩn hóa trực tiếp từ bộ mã thiết kế Stitch (`stitch_api_hub_design_system`), Material Design 3 tokens, và các tiêu chuẩn công nghệ SaaS hiện đại.
 
 ---

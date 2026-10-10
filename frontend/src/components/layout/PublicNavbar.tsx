@@ -36,7 +36,7 @@ export const PublicNavbar: React.FC = () => {
   return (
     <header className="fixed top-0 left-0 w-full z-50 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/30 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
       <div className="h-16 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
-        
+
         {/* Brand */}
         <Link to="/marketplace" className="flex items-center gap-3 flex-shrink-0 group">
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm group-hover:scale-105 transition-transform flex-shrink-0">
@@ -57,8 +57,8 @@ export const PublicNavbar: React.FC = () => {
                 key={link.path}
                 to={link.path}
                 className={`text-body-md font-medium whitespace-nowrap transition-colors ${
-                  isActive 
-                    ? 'text-primary font-semibold' 
+                  isActive
+                    ? 'text-primary font-semibold'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >

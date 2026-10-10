@@ -1,6 +1,6 @@
 # API HUB — Frontend Application
 
-> **Nền tảng giao diện người dùng API Marketplace & Management Platform**  
+> **Nền tảng giao diện người dùng API Marketplace & Management Platform**
 > Xây dựng bằng **React 19**, **TypeScript**, **Vite** và **Tailwind CSS**, tuân thủ nghiêm ngặt theo tài liệu phân công nhiệm vụ ([Nhóm LLM.md](file:///c:/Users/duwn/Documents/api-hub/Nh%C3%B3m%20LLM.md)), đặc tả kiến trúc ([docs_01.md](file:///c:/Users/duwn/Documents/api-hub/docs_01.md), [docs_02.md](file:///c:/Users/duwn/Documents/api-hub/docs_02.md), [docs_03.md](file:///c:/Users/duwn/Documents/api-hub/docs_03.md)), [DESIGN.md](file:///c:/Users/duwn/Documents/api-hub/DESIGN.md) và [Hợp đồng API Backend](file:///c:/Users/duwn/Documents/api-hub/FRONTEND_API_CONTRACT_AND_ARCHITECTURE.md).
 
 ---

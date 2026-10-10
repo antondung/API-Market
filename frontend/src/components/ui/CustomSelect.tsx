@@ -57,8 +57,8 @@ export function CustomSelect<T extends string = string>({
   const sizeClasses = size === 'sm' ? 'h-8 px-2.5 text-[12px]' : 'h-9 px-3 text-[13px]';
 
   return (
-    <div 
-      className={`relative inline-block text-left ${className}`} 
+    <div
+      className={`relative inline-block text-left ${className}`}
       ref={containerRef}
       data-no-translate="true"
     >

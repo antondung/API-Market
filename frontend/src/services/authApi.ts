@@ -1,7 +1,7 @@
 /**
  * API Market - Sprint 1 Backend Authentication Client
  * Conforms to OpenAPI specs and implementation from https://github.com/antondung/API-Market/tree/develop
- * 
+ *
  * Target endpoints:
  * - POST /api/auth/register
  * - POST /api/auth/login

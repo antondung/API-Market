@@ -79,7 +79,7 @@ export const MySubscriptionsPage: React.FC = () => {
                         </span>
                       </div>
                       <div className="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
-                        <div 
+                        <div
                           className={`h-full rounded-full transition-all duration-300 ${
                             usedPercent > 90 ? 'bg-error' : usedPercent > 70 ? 'bg-amber-500' : 'bg-primary'
                           }`}

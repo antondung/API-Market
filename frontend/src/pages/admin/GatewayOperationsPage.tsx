@@ -64,7 +64,7 @@ export const GatewayOperationsPage: React.FC = () => {
           <span className="material-symbols-outlined text-primary text-[22px]">schedule</span>
           {t('Background Worker Cron Jobs')}
         </h3>
-        
+
         <div className="space-y-3">
           <div className="p-4 bg-surface-container rounded-xl border border-outline-variant/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>

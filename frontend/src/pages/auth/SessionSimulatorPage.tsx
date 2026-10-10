@@ -4,14 +4,14 @@ import { useLanguage } from '../../i18n';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CodeBlock } from '../../components/ui/CodeBlock';
-import { 
-  login as apiLogin, 
-  getMe, 
-  refresh as apiRefresh, 
-  logout as apiLogout, 
-  checkRoleAccess, 
-  checkBackendHealth, 
-  getSavedTokens, 
+import {
+  login as apiLogin,
+  getMe,
+  refresh as apiRefresh,
+  logout as apiLogout,
+  checkRoleAccess,
+  checkBackendHealth,
+  getSavedTokens,
   formatBackendErrorMessage,
   type SavedTokens
 } from '../../services/authApi';

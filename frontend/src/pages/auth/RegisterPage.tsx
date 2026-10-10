@@ -69,7 +69,7 @@ export const RegisterPage: React.FC = () => {
         createdAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString()
       };
-      
+
       let usersList: User[] = [];
       const saved = localStorage.getItem('apihub_users');
       if (saved) {

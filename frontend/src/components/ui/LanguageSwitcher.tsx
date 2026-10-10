@@ -47,7 +47,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'd
 
   if (variant === 'pill') {
     return (
-      <div 
+      <div
         data-no-translate="true"
         className={`inline-flex items-center p-1 rounded-xl bg-surface-container border border-outline-variant/30 text-body-sm font-medium ${className}`}
       >
@@ -82,9 +82,9 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'd
   }
 
   return (
-    <div 
+    <div
       data-no-translate="true"
-      className={`relative ${className}`} 
+      className={`relative ${className}`}
       ref={dropdownRef}
     >
       <button
@@ -101,7 +101,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'd
       </button>
 
       {isOpen && (
-        <div 
+        <div
           data-no-translate="true"
           className="absolute right-0 mt-1.5 w-38 rounded-xl bg-surface-container-high border border-outline-variant/30 shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
         >

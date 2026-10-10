@@ -111,7 +111,10 @@ export function App() {
               {/* AUTH & GATE PAGES */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
-              <Route path="/auth/session-simulator" element={<SessionSimulatorPage />} />
+              {/* Trang kiem thu tich hop backend: chi mo o moi truong development */}
+              {import.meta.env.DEV && (
+                <Route path="/auth/session-simulator" element={<SessionSimulatorPage />} />
+              )}
               <Route path="/401" element={<Unauthorized401Page />} />
               <Route path="/403" element={<Forbidden403Page />} />
             </Route>
