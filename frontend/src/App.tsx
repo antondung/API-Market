@@ -72,14 +72,24 @@ const PublicLayout: React.FC = () => (
 
 // Route Guards
 const ProtectedRoute: React.FC<{ allowedRoles?: UserRole[] }> = ({ allowedRoles }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, sessionReady } = useAuth();
   const location = useLocation();
 
-  if (!isAuthenticated) {
+  // Chờ khôi phục phiên xong mới quyết định, tránh chuyển hướng sai khi
+  // người dùng đã đăng nhập nhưng trang vừa tải lại (BUG-01 / TC-03-08).
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface">
+        <span className="material-symbols-outlined animate-spin text-primary text-[32px]">progress_activity</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
     return <Navigate to="/401" state={{ from: location.pathname }} replace />;
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/403" state={{ from: location.pathname, requiredRoles: allowedRoles }} replace />;
   }
 

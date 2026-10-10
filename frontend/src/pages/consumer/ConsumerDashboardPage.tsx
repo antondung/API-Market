@@ -8,6 +8,8 @@ import { useLanguage } from '../../i18n';
 
 export const ConsumerDashboardPage: React.FC = () => {
   const { currentUser } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { apis, subscriptions, apiKeys, requestLogs, budget } = useApp();
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -31,10 +33,10 @@ export const ConsumerDashboardPage: React.FC = () => {
               {t('Consumer Workspace')}
             </span>
             <span className="text-body-sm text-on-surface-variant font-code-md">
-              ID: {currentUser.id}
+              ID: {user.id}
             </span>
           </div>
-          <h1 className="text-headline-lg font-bold text-on-surface">{t('Welcome back,')} {currentUser.name}</h1>
+          <h1 className="text-headline-lg font-bold text-on-surface">{t('Welcome back,')} {user.name}</h1>
           <p className="text-body-md text-on-surface-variant">
             {t('Monitor active subscriptions, credential consumption, and real-time Gateway telemetry.')}
           </p>

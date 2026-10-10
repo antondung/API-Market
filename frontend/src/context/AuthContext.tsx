@@ -12,20 +12,22 @@ import {
   backendRoleToFrontend,
   frontendRoleToBackend,
   getSavedTokens,
+  clearTokens,
   formatBackendErrorMessage,
   type BackendUser
 } from '../services/authApi';
 
 export interface AuthContextType {
-  currentUser: User;
-  user: User;
+  currentUser: User | null;
+  user: User | null;
   isAuthenticated: boolean;
+  sessionReady: boolean;
   backendOnline: boolean;
   isBackendMode: boolean;
   setIsBackendMode: (val: boolean) => void;
   checkBackendConnection: () => Promise<boolean>;
   switchRole: (role: UserRole) => void;
-  setCurrentUser: (user: User) => void;
+  setCurrentUser: (user: User | null) => void;
   login: (emailOrRole: string, role?: UserRole) => { success: boolean; error?: string };
   loginWithBackend: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   registerWithBackend: (params: { email: string; password: string; role: 'Consumer' | 'Provider'; name?: string }) => Promise<{ success: boolean; error?: string; user?: BackendUser }>;
@@ -35,21 +37,28 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/** Chuyển dữ liệu user từ backend sang kiểu User của frontend. */
+const toFrontendUser = (me: BackendUser): User => ({
+  id: me.id,
+  email: me.email,
+  name: me.name || me.email.split('@')[0],
+  role: backendRoleToFrontend(me.role),
+  company: 'API Market Community',
+  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+  status: 'Active',
+  twoFactorEnabled: false,
+  quotaUsedPercent: 0,
+  createdAt: new Date().toISOString(),
+  lastLoginAt: new Date().toISOString(),
+});
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const [isBackendMode, setIsBackendMode] = useState<boolean>(true);
 
-  const [currentUser, setCurrentUser] = useState<User>(() => {
-    const saved = localStorage.getItem('apihub_current_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
-    }
-    return INITIAL_USERS[0]; // Alex Vance (Consumer)
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [sessionReady, setSessionReady] = useState<boolean>(false);
 
   const checkBackendConnection = async (): Promise<boolean> => {
     try {
@@ -63,36 +72,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Check backend health & attempt restoring session on initial load
+  // Khôi phục phiên khi tải trang.
+  // - Có token backend: xác nhận với /me rồi mới đánh dấu đã xác thực.
+  // - Chế độ dev không có token: khôi phục từ phiên mẫu đã lưu.
+  //
+  // Lưu ý: React StrictMode chạy effect hai lần ở môi trường dev. Việc đọc
+  // localStorage và set state ở đây là idempotent nên an toàn khi chạy lại;
+  // không dùng cờ "mounted" cho các set state này để tránh mất phiên đã khôi phục.
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
     (async () => {
       const online = await checkBackendConnection();
-      if (!mounted) return;
+      if (cancelled) return;
 
-      if (online && getSavedTokens()) {
-        try {
-          const me = await getMe();
-          if (!mounted) return;
-          const mappedRole = backendRoleToFrontend(me.role);
-          const mappedUser: User = {
-            id: me.id,
-            email: me.email,
-            name: me.name || me.email.split('@')[0],
-            role: mappedRole,
-            company: 'API Market Community',
-            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-            status: 'Active',
-            twoFactorEnabled: false,
-            quotaUsedPercent: 0,
-            createdAt: new Date().toISOString(),
-            lastLoginAt: new Date().toISOString()
-          };
-          setCurrentUser(mappedUser);
-        } catch {
-          // session expired, fallback silently
+      if (getSavedTokens()) {
+        if (online) {
+          try {
+            const me = await getMe();
+            if (cancelled) return;
+            setCurrentUser(toFrontendUser(me));
+            setIsAuthenticated(true);
+          } catch {
+            // Token hết hạn hoặc không hợp lệ: xóa và coi như chưa đăng nhập.
+            clearTokens();
+            if (cancelled) return;
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+          }
+        } else {
+          // Không xác nhận được phiên khi backend chưa sẵn sàng.
+          clearTokens();
+          if (cancelled) return;
+          setCurrentUser(null);
+          setIsAuthenticated(false);
+        }
+      } else if (import.meta.env.DEV) {
+        // Phiên đăng nhập nhanh ở dev: khôi phục từ bản ghi đã lưu.
+        const saved = localStorage.getItem('apihub_current_user');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved) as User | null;
+            if (parsed?.id) {
+              setCurrentUser(parsed);
+              setIsAuthenticated(true);
+            }
+          } catch {
+            localStorage.removeItem('apihub_current_user');
+          }
         }
       }
+
+      if (!cancelled) setSessionReady(true);
     })();
 
     const interval = setInterval(() => {
@@ -100,45 +130,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 15000);
 
     return () => {
-      mounted = false;
+      cancelled = true;
       clearInterval(interval);
     };
   }, []);
 
+  // Chỉ ghi lại phiên khi đã khôi phục xong và có người dùng.
+  // Trước đây effect này chạy ngay khi mount với currentUser = null, ghi null
+  // đè lên phiên đã lưu và làm mất đăng nhập sau mỗi lần tải lại trang (BUG-01).
   useEffect(() => {
-    localStorage.setItem('apihub_current_user', JSON.stringify(currentUser));
-  }, [currentUser]);
+    if (!sessionReady) return;
+    if (currentUser) {
+      localStorage.setItem('apihub_current_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('apihub_current_user');
+    }
+  }, [currentUser, sessionReady]);
 
   const switchRole = (role: UserRole) => {
-    const matched = INITIAL_USERS.find(u => u.role === role);
-    if (matched) {
-      setCurrentUser(matched);
-    } else {
-      setCurrentUser(prev => ({
-        ...prev,
-        role: role
-      }));
-    }
+    setCurrentUser(prev => {
+      if (!prev) return prev;
+      return INITIAL_USERS.find(u => u.role === role) ?? { ...prev, role };
+    });
   };
 
   const loginWithBackend = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
     try {
       const tokens = await apiLogin({ email, password });
-      const mappedRole = backendRoleToFrontend(tokens.user.role);
-      const userObj: User = {
-        id: tokens.user.id,
-        email: tokens.user.email,
-        name: tokens.user.name,
-        role: mappedRole,
-        company: 'API Market Hub',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-        status: 'Active',
-        twoFactorEnabled: false,
-        quotaUsedPercent: 0,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString()
-      };
+      const userObj = toFrontendUser(tokens.user);
       setCurrentUser(userObj);
+      setIsAuthenticated(true);
       setBackendOnline(true);
       return { success: true, user: userObj };
     } catch (err) {
@@ -170,7 +191,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /**
+   * Đăng nhập bằng dữ liệu mẫu, chỉ dùng cho môi trường development.
+   * Ở production hàm này luôn thất bại để không tạo phiên giả.
+   */
   const login = (emailOrRole: string, preferredRole?: UserRole): { success: boolean; error?: string } => {
+    if (!import.meta.env.DEV) {
+      return { success: false, error: 'Chức năng đăng nhập nhanh chỉ khả dụng ở môi trường phát triển.' };
+    }
+
     let currentUsersList = INITIAL_USERS;
     const savedUsers = localStorage.getItem('apihub_users');
     if (savedUsers) {
@@ -187,12 +216,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Tài khoản của bạn đã bị khóa bởi Quản trị viên (Account Locked). Vui lòng liên hệ Admin để mở khóa.' };
       }
       setCurrentUser(matched);
+      setIsAuthenticated(true);
       return { success: true };
     }
 
     if (preferredRole && currentUsersList.some(u => u.role === preferredRole)) {
       const u = currentUsersList.find(u => u.role === preferredRole)!;
       setCurrentUser(u);
+      setIsAuthenticated(true);
       return { success: true };
     }
 
@@ -204,7 +235,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     apiLogout();
-    setCurrentUser(INITIAL_USERS[0]);
+    clearTokens();
+    localStorage.removeItem('apihub_current_user');
+    setCurrentUser(null);
+    setIsAuthenticated(false);
   };
 
   return (
@@ -212,7 +246,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         user: currentUser,
-        isAuthenticated: true,
+        isAuthenticated,
+        sessionReady,
         backendOnline,
         isBackendMode,
         setIsBackendMode,

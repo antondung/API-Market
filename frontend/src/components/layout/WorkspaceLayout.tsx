@@ -20,6 +20,9 @@ interface WorkspaceLayoutProps {
 
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) => {
   const { currentUser, switchRole } = useAuth();
+  // ProtectedRoute da bao dam co nguoi dung, gia tri mac dinh chi de TypeScript hieu.
+  const role = currentUser?.role ?? 'USER';
+  const userName = currentUser?.name ?? '';
   const { notifications, markNotificationRead, markAllNotificationsRead } = useApp();
   const { t } = useLanguage();
   const location = useLocation();
@@ -160,8 +163,8 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
             </div>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
-                <p className="text-body-sm font-medium text-on-surface truncate">{currentUser.name}</p>
-                <p className="text-[11px] font-code-sm text-on-surface-variant truncate uppercase">{currentUser.role}</p>
+                <p className="text-body-sm font-medium text-on-surface truncate">{userName}</p>
+                <p className="text-[11px] font-code-sm text-on-surface-variant truncate uppercase">{role}</p>
               </div>
             )}
           </div>
@@ -182,7 +185,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
               options={[
                 { value: 'consumer', label: t('Consumer Workspace'), icon: 'person' },
                 { value: 'provider', label: t('Provider Workspace'), icon: 'corporate_fare' },
-                ...(currentUser.role === 'ADMIN'
+                ...(role === 'ADMIN'
                   ? [{ value: 'admin', label: t('Admin Console') || 'Admin Console', icon: 'shield_person' }]
                   : []),
                 { value: 'marketplace', label: t('Public Marketplace') || t('Marketplace'), icon: 'storefront' },
@@ -192,17 +195,17 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
             />
 
             {/* Role Clearance Pill */}
-            {currentUser.role === 'ADMIN' && (
+            {role === 'ADMIN' && (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-container text-on-primary-container text-label-md font-semibold font-code-md">
                 <span className="material-symbols-outlined text-[14px]">shield</span> {t('System Administrator')}
               </span>
             )}
-            {currentUser.role === 'API_PROVIDER' && (
+            {role === 'API_PROVIDER' && (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 text-label-md font-medium">
                 <span className="material-symbols-outlined text-[14px]">corporate_fare</span> {t('API Provider')}
               </span>
             )}
-            {currentUser.role === 'USER' && (
+            {role === 'USER' && (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-700 border border-indigo-500/20 text-label-md font-medium">
                 <span className="material-symbols-outlined text-[14px]">person</span> {t('Developer')}
               </span>
@@ -292,7 +295,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
 
             {/* Profile Avatar */}
             <div className="w-9 h-9 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-body-sm shadow-sm">
-              {currentUser.name.charAt(0)}
+              {userName.charAt(0) || '?'}
             </div>
 
           </div>

@@ -9,10 +9,12 @@ import { useLanguage } from '../../i18n';
 export const MyApisInventoryPage: React.FC = () => {
   const { apis, submitApiForReview } = useApp();
   const { currentUser } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const myApis = apis.filter(a => a.providerId === currentUser.id);
+  const myApis = apis.filter(a => a.providerId === user.id);
 
   const handleSubmitForReview = (apiId: string) => {
     const res = submitApiForReview(apiId);
