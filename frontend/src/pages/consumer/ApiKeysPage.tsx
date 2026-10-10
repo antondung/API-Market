@@ -12,7 +12,7 @@ export const ApiKeysPage: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [selectedApiId, setSelectedApiId] = useState(apis[0]?.id || '');
-  
+
   // Show once reveal modal
   const [revealedKeySecret, setRevealedKeySecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);

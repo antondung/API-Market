@@ -90,8 +90,8 @@ export const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ className = '' }) =>
   const currentOption = ROLE_OPTIONS.find(o => o.role === currentUser.role) || ROLE_OPTIONS[0];
 
   return (
-    <div 
-      className={`relative inline-block text-left ${className}`} 
+    <div
+      className={`relative inline-block text-left ${className}`}
       ref={containerRef}
       data-no-translate="true"
     >

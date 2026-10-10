@@ -1,29 +1,29 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { 
-  ApiItem, 
-  Subscription, 
-  ApiKey, 
-  RequestLog, 
-  CostGuardBudget, 
-  CostGuardNotification, 
-  ProviderVerification, 
-  User, 
-  ReportItem, 
+import type {
+  ApiItem,
+  Subscription,
+  ApiKey,
+  RequestLog,
+  CostGuardBudget,
+  CostGuardNotification,
+  ProviderVerification,
+  User,
+  ReportItem,
   AuditLogEntry,
   HttpMethod,
   ApiStatus
 } from '../types';
-import { 
-  INITIAL_APIS, 
-  INITIAL_SUBSCRIPTIONS, 
-  INITIAL_API_KEYS, 
-  INITIAL_REQUEST_LOGS, 
-  INITIAL_BUDGET, 
-  INITIAL_NOTIFICATIONS, 
-  INITIAL_VERIFICATIONS, 
-  INITIAL_USERS, 
-  INITIAL_REPORTS, 
-  INITIAL_AUDIT_LOGS 
+import {
+  INITIAL_APIS,
+  INITIAL_SUBSCRIPTIONS,
+  INITIAL_API_KEYS,
+  INITIAL_REQUEST_LOGS,
+  INITIAL_BUDGET,
+  INITIAL_NOTIFICATIONS,
+  INITIAL_VERIFICATIONS,
+  INITIAL_USERS,
+  INITIAL_REPORTS,
+  INITIAL_AUDIT_LOGS
 } from '../data/mockData';
 
 interface GatewayCallResult {
@@ -46,7 +46,7 @@ interface AppContextType {
   reports: ReportItem[];
   auditLogs: AuditLogEntry[];
   tryGrants: Record<string, number>; // apiId -> remaining free trial calls
-  
+
   // Actions
   subscribeToPlan: (apiId: string, planId: string, userId: string) => Subscription;
   cancelSubscription: (subscriptionId: string) => void;
@@ -56,12 +56,12 @@ interface AppContextType {
   updateBudget: (newBudget: Partial<CostGuardBudget>) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
-  useTryGrant: (apiId: string) => { remaining: number; allowed: boolean };
+  consumeTryGrant: (apiId: string) => { remaining: number; allowed: boolean };
   executeGatewayCall: (
-    apiId: string, 
-    endpointPath: string, 
-    method: HttpMethod, 
-    apiKey?: string, 
+    apiId: string,
+    endpointPath: string,
+    method: HttpMethod,
+    apiKey?: string,
     requestBody?: string
   ) => Promise<GatewayCallResult>;
 
@@ -260,7 +260,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createApiKey = (name: string, apiId?: string, subscriptionId?: string) => {
     const rawSecret = `ak_live_${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
     const prefix = `${rawSecret.substring(0, 11)}...${rawSecret.substring(rawSecret.length - 4)}`;
-    
+
     const api = apis.find(a => a.id === apiId);
     const newKey: ApiKey = {
       id: `key_${Date.now()}`,
@@ -318,7 +318,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
-  const useTryGrant = (apiId: string) => {
+  const consumeTryGrant = (apiId: string) => {
     const current = tryGrants[apiId] ?? 10;
     if (current <= 0) {
       return { remaining: 0, allowed: false };
@@ -329,10 +329,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const executeGatewayCall = async (
-    apiId: string, 
-    endpointPath: string, 
-    method: HttpMethod, 
-    apiKey?: string, 
+    apiId: string,
+    endpointPath: string,
+    method: HttpMethod,
+    apiKey?: string,
     requestBody?: string
   ): Promise<GatewayCallResult> => {
     // Artificial latency simulation
@@ -491,8 +491,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'You must complete the Legal Declaration and accept Provider Agreement.' };
     }
 
-    setApis(prev => prev.map(a => a.id === apiId ? { 
-      ...a, 
+    setApis(prev => prev.map(a => a.id === apiId ? {
+      ...a,
       status: 'Submitted',
       submittedAt: new Date().toISOString()
     } : a));
@@ -530,8 +530,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const approveVerification = (verificationId: string) => {
-    setVerifications(prev => prev.map(v => v.id === verificationId ? { 
-      ...v, 
+    setVerifications(prev => prev.map(v => v.id === verificationId ? {
+      ...v,
       status: 'Verified',
       reviewedAt: new Date().toISOString()
     } : v));
@@ -539,8 +539,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const rejectVerification = (verificationId: string, reason: string) => {
-    setVerifications(prev => prev.map(v => v.id === verificationId ? { 
-      ...v, 
+    setVerifications(prev => prev.map(v => v.id === verificationId ? {
+      ...v,
       status: 'Rejected',
       rejectionReason: reason,
       reviewedAt: new Date().toISOString()
@@ -549,8 +549,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateApiStatus = (apiId: string, newStatus: ApiStatus, notes?: string) => {
-    setApis(prev => prev.map(a => a.id === apiId ? { 
-      ...a, 
+    setApis(prev => prev.map(a => a.id === apiId ? {
+      ...a,
       status: newStatus,
       publishedAt: newStatus === 'Published' ? new Date().toISOString() : a.publishedAt,
       complianceNotes: notes || a.complianceNotes
@@ -559,8 +559,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resolveReport = (reportId: string, actionTaken: string) => {
-    setReports(prev => prev.map(r => r.id === reportId ? { 
-      ...r, 
+    setReports(prev => prev.map(r => r.id === reportId ? {
+      ...r,
       status: 'Resolved',
       actionTaken
     } : r));
@@ -593,7 +593,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateBudget,
       markNotificationRead,
       markAllNotificationsRead,
-      useTryGrant,
+      consumeTryGrant,
       executeGatewayCall,
       createApi,
       updateApi,

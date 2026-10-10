@@ -75,7 +75,7 @@ export const ProfileSettingsPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[20px]">security</span>
               {t('Security & Two-Factor Authentication')}
             </h3>
-            
+
             <label className="flex items-start gap-3 p-4 rounded-xl bg-surface-container border border-outline-variant/30 cursor-pointer">
               <input
                 type="checkbox"

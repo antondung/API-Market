@@ -44,8 +44,8 @@ export const ProviderVerificationPage: React.FC = () => {
 
       {/* Current Status Banner */}
       <div className={`p-6 rounded-2xl border flex items-center justify-between ${
-        currentVer?.status === 'Verified' 
-          ? 'bg-emerald-500/10 border-emerald-500/30' 
+        currentVer?.status === 'Verified'
+          ? 'bg-emerald-500/10 border-emerald-500/30'
           : currentVer?.status === 'Pending'
           ? 'bg-amber-500/10 border-amber-500/30'
           : 'bg-surface-container-low border-outline-variant/30'
@@ -63,7 +63,7 @@ export const ProviderVerificationPage: React.FC = () => {
               {t('Verification Status:')} {t(currentVer?.status ? currentVer.status : 'Chưa nộp hồ sơ')}
             </h3>
             <p className="text-body-sm text-on-surface-variant mt-0.5">
-              {currentVer?.status === 'Verified' 
+              {currentVer?.status === 'Verified'
                 ? t('Your credentials have been validated by Admin SecOps. You have full publishing privileges.')
                 : currentVer?.status === 'Pending'
                 ? t('Your submission is queued for compliance audit in the Admin Console.')

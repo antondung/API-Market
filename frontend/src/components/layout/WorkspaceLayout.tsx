@@ -98,7 +98,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
   return (
     <div className="min-h-screen bg-surface flex flex-col">
       {/* Sidebar */}
-      <aside 
+      <aside
         className={`fixed left-0 top-0 h-full bg-surface-container-low border-r border-outline-variant/30 z-50 flex flex-col transition-all duration-300 ${
           sidebarOpen ? 'w-[280px]' : 'w-[72px]'
         }`}
@@ -170,10 +170,10 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
 
       {/* Main Container */}
       <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? 'pl-[280px]' : 'pl-[72px]'}`}>
-        
+
         {/* Top Header */}
         <header className="sticky top-0 z-40 h-16 bg-surface/85 backdrop-blur-xl border-b border-outline-variant/30 flex items-center justify-between px-6 lg:px-10">
-          
+
           {/* Workspace Switcher */}
           <div className="flex items-center gap-3">
             <CustomSelect
@@ -211,7 +211,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
 
           {/* Right Header items: Language Switcher, Notifications & Quick Switch */}
           <div className="flex items-center gap-3">
-            
+
             {/* Language Switcher */}
             <LanguageSwitcher variant="dropdown" />
 
@@ -252,8 +252,8 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
                       </div>
                     ) : (
                       notifications.map(n => (
-                        <div 
-                          key={n.id} 
+                        <div
+                          key={n.id}
                           onClick={() => markNotificationRead(n.id)}
                           className={`p-4 transition-colors cursor-pointer hover:bg-surface-container-low ${
                             !n.read ? 'bg-primary/5' : ''

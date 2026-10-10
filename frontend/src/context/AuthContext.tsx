@@ -2,18 +2,18 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User, UserRole } from '../types';
 import { INITIAL_USERS } from '../data/mockData';
 
-import { 
-  checkBackendHealth, 
-  login as apiLogin, 
-  register as apiRegister, 
-  logout as apiLogout, 
-  getMe, 
-  checkRoleAccess, 
-  backendRoleToFrontend, 
+import {
+  checkBackendHealth,
+  login as apiLogin,
+  register as apiRegister,
+  logout as apiLogout,
+  getMe,
+  checkRoleAccess,
+  backendRoleToFrontend,
   frontendRoleToBackend,
-  getSavedTokens, 
+  getSavedTokens,
   formatBackendErrorMessage,
-  type BackendUser 
+  type BackendUser
 } from '../services/authApi';
 
 export interface AuthContextType {
@@ -196,9 +196,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     }
 
-    return { 
-      success: false, 
-      error: 'Không tìm thấy tài khoản tương ứng với email đã nhập. Vui lòng kiểm tra lại hoặc tạo tài khoản mới.' 
+    return {
+      success: false,
+      error: 'Không tìm thấy tài khoản tương ứng với email đã nhập. Vui lòng kiểm tra lại hoặc tạo tài khoản mới.'
     };
   };
 

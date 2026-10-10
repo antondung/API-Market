@@ -119,7 +119,7 @@ export const CostGuardPage: React.FC = () => {
               </span>
             </div>
             <div className="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden">
-              <div 
+              <div
                 className={`h-full rounded-full transition-all duration-300 ${
                   spentPercent > 80 ? 'bg-amber-500' : 'bg-emerald-600'
                 }`}
@@ -185,8 +185,8 @@ export const CostGuardPage: React.FC = () => {
                     key={n.id}
                     onClick={() => markNotificationRead(n.id)}
                     className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                      !n.read 
-                        ? 'bg-surface-container-lowest border-primary/30 shadow-sm ring-1 ring-primary/10' 
+                      !n.read
+                        ? 'bg-surface-container-lowest border-primary/30 shadow-sm ring-1 ring-primary/10'
                         : 'bg-surface-container border-outline-variant/20'
                     }`}
                   >

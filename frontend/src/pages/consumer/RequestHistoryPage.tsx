@@ -97,8 +97,8 @@ export const RequestHistoryPage: React.FC = () => {
               </tr>
             ) : (
               filteredLogs.map(log => (
-                <tr 
-                  key={log.id} 
+                <tr
+                  key={log.id}
                   onClick={() => setActiveLog(log)}
                   className="hover:bg-surface-container/60 transition-colors cursor-pointer"
                 >

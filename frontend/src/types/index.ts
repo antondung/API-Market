@@ -16,7 +16,7 @@ export interface User {
   quotaUsedPercent: number;
 }
 
-export type ApiCategory = 
+export type ApiCategory =
   | 'Machine Learning & AI'
   | 'Finance & Banking'
   | 'Data & Web Scraping'
@@ -25,13 +25,13 @@ export type ApiCategory =
   | 'Weather & Geo'
   | 'Security & Auth';
 
-export type ApiStatus = 
-  | 'Draft' 
-  | 'Submitted' 
-  | 'UnderReview' 
-  | 'Approved' 
-  | 'Published' 
-  | 'Suspended' 
+export type ApiStatus =
+  | 'Draft'
+  | 'Submitted'
+  | 'UnderReview'
+  | 'Approved'
+  | 'Published'
+  | 'Suspended'
   | 'Removed';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';

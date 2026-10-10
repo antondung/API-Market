@@ -125,7 +125,7 @@ export const ConsumerDashboardPage: React.FC = () => {
               </span>
             </div>
             <div className="w-full bg-surface-container-high h-2 rounded-full mt-3 overflow-hidden">
-              <div 
+              <div
                 className="bg-primary h-full rounded-full transition-all duration-300"
                 style={{ width: `${100 - quotaRemainingPercent}%` }}
               />
@@ -157,7 +157,7 @@ export const ConsumerDashboardPage: React.FC = () => {
               </span>
             </div>
             <div className="w-full bg-surface-container-high h-2 rounded-full mt-3 overflow-hidden">
-              <div 
+              <div
                 className="bg-emerald-600 h-full rounded-full transition-all duration-300"
                 style={{ width: `${Math.min(100, (budget.spentUsd / budget.monthlyBudgetUsd) * 100)}%` }}
               />
