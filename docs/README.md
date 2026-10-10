@@ -1,32 +1,28 @@
-# Tài liệu dự án — API Marketplace & Management
+# API Hub — Documentation Index
 
-Nền tảng API Marketplace & Management: nơi nhà phát triển **đăng tải, quản lý, chia sẻ và thương mại hóa API**, đồng thời người dùng có thể **tìm kiếm, dùng thử, đăng ký và theo dõi việc sử dụng API** theo gói Free/Paid.
+> **Status**: Frontend complete (production-ready). Backend integration pending.
 
-## Mục lục
+## Documents
 
-| # | Tài liệu | Nội dung |
-|---|---|---|
-| 01 | [Kiến trúc hệ thống](./01-kien-truc-he-thong.md) | Control Plane – Data Plane – Background Worker, tech stack, luồng request, mô hình dữ liệu, bảo mật, CI/CD, rủi ro |
-| 02 | [Role & phân quyền](./02-role-va-phan-quyen.md) | 3 role hệ thống, Role Matrix, ma trận chặn truy cập, 5 vai trò thành viên, RACI, quy tắc chung |
-| 03 | [Quy trình làm việc](./03-quy-trinh-lam-viec.md) | Quy ước Git, CI/CD, quy ước code, QA & quản lý bug, nhịp sprint, checklist merge/release |
+| File | Purpose |
+|------|---------|
+| [architecture.md](./architecture.md) | System architecture, tech stack, component map |
+| [auth-and-roles.md](./auth-and-roles.md) | Auth flow, roles, route guards, access control |
+| [api-contracts.md](./api-contracts.md) | All REST endpoints the frontend expects from the backend |
+| [data-models.md](./data-models.md) | TypeScript types / database schema reference |
+| [frontend-guide.md](./frontend-guide.md) | Frontend codebase structure, conventions, state management |
+| [i18n.md](./i18n.md) | Internationalization system (VI/EN) |
 
-## Tóm tắt nhanh
+## Quick Start
 
-**Sản phẩm:** Marketplace + API Management + Playground + Analytics + Subscription trong một hệ thống.
+```bash
+# Frontend dev server
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
 
-**Hành trình người dùng:** Tìm → Test → Đăng ký → Tích hợp → Theo dõi.
-
-**Tech stack:** React + TypeScript · Node.js + Express 5 + TypeScript · PostgreSQL · Redis · Docker · GitHub Actions.
-
-**Kiến trúc:** Control Plane (Backend API) – Data Plane (API Gateway) – Background Worker.
-
-**3 role hệ thống:** `ADMIN` · `USER` (Consumer) · `API_PROVIDER` (Provider).
-
-**5 vai trò thành viên:** Tech Lead/Fullstack/DevOps · Backend · Frontend · Database · QA/Documentation.
-
-**Phạm vi:** 5 sprint (05/10 → 15/11), 48 mục backlog, 260 điểm effort, feature freeze hết Sprint 4.
-
-## Nguồn
-
-- `Nhóm LLM (1).pdf` — 22 trang: phân chia nhiệm vụ, ý tưởng sản phẩm, vision, phân tích kỹ thuật, định hướng phát triển, pháp lý, sprint, product backlog.
-- `Product_Backlog_5_Sprint.xlsx` — 5 sheet: Tổng quan Sprint, Product Backlog, Nhiệm vụ theo người, Tải theo thành viên, Ghi chú & giả định.
+# Default demo accounts (mock-only, remove after real auth)
+# admin@apihub.vn  / password: any
+# provider@apihub.vn / password: any
+# user@apihub.vn / password: any
+```
