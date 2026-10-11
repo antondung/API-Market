@@ -1,0 +1,1293 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "API Market — Sprint 2 Provider proposal",
+    "version": "0.1.0",
+    "description": "DESIGN CONTRACT ONLY. These routes are not mounted yet; PostgreSQL Sprint 2 schema, QA acceptance and shared contracts await handoff. Provider owner required; creation requires Verified; mutations require Draft. Admin review routes belong to Dũng."
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "verification": {
+        "type": "object",
+        "properties": {
+          "organizationName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "contactEmail": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "evidenceUrls": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "required": [
+          "organizationName",
+          "contactEmail",
+          "evidenceUrls"
+        ],
+        "additionalProperties": false
+      },
+      "api": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tags": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            }
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "category",
+          "baseUrl",
+          "tags"
+        ],
+        "additionalProperties": false
+      },
+      "version": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "changelog": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        },
+        "required": [
+          "version",
+          "changelog"
+        ],
+        "additionalProperties": false
+      },
+      "endpoint": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "HEAD",
+              "OPTIONS",
+              "TRACE"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "pattern": "^\\/"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "description"
+        ],
+        "additionalProperties": false
+      },
+      "plan": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "Free",
+              "Basic",
+              "Pro"
+            ]
+          },
+          "priceMonthly": {
+            "type": "number",
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "quota": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "rateLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          }
+        },
+        "required": [
+          "name",
+          "priceMonthly",
+          "currency",
+          "quota",
+          "rateLimit"
+        ],
+        "additionalProperties": false
+      },
+      "legal": {
+        "type": "object",
+        "properties": {
+          "ownershipDeclaration": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "distributionRights": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "dataClassification": {
+            "type": "string",
+            "enum": [
+              "Public",
+              "Internal",
+              "Confidential",
+              "Restricted"
+            ]
+          },
+          "agreementVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ownershipDeclaration",
+          "distributionRights",
+          "dataClassification",
+          "agreementVersion",
+          "accepted"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "paths": {
+    "/api/provider/verification": {
+      "get": {
+        "summary": "Get current verification",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "post": {
+        "summary": "Submit verification",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/verification"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis": {
+      "get": {
+        "summary": "List own APIs",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Draft API (Verified only)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/api"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}": {
+      "get": {
+        "summary": "Get own API",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "put": {
+        "summary": "Replace Draft metadata",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/api"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/versions": {
+      "get": {
+        "summary": "List versions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Draft version",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/version"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/endpoints": {
+      "get": {
+        "summary": "List endpoints",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Draft endpoint",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/endpoint"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/endpoints/{eid}": {
+      "put": {
+        "summary": "Replace Draft endpoint",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/endpoint"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Draft endpoint",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/import-openapi": {
+      "post": {
+        "summary": "Import JSON/YAML into Draft",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "413": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/documentation": {
+      "get": {
+        "summary": "Read imported documentation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/plans": {
+      "get": {
+        "summary": "List plans",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Draft plan",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/plans/{pid}": {
+      "put": {
+        "summary": "Replace Draft plan",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Draft plan",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/legal": {
+      "put": {
+        "summary": "Declare rights and accept current agreement",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/legal"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      },
+      "get": {
+        "summary": "Read legal declaration",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/agreement": {
+      "get": {
+        "summary": "Get current server agreement version",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/publish-status": {
+      "get": {
+        "summary": "Get workflow status",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/submit-review": {
+      "post": {
+        "summary": "Submit complete Draft",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/reopen": {
+      "post": {
+        "summary": "Return rejected API to Draft",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-implementation-status": "awaiting-database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape pending schema handoff; data envelope"
+          },
+          "400": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "401": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "403": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "404": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          },
+          "409": {
+            "description": "Standard error envelope: error.code, message, requestId, details"
+          }
+        }
+      }
+    }
+  }
+}
