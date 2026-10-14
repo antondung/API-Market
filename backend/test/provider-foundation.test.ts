@@ -68,6 +68,11 @@ test('invalid imports report locations and reject external refs, cycles, aliases
   await assert.rejects(importOpenApi(JSON.stringify({ openapi: '3.0.3', paths: {} })), ImportError);
   const pathMissing = spec(); pathMissing.paths['/items/{id}'].parameters = [];
   await assert.rejects(importOpenApi(JSON.stringify(pathMissing)), error => error instanceof ImportError && error.details[0]!.field.includes('/parameters'));
+  const amplified = spec();
+  const definitions: Record<string, any> = { Layer0: { type: 'string' } };
+  for (let i = 1; i <= 17; i++) definitions[`Layer${i}`] = { type: 'object', properties: { left: { $ref: `#/components/schemas/Layer${i - 1}` }, right: { $ref: `#/components/schemas/Layer${i - 1}` } } };
+  amplified.components.schemas = { ...definitions, Item: { $ref: '#/components/schemas/Layer17' } } as any;
+  await assert.rejects(importOpenApi(JSON.stringify(amplified)), error => error instanceof ImportError && error.details[0]!.message.includes('limit exceeded'));
 });
 test('proposal contains Provider contracts and no Admin handlers', () => {
   assert.ok(providerContract.paths['/api/provider/apis/{id}/submit-review']);

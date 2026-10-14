@@ -2,12 +2,13 @@ import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { ApiError } from './auth.js';
-import { providerSchemas } from './provider-domain.js';
+import { providerSchemas, validateProviderJson } from './provider-domain.js';
 import { ProviderService } from './provider-service.js';
 
 export function providerRouter(service: ProviderService, authenticate: RequestHandler, providerRole: RequestHandler) {
   const router = Router();
   router.use(authenticate, providerRole, (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+  router.use((req, _res, next) => { validateProviderJson(req.body); next(); });
   const actor = (res: any): string => res.locals.identity.user.id;
   const pagination = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20) }).strict();
   router.get('/agreement', async (_req, res) => { res.json({ data: await service.agreement() }); });
@@ -44,7 +45,10 @@ export function providerRouter(service: ProviderService, authenticate: RequestHa
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024, files: 1, fields: 1, fieldSize: 64, parts: 2 } });
   router.post('/apis/:id/import-openapi', async (req, res, next) => {
     await service.get(actor(res), String(req.params.id)); next();
-  }, upload.single('file'), async (req, res) => {
+  }, (req, res, next) => {
+    upload.single('file')(req, res, error => next(error && !(error instanceof multer.MulterError)
+      ? new ApiError(400, 'IMPORT_UPLOAD_INVALID', 'Malformed multipart upload') : error));
+  }, async (req, res) => {
     const input = z.object({ versionId: z.string().regex(/^[1-9][0-9]{0,9}$/) }).strict().parse(req.body);
     if (!req.file) throw new ApiError(400, 'IMPORT_FILE_REQUIRED', 'Upload a file field');
     if (!/\.(json|ya?ml)$/i.test(req.file.originalname)) throw new ApiError(415, 'IMPORT_FILE_TYPE', 'Use a JSON or YAML file');

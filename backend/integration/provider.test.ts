@@ -68,6 +68,8 @@ test('verification is Pending until Admin review, rejects duplicate and allows r
     await request(f.app).post('/api/provider/verification').set('Authorization', bearer(token)).send({ ...payload, status: 'Verified' }).expect(400);
     await request(f.app).post('/api/provider/verification').set('Authorization', bearer(token)).send(payload).expect(409);
     await f.store.pool.query("UPDATE provider_verifications SET status='Rejected',reject_reason='Missing evidence',reviewed_at=NOW(),reviewed_by=$1 WHERE id=$2", [f.admin, verification.id]);
+    const rejected = await request(f.app).get('/api/provider/verification').set('Authorization', bearer(token)).expect(200);
+    assert.equal(rejected.body.data.reviewedBy, String(f.admin));
     await request(f.app).post('/api/provider/verification').set('Authorization', bearer(token)).send(payload).expect(201);
     await request(f.app).post('/api/provider/apis').set('Authorization', bearer(token)).send(metadata).expect(403);
   } finally { await f.close(); }
@@ -180,5 +182,46 @@ test('manual endpoint changes invalidate docs and migration + seed rerun retain 
     await f.store.migrate(true, true); await f.store.migrate(true, true);
     assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 4);
     assert.equal((await f.store.pool.query("SELECT COUNT(*)::int AS n FROM apis WHERE name IN ('Weather Now API','Currency Rates API','Product Catalog API')")).rows[0].n, 3);
+  } finally { await f.close(); }
+});
+
+test('truncated multipart is a client error instead of 500', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await create(f);
+    await request(f.app).post(`${r.path}/import-openapi`).set('Authorization', bearer(r.token))
+      .set('Content-Type', 'multipart/form-data; boundary=broken')
+      .send('--broken\r\nContent-Disposition: form-data; name="file"; filename="x.yaml"\r\n\r\nopenapi: 3.0.3').expect(400);
+  } finally { await f.close(); }
+});
+
+test('invalid NUL characters cannot turn Provider input or imported JSONB into server errors', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await create(f);
+    await request(f.app).put(r.path).set('Authorization', bearer(r.token)).send({ ...metadata, name: 'Bad\u0000name' }).expect(400);
+    const input = JSON.parse(readFileSync('mock-services/weather/openapi.json', 'utf8'));
+    input.info.description = 'Bad\u0000description';
+    await request(f.app).post(`${r.path}/import-openapi`).set('Authorization', bearer(r.token))
+      .field('versionId', r.version.id).attach('file', Buffer.from(JSON.stringify(input)), 'demo.json').expect(400);
+  } finally { await f.close(); }
+});
+
+test('manual content edits clear cached version OpenAPI and submission requires docs for every endpoint', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await ready(f);
+    await request(f.app).post(`${r.path}/endpoints`).set('Authorization', bearer(r.token)).send({ versionId: r.version.id, method: 'GET', path: '/extra', description: 'Extra' }).expect(201);
+    const versions = await request(f.app).get(`${r.path}/versions`).set('Authorization', bearer(r.token)).expect(200);
+    assert.equal(versions.body.data[0].openapiDocument, null);
+    // Reimport v1, then add an endpoint in v2. A valid v1 must not hide undocumented v2.
+    await request(f.app).post(`${r.path}/import-openapi`).set('Authorization', bearer(r.token)).field('versionId', r.version.id).attach('file', Buffer.from(spec), 'demo.yaml').expect(200);
+    const v2 = await f.service.addVersion(f.users[0]!.id, r.api.id, { version: 'v2', changelog: 'Second' });
+    await f.store.pool.query("INSERT INTO api_endpoints(api_id,version_id,method,path,description) VALUES($1,$2,'GET','/undocumented','Missing docs')", [r.api.id, v2.id]);
+    await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
+    await f.store.pool.query('DELETE FROM api_endpoints WHERE version_id=$1', [v2.id]);
+    // An existing documentation row with no operations is still incomplete.
+    await f.store.pool.query("UPDATE api_documentations SET content='{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"Placeholder\",\"version\":\"v1\"}}'::jsonb WHERE api_id=$1", [r.api.id]);
+    await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
   } finally { await f.close(); }
 });

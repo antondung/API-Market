@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ApiError } from './auth.js';
 
 // Request contracts only: IDs, persistence and agreement version come from the server.
-const text = (max: number) => z.string().trim().min(1).max(max);
+const text = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\u0000]*$/, 'NUL characters are not allowed');
 const url = z.string().url().refine(value => ['http:', 'https:'].includes(new URL(value).protocol), 'HTTP(S) URL required');
 export const providerSchemas = {
   verification: z.object({ organizationName: text(200), contactEmail: z.string().email().max(254), evidenceUrls: z.array(url).min(1).max(10) }).strict(),
@@ -14,6 +14,14 @@ export const providerSchemas = {
 };
 export type ApiState = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Published' | 'Rejected';
 export type VerificationState = 'Pending' | 'Verified' | 'Rejected';
+export function validateProviderJson(input: unknown) {
+  const visit = (value: unknown, depth: number) => {
+    if (depth > 64) throw new ApiError(400, 'INVALID_INPUT', 'Input nesting limit exceeded');
+    if (typeof value === 'string' && value.includes('\u0000')) throw new ApiError(400, 'INVALID_INPUT', 'NUL characters are not allowed');
+    if (value && typeof value === 'object') for (const [key, child] of Object.entries(value)) { visit(key, depth + 1); visit(child, depth + 1); }
+  };
+  visit(input, 0);
+}
 export function requireProviderOwner(role: string, actorId: string, ownerId: string) {
   if (role !== 'Provider' || actorId !== ownerId) throw new ApiError(403, 'FORBIDDEN', 'Provider owner required');
 }

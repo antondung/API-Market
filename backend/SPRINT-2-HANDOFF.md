@@ -48,7 +48,9 @@ CLI parse độc lập: `npm run provider:import -- mock-services/weather/openap
 
 ## Kiểm tra
 
-56 test backend pass: 37 unit/HTTP và 19 integration PostgreSQL thật (8 test Provider mới). Kiểm tra CRUD/ownership/version binding, Pending/Rejected/Verified, import cả ba demo Danh, multipart lỗi/quá lớn, rollback bằng lỗi DB cố ý, docs tồn tại sau reconnect, agreement server timestamp/current version, điều kiện gửi duyệt, submission cạnh tranh, freeze Submitted, reopen Rejected, migration/seed rerun. Test Admin chỉ mô phỏng cập nhật SQL trong fixture, không triển khai module Admin sản phẩm.
+59 test backend pass: 37 unit/HTTP và 22 integration PostgreSQL thật (11 test Provider mới). Kiểm tra CRUD/ownership/version binding, Pending/Rejected/Verified, import cả ba demo Danh, multipart lỗi/quá lớn, rollback bằng lỗi DB cố ý, docs tồn tại sau reconnect, agreement server timestamp/current version, điều kiện gửi duyệt, submission cạnh tranh, freeze Submitted, reopen Rejected, migration/seed rerun. Test Admin chỉ mô phỏng cập nhật SQL trong fixture, không triển khai module Admin sản phẩm.
+
+Đợt rà soát đã sửa multipart bị cắt trả 400 thay vì 500; chặn NUL trong input/JSONB import; xóa cached OpenAPI khi sửa nội dung; yêu cầu documentation cho mọi endpoint ở mọi version trước gửi duyệt. Parser giới hạn graph sau dereference trước validate/serialize để chặn local refs phóng đại dữ liệu. reviewedBy trả ID string đúng contract. Test hồi quy tái hiện lỗi và xác nhận bản sửa; schema Danh giữ nguyên.
 
 `npm test`, `npm run lint`, `npm run build`, `scripts/kiem-tra-kho-ma-nguon.ps1` và `git diff --check` dùng để kiểm tra lại. Runner tạo PostgreSQL tạm hoặc dùng PG_TEST_URL cho DB test riêng; bootstrap pgcrypto trước khi các file test chạy song song. Kết quả CI đúng commit bàn giao được dẫn trong PR #49 và issue #7.
 

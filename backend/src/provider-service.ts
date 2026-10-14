@@ -11,7 +11,7 @@ function id(value: string) {
 }
 const missing = () => new ApiError(404, 'NOT_FOUND', 'Resource not found');
 const row = (r: Record<string, any>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()),
-  v instanceof Date ? v.toISOString() : /(^id$|_id$)/.test(k) && v !== null ? String(v) : ['price_monthly', 'quota'].includes(k) ? Number(v) : v]));
+  v instanceof Date ? v.toISOString() : (/^id$|_id$/.test(k) || k === 'reviewed_by') && v !== null ? String(v) : ['price_monthly', 'quota'].includes(k) ? Number(v) : v]));
 type Input = Record<string, any>;
 export class ProviderService {
   constructor(readonly pool: Pool) {}
@@ -88,6 +88,7 @@ export class ProviderService {
     return this.transaction(actor, async (c, p) => {
       await this.owned(c, p, api, true); await this.version(c, api, version);
       await c.query('DELETE FROM api_documentations WHERE version_id=$1 AND api_id=$2', [version, api]);
+      await c.query('UPDATE api_versions SET openapi_document=NULL WHERE id=$1 AND api_id=$2', [version, api]);
       return row((await c.query('UPDATE api_versions SET version=$1,changelog=$2,updated_at=NOW() WHERE id=$3 AND api_id=$4 RETURNING *', [input.version, input.changelog, version, api])).rows[0]);
     });
   }
@@ -107,6 +108,7 @@ export class ProviderService {
       if (!result.rows[0]) throw missing();
       // Manual edits invalidate imported docs; require a fresh import before submission.
       await c.query('DELETE FROM api_documentations WHERE api_id=$1', [api]);
+      await c.query('UPDATE api_versions SET openapi_document=NULL WHERE api_id=$1', [api]);
       return row(result.rows[0]);
     });
   }
@@ -125,7 +127,10 @@ export class ProviderService {
       await this.owned(c, p, api, true);
       const table = kind === 'endpoints' ? 'api_endpoints' : 'api_plans';
       if (!(await c.query(`DELETE FROM ${table} WHERE id=$1 AND api_id=$2`, [id(child), api])).rowCount) throw missing();
-      if (kind === 'endpoints') await c.query('DELETE FROM api_documentations WHERE api_id=$1', [api]);
+      if (kind === 'endpoints') {
+        await c.query('DELETE FROM api_documentations WHERE api_id=$1', [api]);
+        await c.query('UPDATE api_versions SET openapi_document=NULL WHERE api_id=$1', [api]);
+      }
     });
   }
   async agreement() {
@@ -167,11 +172,11 @@ export class ProviderService {
       if (!agreement) throw new ApiError(409, 'AGREEMENT_UNAVAILABLE', 'No current agreement configured');
       const legal = (await c.query('SELECT agreement_id FROM api_legal_declarations WHERE api_id=$1', [api])).rows[0];
       // An endpoint and its documentation must belong to the same version.
-      const content = (await c.query('SELECT COUNT(*)::int AS n FROM api_endpoints e JOIN api_documentations d ON d.version_id=e.version_id AND d.api_id=e.api_id WHERE e.api_id=$1', [api])).rows[0];
+      const content = (await c.query("SELECT COUNT(*)::int AS n, COUNT(d.id) FILTER (WHERE d.content->'paths'->e.path->LOWER(e.method) IS NOT NULL)::int AS documented FROM api_endpoints e LEFT JOIN api_documentations d ON d.version_id=e.version_id AND d.api_id=e.api_id WHERE e.api_id=$1", [api])).rows[0];
       const plans = (await c.query('SELECT COUNT(*)::int AS n FROM api_plans WHERE api_id=$1 AND is_active', [api])).rows[0];
       submitApi(record.status as ApiState, { verification: (verification?.status ?? 'Pending') as VerificationState,
         metadata: !!(record.name && record.description && record.category && record.base_url), endpoints: content.n,
-        documentation: content.n > 0, plans: plans.n, legal: !!legal,
+        documentation: content.n > 0 && content.documented === content.n, plans: plans.n, legal: !!legal,
         acceptedAgreementVersion: legal?.agreement_id === agreement.id ? agreement.version : undefined, currentAgreementVersion: agreement.version });
       return row((await c.query("UPDATE apis SET status='Submitted' WHERE id=$1 RETURNING *", [api])).rows[0]);
     });

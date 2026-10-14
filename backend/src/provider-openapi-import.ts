@@ -18,12 +18,19 @@ export async function importOpenApi(source: string) {
   if (document.swagger !== '2.0' && !/^3\.0\.\d+$/.test(document.openapi ?? '')) throw new ImportError([{ field: '/openapi', message: 'Supported versions: Swagger 2.0 and OpenAPI 3.0.x' }]);
   const issues: { field: string; message: string }[] = [];
   let nodes = 0;
+  let stringBytes = 0;
   const walk = (value: any, path: string, depth: number, ancestors: Set<object>) => {
     if (++nodes > 50000 || depth > 64) throw new ImportError([{ field: path, message: 'Document complexity limit exceeded' }]);
+    if (typeof value === 'string') {
+      if (value.includes('\u0000')) throw new ImportError([{ field: path, message: 'NUL characters are not allowed' }]);
+      stringBytes += Buffer.byteLength(value, 'utf8');
+      if (stringBytes > 5 * 1024 * 1024) throw new ImportError([{ field: path, message: 'Expanded document size limit exceeded' }]);
+    }
     if (!value || typeof value !== 'object') return;
     if (ancestors.has(value)) throw new ImportError([{ field: path, message: 'Recursive YAML aliases are unsupported' }]);
     const chain = new Set(ancestors).add(value);
     for (const [key, child] of Object.entries(value)) {
+      if (key.includes('\u0000')) throw new ImportError([{ field: path, message: 'NUL characters are not allowed in property names' }]);
       const field = `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`;
       if (key === '$ref' && (typeof child !== 'string' || !child.startsWith('#/'))) issues.push({ field, message: 'Only local document references are allowed' });
       walk(child, field, depth + 1, chain);
@@ -33,8 +40,13 @@ export async function importOpenApi(source: string) {
   if (issues.length) throw new ImportError(issues);
   let api: JsonObject;
   try {
-    api = await SwaggerParser.validate(document as any, { resolve: { file: false, http: false }, dereference: { circular: false } }) as JsonObject;
+    api = await SwaggerParser.dereference(document as any, { resolve: { file: false, http: false }, dereference: { circular: false } }) as JsonObject;
+    // Local refs can amplify a tiny source into a large graph. Bound it before validation/serialization.
+    nodes = 0; stringBytes = 0;
+    walk(api, '', 0, new Set());
+    await SwaggerParser.validate(api as any, { resolve: { file: false, http: false }, dereference: { circular: false } });
   } catch (error) {
+    if (error instanceof ImportError) throw error;
     const e = error as { details?: { instancePath?: string; message?: string }[]; path?: string[] };
     throw new ImportError(e.details?.length ? e.details.map(item => ({ field: item.instancePath || '$', message: item.message ?? 'Invalid specification' })) : [{ field: e.path?.join('/') || '$', message: 'Invalid schema, unresolved reference or circular reference' }]);
   }
