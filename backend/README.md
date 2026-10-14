@@ -80,4 +80,10 @@ npm run lint
 
 Cũng có thể đặt `PG_TEST_URL` đến database test riêng; test tạo/xóa schema `auth_test_*`, cài pgcrypto vào public nếu thiếu. Không trỏ test vào database production. Bộ test gồm 29 test unit/HTTP và 11 test PostgreSQL: migration trống/rerun, seed bcrypt/full guard matrix, unique email/name/BOOLEAN/identity, rollback provider, refresh cạnh tranh/persistence, user khóa/phiên hết hạn, dùng schema đã khởi tạo bằng SQL trực tiếp, và quản trị người dùng (list/search/filter/pagination, khóa/mở khóa, thu hồi phiên, guard 403, id không hợp lệ).
 
-PR #30 chờ review và QA. PR #32 của Danh là dependency schema, chưa tự merge thay Danh hoặc Tech Lead. Dữ liệu SQLite local cũ không được xóa hoặc tự chuyển sang PostgreSQL.
+PR #30 và #32 đã merge; Sprint 1 đã nghiệm thu. Dữ liệu SQLite local cũ không được xóa hoặc tự chuyển sang PostgreSQL.
+
+## Provider Sprint 2
+
+Backend PostgreSQL hiện phục vụ nhóm `/api/provider` và Swagger chung tại `/docs/`. Chạy `npm run db:migrate` trước khi startup để áp dụng schema 003 của Danh. `db:seed` explicit ở development áp dụng thêm seed 004; không dùng production.
+
+Hướng dẫn endpoint, upload OpenAPI, kết quả kiểm thử và phụ thuộc tích hợp: [SPRINT-2-HANDOFF.md](SPRINT-2-HANDOFF.md). Tổng bộ test hiện tại: 56 (37 unit/HTTP + 19 PostgreSQL). CORS hỗ trợ GET/POST/PUT/PATCH/DELETE/OPTIONS. Với AUTH_STORE=memory chỉ phục vụ Auth/Admin hiện có; Provider cần PostgreSQL thật.

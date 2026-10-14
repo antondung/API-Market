@@ -8,6 +8,11 @@ import { z } from 'zod';
 import { ApiError, AuthService } from './auth.js';
 import type { Role } from './store.js';
 import { openapi } from './openapi.js';
+import { ProviderService } from './provider-service.js';
+import { providerRouter } from './provider-router.js';
+import { ImportError } from './provider-openapi-import.js';
+import multer from 'multer';
+import { providerContract } from './provider-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -27,7 +32,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[] }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -56,15 +61,20 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
       if (allowedOrigins.has(origin)) { callback(null, origin); return; }
       callback(new ApiError(403, 'CORS_ORIGIN_DENIED', 'Origin is not allowed'));
     },
-    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
   }));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
-  app.get('/openapi.json', (_req, res) => { res.json(openapi); });
-  app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi));
+  const document = options.provider ? {
+    ...providerContract, info: { title: 'API Market — Auth and Provider', version: '0.2.0' },
+    components: { securitySchemes: openapi.components.securitySchemes, schemas: { ...openapi.components.schemas, ...providerContract.components.schemas } },
+    paths: { ...openapi.paths, ...providerContract.paths },
+  } : openapi;
+  app.get('/openapi.json', (_req, res) => { res.json(document); });
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', rateLimit({
     windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
@@ -80,6 +90,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     if (res.locals.identity.user.role !== role) throw new ApiError(403, 'FORBIDDEN', 'Insufficient permissions');
     next();
   };
+  if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   app.post('/api/auth/register', async (req, res) => {
     const input = registerSchema.parse(req.body);
     res.status(201).json({ data: await auth.register(input.email, input.password, input.role, input.name) });
@@ -122,6 +133,12 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     }
   app.use((_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'Route not found')));
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error instanceof ImportError) {
+      res.status(400).json({ error: { code: error.code, message: error.message, requestId: res.locals.requestId, details: error.details } }); return;
+    }
+    if (error instanceof multer.MulterError) {
+      res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: { code: 'IMPORT_UPLOAD_INVALID', message: error.code === 'LIMIT_FILE_SIZE' ? 'Maximum file size is 1 MiB' : 'Invalid multipart upload', requestId: res.locals.requestId } }); return;
+    }
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid request', requestId: res.locals.requestId,
         details: error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })) } });

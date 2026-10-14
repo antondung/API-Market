@@ -51,6 +51,19 @@ export async function importOpenApi(source: string) {
     });
   });
   if (!endpoints.length) throw new ImportError([{ field: '/paths', message: 'At least one operation is required' }]);
+  if (endpoints.length > 1000) throw new ImportError([{ field: '/paths', message: 'Maximum 1000 operations per import' }]);
+  const operationIds = new Set<string>();
+  for (const endpoint of endpoints) {
+    const field = `/paths/${endpoint.path.replace(/~/g, '~0').replace(/\//g, '~1')}/${endpoint.method.toLowerCase()}`;
+    if (endpoint.operationId) {
+      if (operationIds.has(endpoint.operationId)) issues.push({ field: `${field}/operationId`, message: 'Duplicate operationId' });
+      operationIds.add(endpoint.operationId);
+    }
+    for (const match of endpoint.path.matchAll(/\{([^}]+)\}/g)) {
+      if (!endpoint.parameters.some(p => p.in === 'path' && p.name === match[1] && p.required === true)) issues.push({ field: `${field}/parameters`, message: `Required path parameter missing: ${match[1]}` });
+    }
+  }
+  if (issues.length) throw new ImportError(issues);
   return { title: api.info.title as string, version: api.info.version as string,
     endpoints, documentation: JSON.parse(JSON.stringify(api)) as JsonObject };
 }

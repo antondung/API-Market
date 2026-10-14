@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "API Market — Sprint 2 Provider proposal",
-    "version": "0.1.0",
-    "description": "DESIGN CONTRACT ONLY. These routes are not mounted yet; PostgreSQL Sprint 2 schema, QA acceptance and shared contracts await handoff. Provider owner required; creation requires Verified; mutations require Draft. Admin review routes belong to Dũng."
+    "title": "API Market — Sprint 2 Provider",
+    "version": "0.2.0",
+    "description": "Implemented with PostgreSQL schema 003 from Danh. Provider owner required; creation requires Verified; mutations require Draft. Admin review routes belong to Dũng. Standard data/error envelopes; child collections return arrays, API list returns items,total,page,pageSize. Import replaces endpoints/docs for versionId atomically. Manual endpoint edits invalidate imported documentation."
   },
   "components": {
     "securitySchemes": {
@@ -109,6 +109,10 @@
       "endpoint": {
         "type": "object",
         "properties": {
+          "versionId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,9}$"
+          },
           "method": {
             "type": "string",
             "enum": [
@@ -132,12 +136,76 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 5000
-          }
+          },
+          "parameters": {
+            "default": [],
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "in": {
+                  "type": "string",
+                  "enum": [
+                    "path",
+                    "query",
+                    "header",
+                    "cookie",
+                    "body",
+                    "formData"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "schema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                }
+              },
+              "required": [
+                "name",
+                "in",
+                "required"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "requestSchema": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "responseExample": {}
         },
         "required": [
+          "versionId",
           "method",
           "path",
-          "description"
+          "description",
+          "parameters"
         ],
         "additionalProperties": false
       },
@@ -154,7 +222,8 @@
           },
           "priceMonthly": {
             "type": "number",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 999999999999.99
           },
           "currency": {
             "type": "string",
@@ -220,6 +289,369 @@
           "accepted"
         ],
         "additionalProperties": false
+      },
+      "ProviderApi": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Draft",
+              "Submitted",
+              "Under Review",
+              "Approved",
+              "Published",
+              "Rejected"
+            ]
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "approvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderVerification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "evidenceUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Pending",
+              "Verified",
+              "Rejected"
+            ]
+          },
+          "rejectReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderVersion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "apiId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "changelog": {
+            "type": "string"
+          },
+          "openapiDocument": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "apiId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "requestSchema": {},
+          "responseExample": {}
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "apiId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "enum": [
+              "Free",
+              "Basic",
+              "Pro"
+            ]
+          },
+          "priceMonthly": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "quota": {
+            "type": "integer"
+          },
+          "rateLimit": {
+            "type": "integer"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderLegal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "apiId": {
+            "type": "string"
+          },
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "type": "string"
+          },
+          "ownershipDeclaration": {
+            "type": "string"
+          },
+          "distributionRights": {
+            "type": "string"
+          },
+          "dataClassification": {
+            "type": "string"
+          },
+          "acceptedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderAgreement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "effectiveAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderDocumentation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "apiId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "content": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ProviderError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "message"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
       }
     }
   },
@@ -232,26 +664,82 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ProviderVerification"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -262,7 +750,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -275,23 +762,73 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderVerification"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -304,26 +841,121 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ProviderApi"
+                          }
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "pageSize": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "pageSize"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -334,7 +966,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -347,23 +978,73 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderApi"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -376,7 +1057,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -389,22 +1069,72 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderApi"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -415,7 +1145,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -438,22 +1167,145 @@
         },
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderApi"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete own Draft API",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -466,7 +1318,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -479,22 +1330,75 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProviderVersion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -505,7 +1409,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -527,23 +1430,262 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderVersion"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/versions/{vid}": {
+      "put": {
+        "summary": "Update Draft version",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/version"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderVersion"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Draft version and associated content",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -556,7 +1698,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -569,22 +1710,75 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProviderEndpoint"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -595,7 +1789,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -617,23 +1810,73 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderEndpoint"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -646,7 +1889,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -677,22 +1919,72 @@
         },
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderEndpoint"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -703,7 +1995,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -723,23 +2014,58 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "204": {
+            "description": "Success"
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -752,7 +2078,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -769,14 +2094,21 @@
             "multipart/form-data": {
               "schema": {
                 "type": "object",
+                "additionalProperties": false,
                 "properties": {
                   "file": {
                     "type": "string",
-                    "format": "binary"
+                    "format": "binary",
+                    "description": "JSON/YAML, max 1 MiB, internal refs only"
+                  },
+                  "versionId": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{0,9}$"
                   }
                 },
                 "required": [
-                  "file"
+                  "file",
+                  "versionId"
                 ]
               }
             }
@@ -784,25 +2116,108 @@
         },
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "versionId": {
+                          "type": "string"
+                        },
+                        "endpointCount": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "versionId",
+                        "endpointCount",
+                        "title"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "413": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -815,7 +2230,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -828,22 +2242,75 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProviderDocumentation"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -856,7 +2323,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -869,22 +2335,75 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProviderPlan"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -895,7 +2414,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -917,23 +2435,73 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderPlan"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -946,7 +2514,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -977,22 +2544,72 @@
         },
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderPlan"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -1003,7 +2620,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -1023,23 +2639,58 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+          "204": {
+            "description": "Success"
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -1052,7 +2703,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -1075,22 +2725,79 @@
         },
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ProviderLegal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       },
@@ -1101,7 +2808,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -1114,22 +2820,79 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ProviderLegal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -1142,26 +2905,75 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderAgreement"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -1174,7 +2986,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -1187,22 +2998,104 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "submittedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "approvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -1215,7 +3108,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -1228,22 +3120,72 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderApi"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }
@@ -1256,7 +3198,6 @@
             "bearerAuth": []
           }
         ],
-        "x-implementation-status": "awaiting-database",
         "parameters": [
           {
             "name": "id",
@@ -1269,22 +3210,72 @@
         ],
         "responses": {
           "200": {
-            "description": "Response shape pending schema handoff; data envelope"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ProviderApi"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
           },
           "400": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Standard error envelope: error.code, message, requestId, details"
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
           }
         }
       }

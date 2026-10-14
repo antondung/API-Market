@@ -66,6 +66,8 @@ test('invalid imports report locations and reject external refs, cycles, aliases
   await assert.rejects(importOpenApi('a: &a\n  child: *a\nopenapi: 3.0.3\n'), ImportError);
   await assert.rejects(importOpenApi('x'.repeat(1024 * 1024 + 1)), ImportError);
   await assert.rejects(importOpenApi(JSON.stringify({ openapi: '3.0.3', paths: {} })), ImportError);
+  const pathMissing = spec(); pathMissing.paths['/items/{id}'].parameters = [];
+  await assert.rejects(importOpenApi(JSON.stringify(pathMissing)), error => error instanceof ImportError && error.details[0]!.field.includes('/parameters'));
 });
 test('proposal contains Provider contracts and no Admin handlers', () => {
   assert.ok(providerContract.paths['/api/provider/apis/{id}/submit-review']);

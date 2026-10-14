@@ -39,14 +39,15 @@ export class PostgresAuthStore implements AuthStore {
   async ready() {
     await this.pool.query('SELECT u.id, r.name, t.token_hash FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN refresh_tokens t ON t.user_id=u.id LIMIT 0');
   }
-  async migrate(demoSeed = false) {
+  async migrate(demoSeed = false, provider = false) {
     if (demoSeed && process.env.NODE_ENV === 'production') throw new Error('Demo seed is disabled in production');
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       await client.query('SELECT pg_advisory_xact_lock(913002)');
       await client.query('CREATE TABLE IF NOT EXISTS backend_schema_migrations (name TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)');
-      const files = ['001_create_auth_schema.sql', ...(demoSeed ? ['002_seed_auth_data.sql'] : [])];
+      const files = ['001_create_auth_schema.sql', ...(demoSeed ? ['002_seed_auth_data.sql'] : []),
+        ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : [])] : [])];
       for (const name of files) {
         const source = readFileSync(resolve(migrationDir, name), 'utf8');
         const checksum = createHash('sha256').update(source.replace(/\r\n/g, '\n')).digest('hex');

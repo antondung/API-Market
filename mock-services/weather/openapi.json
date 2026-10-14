@@ -1,0 +1,18 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Weather Now API", "version": "v1", "description": "Mock API dữ liệu thời tiết phục vụ demo Sprint 2." },
+  "servers": [{ "url": "http://localhost:4011" }],
+  "paths": {
+    "/v1/weather": {
+      "get": {
+        "summary": "Lấy thời tiết theo thành phố",
+        "parameters": [{ "name": "city", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Dữ liệu thời tiết", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Weather" } } } },
+          "400": { "description": "Thiếu city" }, "404": { "description": "Không tìm thấy thành phố" }
+        }
+      }
+    }
+  },
+  "components": { "schemas": { "Weather": { "type": "object", "required": ["city", "temperatureC", "condition", "humidity"], "properties": { "city": { "type": "string" }, "temperatureC": { "type": "number" }, "condition": { "type": "string" }, "humidity": { "type": "integer" } } } } }
+}
