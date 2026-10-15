@@ -78,6 +78,7 @@ export const RegisterPage: React.FC = () => {
       usersList.push(newUser);
       localStorage.setItem('apihub_users', JSON.stringify(usersList));
       setCurrentUser(newUser);
+      login(newUser.email, selectedRole);
       setIsLoading(false);
       setSuccessMessage('Đăng ký tài khoản thành công! Đang mở không gian làm việc...');
       setTimeout(() => {

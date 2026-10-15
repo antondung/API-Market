@@ -140,7 +140,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...options,
       headers
     });
-  } catch (err: any) {
+  } catch {
     throw new ApiError(
       0,
       'NETWORK_ERROR',

@@ -10,7 +10,6 @@ import {
   getMe,
   checkRoleAccess,
   backendRoleToFrontend,
-  frontendRoleToBackend,
   getSavedTokens,
   formatBackendErrorMessage,
   type BackendUser
@@ -24,9 +23,8 @@ export interface AuthContextType {
   isBackendMode: boolean;
   setIsBackendMode: (val: boolean) => void;
   checkBackendConnection: () => Promise<boolean>;
-  switchRole: (role: UserRole) => void;
   setCurrentUser: (user: User) => void;
-  login: (emailOrRole: string, role?: UserRole) => { success: boolean; error?: string };
+  login: (emailOrRole: string, role?: UserRole) => { success: boolean; error?: string; user?: User };
   loginWithBackend: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   registerWithBackend: (params: { email: string; password: string; role: 'Consumer' | 'Provider'; name?: string }) => Promise<{ success: boolean; error?: string; user?: BackendUser }>;
   logout: () => void;
@@ -38,6 +36,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const [isBackendMode, setIsBackendMode] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const [currentUser, setCurrentUser] = useState<User>(() => {
     const saved = localStorage.getItem('apihub_current_user');
@@ -48,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // fallback
       }
     }
-    return INITIAL_USERS[0]; // Alex Vance (Consumer)
+    return INITIAL_USERS[2]; // Guest visitor: default to Consumer (USER) role
   });
 
   const checkBackendConnection = async (): Promise<boolean> => {
@@ -89,6 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             lastLoginAt: new Date().toISOString()
           };
           setCurrentUser(mappedUser);
+          setIsAuthenticated(true);
         } catch {
           // session expired, fallback silently
         }
@@ -109,18 +109,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('apihub_current_user', JSON.stringify(currentUser));
   }, [currentUser]);
 
-  const switchRole = (role: UserRole) => {
-    const matched = INITIAL_USERS.find(u => u.role === role);
-    if (matched) {
-      setCurrentUser(matched);
-    } else {
-      setCurrentUser(prev => ({
-        ...prev,
-        role: role
-      }));
-    }
-  };
-
   const loginWithBackend = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
     try {
       const tokens = await apiLogin({ email, password });
@@ -140,6 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setCurrentUser(userObj);
       setBackendOnline(true);
+      setIsAuthenticated(true);
       return { success: true, user: userObj };
     } catch (err) {
       return { success: false, error: formatBackendErrorMessage(err) };
@@ -170,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = (emailOrRole: string, preferredRole?: UserRole): { success: boolean; error?: string } => {
+  const login = (emailOrRole: string, _role?: UserRole): { success: boolean; error?: string; user?: User } => {
     let currentUsersList = INITIAL_USERS;
     const savedUsers = localStorage.getItem('apihub_users');
     if (savedUsers) {
@@ -187,13 +176,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Tài khoản của bạn đã bị khóa bởi Quản trị viên (Account Locked). Vui lòng liên hệ Admin để mở khóa.' };
       }
       setCurrentUser(matched);
-      return { success: true };
-    }
-
-    if (preferredRole && currentUsersList.some(u => u.role === preferredRole)) {
-      const u = currentUsersList.find(u => u.role === preferredRole)!;
-      setCurrentUser(u);
-      return { success: true };
+      setIsAuthenticated(true);
+      return { success: true, user: matched };
     }
 
     return {
@@ -204,7 +188,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     apiLogout();
-    setCurrentUser(INITIAL_USERS[0]);
+    setCurrentUser(INITIAL_USERS[2]);
+    setIsAuthenticated(false);
   };
 
   return (
@@ -212,12 +197,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         user: currentUser,
-        isAuthenticated: true,
+        isAuthenticated,
         backendOnline,
         isBackendMode,
         setIsBackendMode,
         checkBackendConnection,
-        switchRole,
         setCurrentUser,
         login,
         loginWithBackend,

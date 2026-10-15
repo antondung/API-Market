@@ -19,7 +19,7 @@ interface WorkspaceLayoutProps {
 }
 
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) => {
-  const { currentUser, switchRole } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { notifications, markNotificationRead, markAllNotificationsRead } = useApp();
   const { t } = useLanguage();
   const location = useLocation();
@@ -31,14 +31,14 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleWorkspaceChange = (targetWorkspace: string) => {
+    // Navigate based on the user's ACTUAL role — never elevate the role here.
+    // Attempting to enter a workspace the user isn't authorized for will be
+    // caught by the <ProtectedRoute> guard (redirects to /403).
     if (targetWorkspace === 'consumer') {
-      switchRole('USER');
       navigate('/dashboard');
     } else if (targetWorkspace === 'provider') {
-      switchRole('API_PROVIDER');
       navigate('/provider');
     } else if (targetWorkspace === 'admin') {
-      switchRole('ADMIN');
       navigate('/admin');
     } else if (targetWorkspace === 'marketplace') {
       navigate('/marketplace');
@@ -294,6 +294,15 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
             <div className="w-9 h-9 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-body-sm shadow-sm">
               {currentUser.name.charAt(0)}
             </div>
+
+            {/* Logout */}
+            <button
+              onClick={() => { logout(); navigate('/marketplace'); }}
+              title={t('Sign Out')}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:bg-error-container/40 hover:text-error transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">logout</span>
+            </button>
 
           </div>
 
