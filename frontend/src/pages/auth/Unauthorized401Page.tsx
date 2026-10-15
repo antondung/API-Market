@@ -19,7 +19,7 @@ export const Unauthorized401Page: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setTimeout(() => {
-      login('consumer');
+      login(email);
       setLoading(false);
       navigate(returnUrl);
     }, 500);
@@ -112,21 +112,21 @@ export const Unauthorized401Page: React.FC = () => {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => { login('consumer'); navigate('/dashboard'); }}
+                onClick={() => { login('developer@apihub.dev'); navigate('/dashboard'); }}
                 className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high rounded text-xs font-medium text-on-surface transition-colors"
               >
                 {t('Consumer')}
               </button>
               <button
                 type="button"
-                onClick={() => { login('provider'); navigate('/provider'); }}
+                onClick={() => { login('provider@apihub.dev', 'API_PROVIDER'); navigate('/provider'); }}
                 className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high rounded text-xs font-medium text-on-surface transition-colors"
               >
                 {t('Provider')}
               </button>
               <button
                 type="button"
-                onClick={() => { login('admin'); navigate('/admin'); }}
+                onClick={() => { login('admin@apihub.dev', 'ADMIN'); navigate('/admin'); }}
                 className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high rounded text-xs font-medium text-on-surface transition-colors"
               >
                 {t('Admin')}

@@ -1,15 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import { LanguageSwitcher } from '../ui/LanguageSwitcher';
-import { RoleSwitcher } from '../ui/RoleSwitcher';
 import type { UserRole } from '../../types';
 
 export const PublicNavbar: React.FC = () => {
-  const { currentUser, switchRole } = useAuth();
+  const { currentUser, isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const getDashboardPath = (role: UserRole) => {
     switch (role) {
@@ -73,20 +73,84 @@ export const PublicNavbar: React.FC = () => {
           {/* Language Switcher */}
           <LanguageSwitcher variant="dropdown" />
 
-          {/* Quick Role Switcher */}
-          <RoleSwitcher className="hidden sm:inline-block" />
+          {/* Workspace Button or Sign In (hidden on smallest screens) */}
+          {isAuthenticated ? (
+            <Link
+              to={getDashboardPath(currentUser.role)}
+              className="hidden sm:flex h-9 px-3.5 bg-primary text-on-primary rounded-xl text-[13px] font-semibold hover:bg-primary/90 transition-all items-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.98] whitespace-nowrap flex-shrink-0"
+            >
+              <span>{getDashboardLabel(currentUser.role)}</span>
+              <span className="material-symbols-outlined text-[17px]">arrow_forward</span>
+            </Link>
+          ) : (
+            <Link
+              to="/login"
+              className="hidden sm:flex h-9 px-3.5 bg-primary text-on-primary rounded-xl text-[13px] font-semibold hover:bg-primary/90 transition-all items-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.98] whitespace-nowrap flex-shrink-0"
+            >
+              <span>{t('Sign in') || 'Đăng nhập'}</span>
+              <span className="material-symbols-outlined text-[17px]">login</span>
+            </Link>
+          )}
 
-          {/* Workspace Button */}
-          <Link
-            to={getDashboardPath(currentUser.role)}
-            className="h-9 px-3.5 bg-primary text-on-primary rounded-xl text-[13px] font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.98] whitespace-nowrap flex-shrink-0"
+          {/* Mobile hamburger toggle */}
+          <button
+            type="button"
+            aria-label={t('Toggle menu')}
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(v => !v)}
+            className="md:hidden h-9 w-9 inline-flex items-center justify-center rounded-xl text-on-surface hover:bg-surface-variant transition-colors"
           >
-            <span>{getDashboardLabel(currentUser.role)}</span>
-            <span className="material-symbols-outlined text-[17px]">arrow_forward</span>
-          </Link>
+            <span className="material-symbols-outlined text-[22px]">
+              {mobileMenuOpen ? 'close' : 'menu'}
+            </span>
+          </button>
         </div>
 
       </div>
+
+      {/* Mobile menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-outline-variant/30 bg-surface/95 backdrop-blur-xl px-4 py-3">
+          <nav className="flex flex-col gap-1">
+            {mainLinks.map(link => {
+              const isActive = location.pathname === link.path;
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`px-2 py-2.5 rounded-lg text-body-md font-medium transition-colors ${
+                    isActive
+                      ? 'text-primary font-semibold bg-primary/5'
+                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/50'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+            {isAuthenticated ? (
+              <Link
+                to={getDashboardPath(currentUser.role)}
+                onClick={() => setMobileMenuOpen(false)}
+                className="mt-1 px-2 py-2.5 rounded-lg text-body-md font-semibold text-primary bg-primary/5 flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                {getDashboardLabel(currentUser.role)}
+              </Link>
+            ) : (
+              <Link
+                to="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="mt-1 px-2 py-2.5 rounded-lg text-body-md font-semibold text-primary bg-primary/5 flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[18px]">login</span>
+                {t('Sign in') || 'Đăng nhập'}
+              </Link>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 };

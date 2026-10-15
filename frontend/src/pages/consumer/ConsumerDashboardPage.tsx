@@ -21,6 +21,11 @@ export const ConsumerDashboardPage: React.FC = () => {
     ? Math.max(0, Math.round(((totalQuotaLimit - totalQuotaUsed) / totalQuotaLimit) * 100))
     : 100;
 
+  const [daysUntilReset] = React.useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+  });
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Top Banner */}
@@ -136,7 +141,7 @@ export const ConsumerDashboardPage: React.FC = () => {
               {t('Usage Details')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
             <span className="text-[11px] font-code-sm text-on-surface-variant">
-              {t('Resets in')} {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate()}d
+              {t('Resets in')} {daysUntilReset}d
             </span>
           </div>
         </div>

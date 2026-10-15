@@ -169,15 +169,18 @@ export const SessionSimulatorPage: React.FC = () => {
     ]);
   };
 
-  const sampleJwtPayload = {
-    sub: currentUser.id,
-    email: currentUser.email,
-    role: currentUser.role,
-    iss: "https://auth.apihub.io",
-    aud: "https://gateway.apihub.io",
-    iat: Math.floor(Date.now() / 1000) - (900 - accessTokenTtl),
-    exp: Math.floor(Date.now() / 1000) + accessTokenTtl
-  };
+  const sampleJwtPayload = React.useMemo(() => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return {
+      sub: currentUser.id,
+      email: currentUser.email,
+      role: currentUser.role,
+      iss: "https://auth.apihub.io",
+      aud: "https://gateway.apihub.io",
+      iat: nowSeconds - (900 - accessTokenTtl),
+      exp: nowSeconds + accessTokenTtl
+    };
+  }, [currentUser.id, currentUser.email, currentUser.role, accessTokenTtl]);
 
   return (
     <div className="pt-20 pb-20 px-6 max-w-4xl mx-auto space-y-8">

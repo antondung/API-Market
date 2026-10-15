@@ -1,26 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import { Button } from '../../components/ui/Button';
 
 export const Forbidden403Page: React.FC = () => {
-  const { user, login } = useAuth();
+  const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const [requestId] = useState(() => `req_${Math.random().toString(36).substring(2, 12)}`);
 
-  const handleSwitchRole = () => {
-    if (user?.role === 'USER') {
-      login('provider');
-      navigate('/provider');
-    } else if (user?.role === 'API_PROVIDER') {
-      login('admin');
-      navigate('/admin');
-    } else {
-      login('consumer');
-      navigate('/dashboard');
-    }
-  };
 
   return (
     <div className="w-full bg-surface min-h-[calc(100vh-4rem)] flex items-center justify-center p-6 relative overflow-hidden">
@@ -55,7 +44,7 @@ export const Forbidden403Page: React.FC = () => {
           <div className="w-full bg-surface-container-low rounded-xl p-4 mb-6 text-left flex flex-col gap-1.5 font-mono text-xs text-on-surface-variant border border-outline-variant/20">
             <div className="flex justify-between items-center">
               <span className="text-outline">REQUEST_ID:</span>
-              <span className="text-on-surface">req_{Math.random().toString(36).substring(2, 12)}</span>
+              <span className="text-on-surface">{requestId}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-outline">TARGET_SCOPE:</span>
@@ -85,16 +74,6 @@ export const Forbidden403Page: React.FC = () => {
               }}
             >
               {t('Go to My Permitted Workspace')}
-            </Button>
-
-            <Button
-              variant="secondary"
-              size="lg"
-              className="flex-1"
-              icon={<span className="material-symbols-outlined text-lg">swap_horiz</span>}
-              onClick={handleSwitchRole}
-            >
-              {t('Switch Elevated Role')}
             </Button>
           </div>
 

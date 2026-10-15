@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
-import { CustomSelect } from '../../components/ui/CustomSelect';
 import { useLanguage } from '../../i18n';
-import type { UserRole } from '../../types';
 
 export const LoginPage: React.FC = () => {
   const { login, loginWithBackend, backendOnline, isBackendMode, setIsBackendMode } = useAuth();
@@ -13,7 +11,6 @@ export const LoginPage: React.FC = () => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedRole, setSelectedRole] = useState<UserRole>('USER');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -32,7 +29,7 @@ export const LoginPage: React.FC = () => {
           return;
         }
         setIsLoading(false);
-        const targetRole = res.user?.role || selectedRole;
+        const targetRole = res.user?.role;
         if (targetRole === 'ADMIN') navigate('/admin');
         else if (targetRole === 'API_PROVIDER') navigate('/provider');
         else navigate('/dashboard');
@@ -40,15 +37,16 @@ export const LoginPage: React.FC = () => {
       }
 
       // Fallback: Local authentication against registered users
-      const res = login(email, selectedRole);
+      const res = login(email);
       if (!res.success) {
         setErrorMessage(res.error || 'Tài khoản không tồn tại hoặc mật khẩu không chính xác.');
         setIsLoading(false);
         return;
       }
       setIsLoading(false);
-      if (selectedRole === 'ADMIN') navigate('/admin');
-      else if (selectedRole === 'API_PROVIDER') navigate('/provider');
+      const targetRole = res.user?.role;
+      if (targetRole === 'ADMIN') navigate('/admin');
+      else if (targetRole === 'API_PROVIDER') navigate('/provider');
       else navigate('/dashboard');
     } catch (err: any) {
       setIsLoading(false);
@@ -119,20 +117,6 @@ export const LoginPage: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div>
-            <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Target Workspace Role')}</label>
-            <CustomSelect<UserRole>
-              value={selectedRole}
-              onChange={(val) => setSelectedRole(val)}
-              options={[
-                { value: 'USER', label: t('Consumer Workspace (/dashboard)'), icon: 'person' },
-                { value: 'API_PROVIDER', label: t('Provider Workspace (/provider)'), icon: 'corporate_fare' },
-                { value: 'ADMIN', label: t('Admin Console (/admin)'), icon: 'shield_person' },
-              ]}
-              className="w-full"
             />
           </div>
 

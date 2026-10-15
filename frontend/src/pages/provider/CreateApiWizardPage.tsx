@@ -34,7 +34,7 @@ export const CreateApiWizardPage: React.FC = () => {
   const [usesThirdPartyData, setUsesThirdPartyData] = useState(false);
   const [domainVerified, setDomainVerified] = useState(false);
   const [verifyingDomain, setVerifyingDomain] = useState(false);
-  const [verificationToken] = useState(`platform-verification=apihub_sec_${Math.random().toString(36).substring(2, 10)}`);
+  const [verificationToken] = useState(() => `platform-verification=apihub_sec_${Math.random().toString(36).substring(2, 10)}`);
 
   const [processesPersonalData, setProcessesPersonalData] = useState(false);
   const [selectedDataTypes, setSelectedDataTypes] = useState<string[]>([]);
