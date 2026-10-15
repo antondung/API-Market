@@ -72,7 +72,6 @@ interface AppContextType {
   submitProviderVerification: (verification: Partial<ProviderVerification>) => void;
 
   // Admin Actions
-  toggleUserLock: (userId: string) => void;
   approveVerification: (verificationId: string) => void;
   rejectVerification: (verificationId: string, reason: string) => void;
   updateApiStatus: (apiId: string, newStatus: ApiStatus, notes?: string) => void;
@@ -103,74 +102,75 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppProvider: React.FC<{ children: React.ReactNode; storageScope?: string }> = ({ children, storageScope = 'anonymous' }) => {
+  const storageKey = React.useCallback((key: string) => `${key}:${storageScope}`, [storageScope]);
   const [apis, setApis] = useState<ApiItem[]>(() => {
-    const s = localStorage.getItem('apihub_apis');
+    const s = localStorage.getItem(storageKey('apihub_apis'));
     return s ? JSON.parse(s) : INITIAL_APIS;
   });
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
-    const s = localStorage.getItem('apihub_subscriptions');
+    const s = localStorage.getItem(storageKey('apihub_subscriptions'));
     return s ? JSON.parse(s) : INITIAL_SUBSCRIPTIONS;
   });
 
   const [apiKeys, setApiKeys] = useState<ApiKey[]>(() => {
-    const s = localStorage.getItem('apihub_apikeys');
+    const s = localStorage.getItem(storageKey('apihub_apikeys'));
     return s ? JSON.parse(s) : INITIAL_API_KEYS;
   });
 
   const [requestLogs, setRequestLogs] = useState<RequestLog[]>(() => {
-    const s = localStorage.getItem('apihub_requestlogs');
+    const s = localStorage.getItem(storageKey('apihub_requestlogs'));
     return s ? JSON.parse(s) : INITIAL_REQUEST_LOGS;
   });
 
   const [budget, setBudget] = useState<CostGuardBudget>(() => {
-    const s = localStorage.getItem('apihub_budget');
+    const s = localStorage.getItem(storageKey('apihub_budget'));
     return s ? JSON.parse(s) : INITIAL_BUDGET;
   });
 
   const [notifications, setNotifications] = useState<CostGuardNotification[]>(() => {
-    const s = localStorage.getItem('apihub_notifications');
+    const s = localStorage.getItem(storageKey('apihub_notifications'));
     return s ? JSON.parse(s) : INITIAL_NOTIFICATIONS;
   });
 
   const [verifications, setVerifications] = useState<ProviderVerification[]>(() => {
-    const s = localStorage.getItem('apihub_verifications');
+    const s = localStorage.getItem(storageKey('apihub_verifications'));
     return s ? JSON.parse(s) : INITIAL_VERIFICATIONS;
   });
 
-  const [users, setUsers] = useState<User[]>(() => {
-    const s = localStorage.getItem('apihub_users');
+  const [users] = useState<User[]>(() => {
+    const s = localStorage.getItem(storageKey('apihub_users'));
     return s ? JSON.parse(s) : INITIAL_USERS;
   });
 
   const [reports, setReports] = useState<ReportItem[]>(() => {
-    const s = localStorage.getItem('apihub_reports');
+    const s = localStorage.getItem(storageKey('apihub_reports'));
     return s ? JSON.parse(s) : INITIAL_REPORTS;
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
-    const s = localStorage.getItem('apihub_auditlogs');
+    const s = localStorage.getItem(storageKey('apihub_auditlogs'));
     return s ? JSON.parse(s) : INITIAL_AUDIT_LOGS;
   });
 
   const [tryGrants, setTryGrants] = useState<Record<string, number>>(() => {
-    const s = localStorage.getItem('apihub_try_grants');
+    const s = localStorage.getItem(storageKey('apihub_try_grants'));
     return s ? JSON.parse(s) : {};
   });
 
   // Sync to localStorage
-  useEffect(() => { localStorage.setItem('apihub_apis', JSON.stringify(apis)); }, [apis]);
-  useEffect(() => { localStorage.setItem('apihub_subscriptions', JSON.stringify(subscriptions)); }, [subscriptions]);
-  useEffect(() => { localStorage.setItem('apihub_apikeys', JSON.stringify(apiKeys)); }, [apiKeys]);
-  useEffect(() => { localStorage.setItem('apihub_requestlogs', JSON.stringify(requestLogs)); }, [requestLogs]);
-  useEffect(() => { localStorage.setItem('apihub_budget', JSON.stringify(budget)); }, [budget]);
-  useEffect(() => { localStorage.setItem('apihub_notifications', JSON.stringify(notifications)); }, [notifications]);
-  useEffect(() => { localStorage.setItem('apihub_verifications', JSON.stringify(verifications)); }, [verifications]);
-  useEffect(() => { localStorage.setItem('apihub_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem('apihub_reports', JSON.stringify(reports)); }, [reports]);
-  useEffect(() => { localStorage.setItem('apihub_auditlogs', JSON.stringify(auditLogs)); }, [auditLogs]);
-  useEffect(() => { localStorage.setItem('apihub_try_grants', JSON.stringify(tryGrants)); }, [tryGrants]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_apis'), JSON.stringify(apis)); }, [apis, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_subscriptions'), JSON.stringify(subscriptions)); }, [subscriptions, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_apikeys'), JSON.stringify(apiKeys)); }, [apiKeys, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_requestlogs'), JSON.stringify(requestLogs)); }, [requestLogs, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_budget'), JSON.stringify(budget)); }, [budget, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_notifications'), JSON.stringify(notifications)); }, [notifications, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_verifications'), JSON.stringify(verifications)); }, [verifications, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_users'), JSON.stringify(users)); }, [users, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_reports'), JSON.stringify(reports)); }, [reports, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_auditlogs'), JSON.stringify(auditLogs)); }, [auditLogs, storageKey]);
+  useEffect(() => { localStorage.setItem(storageKey('apihub_try_grants'), JSON.stringify(tryGrants)); }, [tryGrants, storageKey]);
 
   const addAuditLog = (action: string, targetType: AuditLogEntry['targetType'], targetId: string, details: string) => {
     const newEntry: AuditLogEntry = {
@@ -518,17 +518,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAuditLog('PROVIDER_VERIFICATION_SUBMITTED', 'PROVIDER', newVer.id, `Submitted verification for ${newVer.companyName}`);
   };
 
-  const toggleUserLock = (userId: string) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === userId) {
-        const nextStatus = u.status === 'Locked' ? 'Active' : 'Locked';
-        addAuditLog(nextStatus === 'Locked' ? 'USER_LOCKED' : 'USER_UNLOCKED', 'USER', u.id, `Status changed to ${nextStatus}`);
-        return { ...u, status: nextStatus };
-      }
-      return u;
-    }));
-  };
-
   const approveVerification = (verificationId: string) => {
     setVerifications(prev => prev.map(v => v.id === verificationId ? {
       ...v,
@@ -599,7 +588,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateApi,
       submitApiForReview,
       submitProviderVerification,
-      toggleUserLock,
       approveVerification,
       rejectVerification,
       updateApiStatus,

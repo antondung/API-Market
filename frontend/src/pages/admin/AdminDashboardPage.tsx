@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../../components/ui/Button';
@@ -7,8 +7,6 @@ import { useLanguage } from '../../i18n';
 export const AdminDashboardPage: React.FC = () => {
   const { users, verifications, apis, reports } = useApp();
   const { t } = useLanguage();
-
-  const [lockdownMode, setLockdownMode] = useState(false);
 
   const pendingVerifications = verifications.filter(v => v.status === 'Pending').length;
   const pendingReviews = apis.filter(a => a.status === 'Submitted' || a.status === 'UnderReview').length;
@@ -37,33 +35,25 @@ export const AdminDashboardPage: React.FC = () => {
           <Button
             variant="secondary"
             icon="download"
-            onClick={() => alert('Exporting platform telemetry JSON log...')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Export Telemetry')}
           </Button>
           <Button
-            variant={lockdownMode ? 'danger' : 'outline'}
+            variant="outline"
             icon="shield_lock"
-            onClick={() => setLockdownMode(!lockdownMode)}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
-            {lockdownMode ? t('LOCKDOWN ACTIVE') : t('Lockdown Mode')}
+            {t('Lockdown Mode')}
           </Button>
         </div>
       </div>
 
-      {lockdownMode && (
-        <div className="p-4 rounded-xl bg-error-container text-on-error-container border border-error flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-[24px]">crisis_alert</span>
-            <span className="font-bold text-body-md">
-              {t('EMERGENCY LOCKDOWN ENGAGED: All new unauthenticated registrations and third-party webhooks suspended.')}
-            </span>
-          </div>
-          <Button size="sm" variant="danger" onClick={() => setLockdownMode(false)}>
-            {t('Disengage')}
-          </Button>
-        </div>
-      )}
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-body-sm text-on-surface">
+        Chỉ trang Quản lý người dùng dùng API live trong Sprint 1. Các KPI quản trị khác là dữ liệu minh họa cho sprint sau.
+      </div>
 
       {/* Platform Metrics (Bento Grid matching Stitch code.html) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

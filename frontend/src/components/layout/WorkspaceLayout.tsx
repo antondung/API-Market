@@ -19,7 +19,7 @@ interface WorkspaceLayoutProps {
 }
 
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) => {
-  const { currentUser, switchRole } = useAuth();
+  const { currentUser, logout } = useAuth();
   // ProtectedRoute da bao dam co nguoi dung, gia tri mac dinh chi de TypeScript hieu.
   const role = currentUser?.role ?? 'USER';
   const userName = currentUser?.name ?? '';
@@ -29,24 +29,36 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
   const navigate = useNavigate();
 
   const [showNotifications, setShowNotifications] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleWorkspaceChange = (targetWorkspace: string) => {
     if (targetWorkspace === 'consumer') {
-      switchRole('USER');
       navigate('/dashboard');
     } else if (targetWorkspace === 'provider') {
-      switchRole('API_PROVIDER');
       navigate('/provider');
     } else if (targetWorkspace === 'admin') {
-      switchRole('ADMIN');
       navigate('/admin');
     } else if (targetWorkspace === 'marketplace') {
       navigate('/marketplace');
     }
   };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    const result = await logout();
+    navigate('/login', { replace: true, state: { logoutWarning: result.warning } });
+  };
+
+  const workspaceOptions = [
+    ...(role === 'USER' || role === 'API_PROVIDER' ? [{ value: 'consumer', label: t('Consumer Workspace'), icon: 'person' }] : []),
+    ...(role === 'API_PROVIDER' ? [{ value: 'provider', label: t('Provider Workspace'), icon: 'corporate_fare' }] : []),
+    ...(role === 'ADMIN' ? [{ value: 'admin', label: t('Admin Console') || 'Admin Console', icon: 'shield_person' }] : []),
+    { value: 'marketplace', label: t('Public Marketplace') || t('Marketplace'), icon: 'storefront' },
+  ];
 
   const getActiveWorkspaceKey = () => {
     if (location.pathname.startsWith('/admin')) return 'admin';
@@ -100,10 +112,11 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
+      {sidebarOpen && <button type="button" aria-label="Đóng menu" className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={() => setSidebarOpen(false)} />}
       {/* Sidebar */}
       <aside
         className={`fixed left-0 top-0 h-full bg-surface-container-low border-r border-outline-variant/30 z-50 flex flex-col transition-all duration-300 ${
-          sidebarOpen ? 'w-[280px]' : 'w-[72px]'
+          sidebarOpen ? 'w-[280px] translate-x-0' : 'w-[280px] -translate-x-full md:w-[72px] md:translate-x-0'
         }`}
       >
         {/* Brand */}
@@ -168,30 +181,30 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
               </div>
             )}
           </div>
+          {sidebarOpen && (
+            <button type="button" onClick={() => void handleLogout()} disabled={loggingOut} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant px-3 py-2 text-body-sm font-semibold text-on-surface hover:bg-surface-container disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary">
+              <span className="material-symbols-outlined text-[18px]">logout</span>
+              {loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
+            </button>
+          )}
         </div>
       </aside>
 
       {/* Main Container */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? 'pl-[280px]' : 'pl-[72px]'}`}>
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? 'md:pl-[280px]' : 'md:pl-[72px]'}`}>
 
         {/* Top Header */}
-        <header className="sticky top-0 z-40 h-16 bg-surface/85 backdrop-blur-xl border-b border-outline-variant/30 flex items-center justify-between px-6 lg:px-10">
+        <header className="sticky top-0 z-30 min-h-16 bg-surface/85 backdrop-blur-xl border-b border-outline-variant/30 flex items-center justify-between gap-2 px-3 sm:px-6 lg:px-10 py-2">
 
           {/* Workspace Switcher */}
           <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setSidebarOpen(true)} className="md:hidden w-10 h-10 rounded-xl flex items-center justify-center hover:bg-surface-container" aria-label="Mở menu"><span className="material-symbols-outlined">menu</span></button>
             <CustomSelect
               value={getActiveWorkspaceKey()}
               onChange={(val) => handleWorkspaceChange(val)}
-              options={[
-                { value: 'consumer', label: t('Consumer Workspace'), icon: 'person' },
-                { value: 'provider', label: t('Provider Workspace'), icon: 'corporate_fare' },
-                ...(role === 'ADMIN'
-                  ? [{ value: 'admin', label: t('Admin Console') || 'Admin Console', icon: 'shield_person' }]
-                  : []),
-                { value: 'marketplace', label: t('Public Marketplace') || t('Marketplace'), icon: 'storefront' },
-              ]}
+              options={workspaceOptions}
               icon="swap_horiz"
-              className="w-60"
+              className="w-44 sm:w-60"
             />
 
             {/* Role Clearance Pill */}

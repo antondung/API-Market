@@ -53,11 +53,16 @@ export const ConsumerDashboardPage: React.FC = () => {
           <Button
             variant="primary"
             icon="key"
-            onClick={() => navigate('/dashboard/api-keys')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Generate Key')}
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-body-sm text-on-surface">
+        Các KPI bên dưới là dữ liệu minh họa, chưa phải dữ liệu live từ backend. Những thao tác ngoài Sprint 1 chưa được hỗ trợ.
       </div>
 
       {/* KPI Bento Grid */}

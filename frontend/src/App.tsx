@@ -70,9 +70,15 @@ const PublicLayout: React.FC = () => (
   </div>
 );
 
+const ScopedAppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser } = useAuth();
+  const scope = currentUser?.id ?? 'anonymous';
+  return <AppProvider key={scope} storageScope={scope}>{children}</AppProvider>;
+};
+
 // Route Guards
 const ProtectedRoute: React.FC<{ allowedRoles?: UserRole[] }> = ({ allowedRoles }) => {
-  const { user, isAuthenticated, sessionReady } = useAuth();
+  const { user, isAuthenticated, sessionReady, sessionError, retrySession } = useAuth();
   const location = useLocation();
 
   // Chờ khôi phục phiên xong mới quyết định, tránh chuyển hướng sai khi
@@ -85,8 +91,23 @@ const ProtectedRoute: React.FC<{ allowedRoles?: UserRole[] }> = ({ allowedRoles 
     );
   }
 
+  if (sessionError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+        <div className="max-w-md rounded-2xl border border-outline-variant/40 bg-surface-container-low p-6 text-center">
+          <span className="material-symbols-outlined text-error text-[36px]">cloud_off</span>
+          <h1 className="mt-3 text-headline-sm font-bold text-on-surface">Không thể xác minh phiên đăng nhập</h1>
+          <p className="mt-2 text-body-sm text-on-surface-variant">{sessionError} Nội dung được bảo vệ chưa được hiển thị và phiên cục bộ vẫn được giữ lại.</p>
+          <button type="button" onClick={() => void retrySession()} className="mt-5 rounded-xl bg-primary px-4 py-2 text-on-primary font-semibold focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
+            Thử kết nối lại
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated || !user) {
-    return <Navigate to="/401" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/login" state={{ from: `${location.pathname}${location.search}` }} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
@@ -105,7 +126,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppProvider>
+        <ScopedAppProvider>
           <Routes>
             {/* PUBLIC & MARKETPLACE ROUTES */}
             <Route element={<PublicLayout />}>
@@ -129,8 +150,8 @@ export function App() {
               <Route path="/403" element={<Forbidden403Page />} />
             </Route>
 
-            {/* CONSUMER WORKSPACE ROUTES (Protected: USER, API_PROVIDER, ADMIN) */}
-            <Route element={<ProtectedRoute allowedRoles={['USER', 'API_PROVIDER', 'ADMIN']} />}>
+            {/* Provider có quyền sử dụng Consumer workspace; Admin chỉ dùng Admin workspace. */}
+            <Route element={<ProtectedRoute allowedRoles={['USER', 'API_PROVIDER']} />}>
               <Route
                 element={
                   <WorkspaceLayout workspace="consumer">
@@ -151,8 +172,7 @@ export function App() {
               </Route>
             </Route>
 
-            {/* PROVIDER WORKSPACE ROUTES (Protected: API_PROVIDER, ADMIN) */}
-            <Route element={<ProtectedRoute allowedRoles={['API_PROVIDER', 'ADMIN']} />}>
+            <Route element={<ProtectedRoute allowedRoles={['API_PROVIDER']} />}>
               <Route
                 element={
                   <WorkspaceLayout workspace="provider">
@@ -198,7 +218,7 @@ export function App() {
             {/* CATCH ALL */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </AppProvider>
+        </ScopedAppProvider>
       </AuthProvider>
     </BrowserRouter>
   );

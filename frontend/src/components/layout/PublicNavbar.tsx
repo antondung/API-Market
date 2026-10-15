@@ -7,7 +7,7 @@ import { RoleSwitcher } from '../ui/RoleSwitcher';
 import type { UserRole } from '../../types';
 
 export const PublicNavbar: React.FC = () => {
-  const { currentUser, switchRole } = useAuth();
+  const { currentUser } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
 
