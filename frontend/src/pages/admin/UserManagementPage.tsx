@@ -53,7 +53,10 @@ export const UserManagementPage: React.FC = () => {
     }, controller.signal).then(result => {
       setData({ items: result.items, total: result.total });
     }).catch(reason => {
-      if (!(reason instanceof ApiError && reason.code === 'ABORTED')) setError(formatBackendErrorMessage(reason));
+      if (!(reason instanceof ApiError && reason.code === 'ABORTED')) {
+        setError(formatBackendErrorMessage(reason));
+        setData({ items: [], total: 0 });
+      }
     }).finally(() => {
       if (requestId === requestIdRef.current && !controller.signal.aborted) setLoading(false);
     });

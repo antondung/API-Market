@@ -147,7 +147,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSessionReady(true);
     localStorage.removeItem('apihub_current_user');
     try {
-      await apiLogout();
+      const result = await apiLogout();
+      if (!result.serverRevoked && result.warning) {
+        return { warning: `Đã đăng xuất trên thiết bị này, nhưng máy chủ có thể chưa thu hồi phiên: ${result.warning}` };
+      }
       return {};
     } catch (error) {
       return { warning: `Đã đăng xuất trên thiết bị này, nhưng máy chủ có thể chưa thu hồi phiên: ${formatBackendErrorMessage(error)}` };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import { Button } from '../../components/ui/Button';
@@ -8,7 +8,8 @@ export const Forbidden403Page: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const requestId = React.useId().replace(/:/g, '');
+  const location = useLocation();
+  const state = location.state as { from?: string; requiredRoles?: string[]; requestId?: string } | null;
 
   return (
     <div className="w-full bg-surface min-h-[calc(100vh-4rem)] flex items-center justify-center p-6 relative overflow-hidden">
@@ -20,8 +21,8 @@ export const Forbidden403Page: React.FC = () => {
         <div className="relative bg-surface-container-lowest rounded-2xl shadow-xl border border-outline-variant/30 p-8 flex flex-col items-center text-center">
           {/* Top Security Badge */}
           <div className="self-end mb-4 flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-mono">
-            <span className="w-2 h-2 rounded-full bg-error animate-pulse" />
-            <span>ERROR 403: SECURE_SHELL_BREACH</span>
+            <span className="w-2 h-2 rounded-full bg-error" />
+            <span>HTTP 403: FORBIDDEN</span>
           </div>
 
           {/* Shield Icon */}
@@ -41,22 +42,26 @@ export const Forbidden403Page: React.FC = () => {
 
           {/* Diagnostic info box */}
           <div className="w-full bg-surface-container-low rounded-xl p-4 mb-6 text-left flex flex-col gap-1.5 font-mono text-xs text-on-surface-variant border border-outline-variant/20">
+            {state?.requestId && (
+              <div className="flex justify-between items-center">
+                <span className="text-outline">REQUEST_ID:</span>
+                <span className="text-on-surface">{state.requestId}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center">
-              <span className="text-outline">REQUEST_ID:</span>
-              <span className="text-on-surface">req_{requestId}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-outline">TARGET_SCOPE:</span>
-              <span className="text-on-surface">admin:console:write / provider:api:write</span>
+              <span className="text-outline">TARGET_PATH:</span>
+              <span className="text-on-surface">{state?.from || 'N/A'}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-outline">IDENTITY:</span>
               <span className="text-on-surface">{user?.email || 'unauthenticated@guest.internal'}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-outline">POLICY_RULE:</span>
-              <span className="text-error font-medium">RBAC_STRICT_PARTITIONING_US23</span>
-            </div>
+            {state?.requiredRoles && state.requiredRoles.length > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-outline">REQUIRED_ROLES:</span>
+                <span className="text-error font-medium">{state.requiredRoles.join(', ')}</span>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}

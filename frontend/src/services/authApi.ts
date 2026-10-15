@@ -5,6 +5,7 @@ export interface BackendUser { id: string; name: string; email: string; role: Ba
 export interface BackendTokens { accessToken: string; refreshToken: string; tokenType: 'Bearer'; expiresIn: number; user: BackendUser }
 export interface SavedTokens extends BackendTokens { expiresAt: number }
 export interface ApiErrorDetail { field: string; message: string }
+export interface LogoutResult { serverRevoked: boolean; warning?: string }
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public requestId?: string, public details?: ApiErrorDetail[]) {
@@ -18,6 +19,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const REFRESH_EARLY_MS = 30_000;
 let authGeneration = 0;
 let refreshPromise: { generation: number; promise: Promise<SavedTokens> } | null = null;
+let inFlightLogout: Promise<LogoutResult> | null = null;
 
 export function backendRoleToFrontend(role: BackendRole): UserRole {
   if (role === 'Provider') return 'API_PROVIDER';
@@ -152,10 +154,63 @@ export async function authenticatedRequest<T>(path: string, options: RequestInit
 export async function getMe(): Promise<BackendUser> { return (await authenticatedRequest<{ data: BackendUser }>('/api/auth/me')).data; }
 export async function checkRoleAccess(role: 'consumer' | 'provider' | 'admin'): Promise<{ role: string }> { return (await authenticatedRequest<{ data: { role: string } }>(`/api/access/${role}`)).data; }
 
-export async function logout(): Promise<void> {
-  const accessToken = getSavedTokens()?.accessToken;
+export async function logout(): Promise<LogoutResult> {
+  if (inFlightLogout) return inFlightLogout;
+
+  const currentTokens = getSavedTokens();
+  const activeRefresh = refreshPromise;
+
   clearTokens();
-  if (accessToken) await apiRequest<void>('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } });
+
+  if (!currentTokens?.accessToken) {
+    return { serverRevoked: true };
+  }
+
+  inFlightLogout = (async (): Promise<LogoutResult> => {
+    let accessToken = currentTokens.accessToken;
+
+    // Phối hợp với refresh đang chạy hoặc token hết hạn để lấy token hợp lệ hủy phiên
+    if (Date.now() >= currentTokens.expiresAt && currentTokens.refreshToken) {
+      if (activeRefresh) {
+        try {
+          const refreshed = await activeRefresh.promise;
+          accessToken = refreshed.accessToken;
+        } catch {
+          // Tiếp tục thử refresh trực tiếp
+        }
+      }
+      if (accessToken === currentTokens.accessToken) {
+        try {
+          const refreshed = await apiRequest<{ data: BackendTokens }>('/api/auth/refresh', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken: currentTokens.refreshToken }),
+          });
+          if (refreshed?.data?.accessToken) {
+            accessToken = refreshed.data.accessToken;
+          }
+        } catch {
+          // Tiếp tục thử với accessToken hiện có
+        }
+      }
+    }
+
+    try {
+      await apiRequest<void>('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      return { serverRevoked: true };
+    } catch (error) {
+      return {
+        serverRevoked: false,
+        warning: formatBackendErrorMessage(error) || 'Máy chủ không thể xác nhận thu hồi phiên.',
+      };
+    } finally {
+      inFlightLogout = null;
+    }
+  })();
+
+  return inFlightLogout;
 }
 
 export function formatBackendErrorMessage(error: unknown): string {
