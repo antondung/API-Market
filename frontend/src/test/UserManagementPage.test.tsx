@@ -261,4 +261,142 @@ describe('UserManagementPage unit tests', () => {
     expect(screen.getByText('Bạn không thể khóa tài khoản của chính mình.')).toBeDefined();
     expect(screen.queryByText(/Đã khóa/)).toBeNull();
   });
+
+  it('Issue 5: kết quả tìm kiếm cũ không được ghi đè kết quả tìm kiếm mới (controlled promise race)', async () => {
+    let resolveSlowSearch: (res: any) => void;
+    const slowPromise = new Promise(resolve => {
+      resolveSlowSearch = resolve;
+    });
+
+    let resolveFastSearch: (res: any) => void;
+    const fastPromise = new Promise(resolve => {
+      resolveFastSearch = resolve;
+    });
+
+    const listSpy = vi.spyOn(adminUsersApi, 'listAdminUsers').mockImplementation(async (params: any) => {
+      if (params?.search === 'slow') {
+        return slowPromise as any;
+      }
+      if (params?.search === 'fast') {
+        return fastPromise as any;
+      }
+      return { items: sampleUsers, total: 3, page: 1, pageSize: 20 };
+    });
+
+    render(<UserManagementPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Consumer')).toBeDefined();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/Tìm theo email|Search email/i);
+
+    // Kích hoạt tìm kiếm 1 (slow)
+    act(() => {
+      fireEvent.change(searchInput, { target: { value: 'slow' } });
+    });
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ search: 'slow' }), expect.anything());
+    }, { timeout: 1000 });
+
+    // Kích hoạt tìm kiếm 2 (fast)
+    act(() => {
+      fireEvent.change(searchInput, { target: { value: 'fast' } });
+    });
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ search: 'fast' }), expect.anything());
+    }, { timeout: 1000 });
+
+    // Trả kết quả tìm kiếm 2 (fast) trước
+    await act(async () => {
+      resolveFastSearch!({
+        items: [{
+          id: 'fast-user-id',
+          name: 'Fast User Winner',
+          email: 'fast@winner.com',
+          role: 'Consumer',
+          active: true,
+          createdAt: '2026-01-01T00:00:00Z',
+        }],
+        total: 1,
+        page: 1,
+        pageSize: 20
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Fast User Winner')).toBeDefined();
+    });
+
+    // Giờ kết quả tìm kiếm 1 (slow) mới phản hồi trễ
+    await act(async () => {
+      resolveSlowSearch!({
+        items: [{
+          id: 'slow-user-id',
+          name: 'Slow User Stale',
+          email: 'slow@stale.com',
+          role: 'Provider',
+          active: true,
+          createdAt: '2026-01-01T00:00:00Z',
+        }],
+        total: 1,
+        page: 1,
+        pageSize: 20
+      });
+    });
+
+    // Bảng VẪN hiển thị Fast User Winner, kết quả cũ không được ghi đè!
+    expect(screen.getByText('Fast User Winner')).toBeDefined();
+    expect(screen.queryByText('Slow User Stale')).toBeNull();
+  });
+
+  it('Issue 5: yêu cầu đang chờ không thể repopulate dữ liệu sau khi logout', async () => {
+    let resolvePendingRequest: (res: any) => void;
+    const pendingPromise = new Promise(resolve => {
+      resolvePendingRequest = resolve;
+    });
+
+    vi.spyOn(adminUsersApi, 'listAdminUsers').mockReturnValue(pendingPromise as any);
+
+    const { rerender } = render(<UserManagementPage />);
+
+    // Trong khi yêu cầu đang pending, người dùng logout (currentUser = null)
+    vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
+      currentUser: null,
+      user: null,
+      isAuthenticated: false,
+      sessionReady: true,
+      sessionError: null,
+      backendOnline: true,
+      checkBackendConnection: vi.fn(),
+      retrySession: vi.fn(),
+      loginWithBackend: vi.fn(),
+      registerWithBackend: vi.fn(),
+      logout: vi.fn(),
+      verifyRoleAccess: vi.fn(),
+    });
+
+    rerender(<UserManagementPage />);
+
+    // Dữ liệu lập tức bị làm sạch về 0
+    await waitFor(() => {
+      expect(screen.getByText('0 kết quả · Trang 1/1')).toBeDefined();
+    });
+
+    // Yêu cầu cũ phản hồi dữ liệu sau khi đã logout
+    await act(async () => {
+      resolvePendingRequest!({
+        items: sampleUsers,
+        total: 3,
+        page: 1,
+        pageSize: 20
+      });
+    });
+
+    // Bảng dữ liệu tuyệt đối không bị repopulate sau khi đã logout!
+    expect(screen.queryByText('Alice Consumer')).toBeNull();
+    expect(screen.getByText('0 kết quả · Trang 1/1')).toBeDefined();
+  });
 });

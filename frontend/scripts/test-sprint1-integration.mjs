@@ -5,8 +5,9 @@
  */
 
 const BASE_URL = (process.env.VITE_API_BASE_URL || process.env.API_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@123';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ISOLATED_TEST_ENV = process.env.ISOLATED_TEST_ENV === 'true' || process.env.ALLOW_DESTRUCTIVE_ADMIN_TESTS === 'true';
 const REQUEST_TIMEOUT_MS = Number(process.env.TEST_TIMEOUT_MS) || 8000;
 
 let passedCount = 0;
@@ -346,22 +347,26 @@ async function runAllTests() {
 
   // STEP 13: Admin Endpoints (US-04)
   let adminTokens = null;
-  try {
-    const res = await request('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
-    });
-    if (res.status === 200 && res.data?.data?.user?.role === 'Admin') {
-      adminTokens = res.data.data;
-      reportPass(13, `Đăng nhập tài khoản Admin (${ADMIN_EMAIL}) -> 200 OK`);
-    } else {
-      reportSkip(13, `Admin API Suite`, `Tài khoản ${ADMIN_EMAIL} chưa được seed hoặc không khả dụng`);
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    reportSkip(13, `Admin API Suite`, `ADMIN_EMAIL và ADMIN_PASSWORD không được cấu hình qua biến môi trường`);
+  } else {
+    try {
+      const res = await request('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+      });
+      if (res.status === 200 && res.data?.data?.user?.role === 'Admin') {
+        adminTokens = res.data.data;
+        reportPass(13, `Đăng nhập tài khoản Admin (${ADMIN_EMAIL}) -> 200 OK`);
+      } else {
+        reportSkip(13, `Admin API Suite`, `Tài khoản ${ADMIN_EMAIL} chưa được seed hoặc không khả dụng`);
+      }
+    } catch {
+      reportSkip(13, `Admin API Suite`, `Không kết nối được để đăng nhập Admin`);
     }
-  } catch {
-    reportSkip(13, `Admin API Suite`, `Không kết nối được để đăng nhập Admin`);
   }
 
-  if (adminTokens?.accessToken && consumerUserId) {
+  if (adminTokens?.accessToken) {
     // 13.1 Admin list users
     try {
       const res = await request('/api/admin/users?page=1&pageSize=10', {
@@ -405,43 +410,81 @@ async function runAllTests() {
       reportFail(15, `Consumer truy cập admin/users lỗi:`, err.message);
     }
 
-    // 13.3 Admin lock user & verify session revocation
-    try {
-      const lockRes = await request(`/api/admin/users/${consumerUserId}/active`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${adminTokens.accessToken}` },
-        body: JSON.stringify({ active: false })
-      });
-      if (lockRes.status === 200 && lockRes.data?.data?.user?.active === false) {
-        reportPass(16, `PATCH /api/admin/users/:id/active (Lock user) -> 200 OK`);
-      } else {
-        reportFail(16, `Khóa tài khoản thất bại:`, lockRes.data);
-      }
+    // 13.3 Destructive Admin lock/unlock testing (Dedicated isolated test user)
+    if (!ISOLATED_TEST_ENV) {
+      reportSkip(16, `PATCH /api/admin/users/:id/active (Lock/Unlock)`, `Yêu cầu ISOLATED_TEST_ENV=true hoặc ALLOW_DESTRUCTIVE_ADMIN_TESTS=true`);
+      reportSkip(17, `Thu hồi phiên khi bị khóa`, `Bỏ qua do không chạy mutation`);
+      reportSkip(18, `Mở khóa và đăng nhập lại`, `Bỏ qua do không chạy mutation`);
+    } else {
+      const lockTargetEmail = `locktest.${timestamp}@apihub.dev`;
+      const lockTargetPassword = 'LockTargetPass123!@#';
+      try {
+        const regRes = await request('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            email: lockTargetEmail,
+            password: lockTargetPassword,
+            role: 'Consumer',
+            name: 'Isolated Lock Target',
+          }),
+        });
+        const lockTargetId = regRes.data?.data?.id;
 
-      // Verify locked consumer cannot call /me
-      const activeConsumerToken = rotatedTokens?.accessToken || consumerTokens?.accessToken;
-      const verifyLockedRes = await request('/api/auth/me', {
-        headers: { Authorization: `Bearer ${activeConsumerToken}` }
-      });
-      if (verifyLockedRes.status === 401) {
-        reportPass(17, `Phiên của user bị khóa lập tức bị thu hồi -> 401 Unauthorized`);
-      } else {
-        reportFail(17, `User bị khóa vẫn gọi được /api/auth/me (${verifyLockedRes.status}):`, verifyLockedRes.data);
-      }
+        const loginRes = await request('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: lockTargetEmail, password: lockTargetPassword }),
+        });
+        const lockTargetTokens = loginRes.data?.data;
 
-      // Admin unlock user
-      const unlockRes = await request(`/api/admin/users/${consumerUserId}/active`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${adminTokens.accessToken}` },
-        body: JSON.stringify({ active: true })
-      });
-      if (unlockRes.status === 200 && unlockRes.data?.data?.user?.active === true) {
-        reportPass(18, `PATCH /api/admin/users/:id/active (Unlock user) -> 200 OK`);
-      } else {
-        reportFail(18, `Mở khóa tài khoản thất bại:`, unlockRes.data);
+        if (lockTargetId && lockTargetTokens?.accessToken) {
+          // Admin lock isolated user
+          const lockRes = await request(`/api/admin/users/${lockTargetId}/active`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${adminTokens.accessToken}` },
+            body: JSON.stringify({ active: false }),
+          });
+          if (lockRes.status === 200 && lockRes.data?.data?.user?.active === false) {
+            reportPass(16, `PATCH /api/admin/users/:id/active (Lock isolated user) -> 200 OK`);
+          } else {
+            reportFail(16, `Khóa tài khoản kiểm thử thất bại:`, lockRes.data);
+          }
+
+          // Verify locked user session is revoked (401 on /me)
+          const verifyLockedRes = await request('/api/auth/me', {
+            headers: { Authorization: `Bearer ${lockTargetTokens.accessToken}` },
+          });
+          if (verifyLockedRes.status === 401) {
+            reportPass(17, `Phiên của user bị khóa lập tức bị thu hồi -> 401 Unauthorized`);
+          } else {
+            reportFail(17, `User bị khóa vẫn gọi được /api/auth/me (${verifyLockedRes.status}):`, verifyLockedRes.data);
+          }
+
+          // Admin unlock isolated user
+          const unlockRes = await request(`/api/admin/users/${lockTargetId}/active`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${adminTokens.accessToken}` },
+            body: JSON.stringify({ active: true }),
+          });
+          if (unlockRes.status === 200 && unlockRes.data?.data?.user?.active === true) {
+            reportPass(18, `PATCH /api/admin/users/:id/active (Unlock isolated user) -> 200 OK`);
+          } else {
+            reportFail(18, `Mở khóa tài khoản thất bại:`, unlockRes.data);
+          }
+
+          // Re-login after unlocking succeeds
+          const reLoginRes = await request('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email: lockTargetEmail, password: lockTargetPassword }),
+          });
+          if (reLoginRes.status === 200) {
+            reportPass('18b', `Đăng nhập lại sau khi mở khóa -> 200 OK (Cấp phiên mới thành công)`);
+          } else {
+            reportFail('18b', `Đăng nhập lại sau mở khóa thất bại:`, reLoginRes.data);
+          }
+        }
+      } catch (err) {
+        reportFail(16, `Khóa/mở khóa tài khoản lỗi:`, err.message);
       }
-    } catch (err) {
-      reportFail(16, `Khóa/mở khóa tài khoản lỗi:`, err.message);
     }
 
     // 13.4 Admin self-lock prevention
@@ -503,8 +546,15 @@ async function runAllTests() {
   if (failedCount > 0) {
     console.error(`💥 CÓ ${failedCount} BƯỚC KIỂM THỬ THẤT BẠI. DỪNG VỚI EXIT CODE 1.\n`);
     process.exit(1);
+  } else if (skippedCount > 0) {
+    console.warn(`⚠️ CẢNH BÁO: Có ${skippedCount} bước kiểm thử bị BỎ QUA (SKIP). Kiểm thử chưa bao phủ toàn bộ kịch bản.`);
+    if (process.env.STRICT_REQUIRE_ALL === 'true') {
+      console.error(`💥 Chế độ STRICT_REQUIRE_ALL yêu cầu 100% tests thực thi. Dừng với exit code 1.\n`);
+      process.exit(1);
+    }
+    process.exit(0);
   } else {
-    console.log(`🎉 TẤT CẢ CÁC BƯỚC KIỂM THỬ ĐÃ THỰC THI ĐỀU ĐẠT CHUẨN XÁC THỰC SPRINT 1!\n`);
+    console.log(`🎉 TẤT CẢ CÁC BƯỚC KIỂM THỬ ĐÃ THỰC THI ĐỀU ĐẠT CHUẨN XÁC THỰC SPRINT 1! (100% PASS, 0 FAIL, 0 SKIP)\n`);
     process.exit(0);
   }
 }

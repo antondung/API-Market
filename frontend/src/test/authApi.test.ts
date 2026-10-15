@@ -405,7 +405,11 @@ describe('authApi unit tests', () => {
       })
     );
 
-    await reqOp;
+    try {
+      await reqOp;
+    } catch (err: any) {
+      expect(err.code).toBe('STALE_AUTH_RESULT');
+    }
 
     // Session vẫn là null sau khi response muộn hoàn thành
     expect(getSavedTokens()).toBeNull();
@@ -526,5 +530,216 @@ describe('authApi unit tests', () => {
     expect(res2.data.endpoint).toContain('/api/concurrent-2');
     expect(refreshCount).toBe(1);
     expect(getSavedTokens()?.accessToken).toBe(rotatedMock.accessToken);
+  });
+
+  it('Issue 1: authenticatedRequest của User A gặp 401 khi User B đã đăng nhập -> không retry bằng token User B và không hủy session User B', async () => {
+    sessionStorage.setItem(
+      'apihub_sprint1_auth',
+      JSON.stringify({
+        ...mockTokens,
+        accessToken: 'user-a-access-token',
+        refreshToken: 'user-a-refresh-token',
+        user: { ...mockTokens.user, id: 'user-a', email: 'user.a@apihub.dev' },
+        expiresAt: Date.now() + 300_000
+      })
+    );
+
+    let resolveRequestA: (res: Response) => void;
+    const requestAPending = new Promise<Response>(resolve => {
+      resolveRequestA = resolve;
+    });
+
+    const userBTokens: BackendTokens = {
+      accessToken: 'user-b-access-token',
+      refreshToken: 'user-b-refresh-token',
+      tokenType: 'Bearer',
+      expiresIn: 900,
+      user: {
+        id: 'user-b',
+        name: 'User B',
+        email: 'user.b@apihub.dev',
+        role: 'Provider'
+      }
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/api/user-a-data')) {
+        return requestAPending;
+      }
+      if (urlStr.includes('/api/auth/login')) {
+        return new Response(JSON.stringify({ data: userBTokens }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (urlStr.includes('/api/auth/refresh')) {
+        return new Response(JSON.stringify({ data: userBTokens }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const reqA = authenticatedRequest('/api/user-a-data');
+
+    await login({ email: 'user.b@apihub.dev', password: 'PasswordB123!' });
+    expect(getSavedTokens()?.accessToken).toBe('user-b-access-token');
+
+    resolveRequestA!(
+      new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Token expired' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    await expect(reqA).rejects.toThrow();
+
+    const callsWithUserBToken = fetchSpy.mock.calls.filter(call => {
+      const headers = (call[1] as any)?.headers;
+      return headers?.Authorization === 'Bearer user-b-access-token' && String(call[0]).includes('/api/user-a-data');
+    });
+    expect(callsWithUserBToken.length).toBe(0);
+
+    expect(getSavedTokens()?.accessToken).toBe('user-b-access-token');
+    expect(getSavedTokens()?.user.email).toBe('user.b@apihub.dev');
+  });
+
+  it('Issue 2: logout trong khi refresh đang chạy sử dụng token vừa xoay để thu hồi, không gọi lại refresh token đã tiêu thụ và không lưu token', async () => {
+    sessionStorage.setItem(
+      'apihub_sprint1_auth',
+      JSON.stringify({
+        ...mockTokens,
+        expiresAt: Date.now() - 1000
+      })
+    );
+
+    let resolveRefresh: (res: Response) => void;
+    const refreshPending = new Promise<Response>(resolve => {
+      resolveRefresh = resolve;
+    });
+
+    let refreshCallCount = 0;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/api/auth/refresh')) {
+        refreshCallCount++;
+        return refreshPending;
+      }
+      if (urlStr.includes('/api/auth/logout')) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const refreshOp = refresh();
+    const logoutOp = logout();
+
+    resolveRefresh!(
+      new Response(
+        JSON.stringify({
+          data: {
+            ...mockTokens,
+            accessToken: 'rotated-access-for-logout-only',
+            refreshToken: 'rotated-refresh-token-new'
+          }
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    await expect(refreshOp).rejects.toThrow();
+    const logoutRes = await logoutOp;
+
+    expect(logoutRes.serverRevoked).toBe(true);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/logout'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer rotated-access-for-logout-only'
+        })
+      })
+    );
+
+    expect(refreshCallCount).toBe(1);
+    expect(getSavedTokens()).toBeNull();
+  });
+
+  it('Issue 3: User A logout đang pending, User B đăng nhập rồi logout -> User B dọn session ngay, gọi revoke độc lập và A hoàn tất không ảnh hưởng B', async () => {
+    sessionStorage.setItem(
+      'apihub_sprint1_auth',
+      JSON.stringify({
+        ...mockTokens,
+        accessToken: 'token-user-a',
+        refreshToken: 'refresh-user-a',
+        user: { ...mockTokens.user, id: 'user-a', email: 'user.a@apihub.dev' }
+      })
+    );
+
+    let resolveLogoutA: (res: Response) => void;
+    const logoutAPending = new Promise<Response>(resolve => {
+      resolveLogoutA = resolve;
+    });
+
+    const userBTokens: BackendTokens = {
+      accessToken: 'token-user-b',
+      refreshToken: 'refresh-user-b',
+      tokenType: 'Bearer',
+      expiresIn: 900,
+      user: {
+        id: 'user-b',
+        name: 'User B',
+        email: 'user.b@apihub.dev',
+        role: 'Provider'
+      }
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, opts: any) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/api/auth/logout')) {
+        const auth = (opts?.headers as any)?.Authorization;
+        if (auth === 'Bearer token-user-a') {
+          return logoutAPending;
+        }
+        if (auth === 'Bearer token-user-b') {
+          return new Response(null, { status: 204 });
+        }
+      }
+      if (urlStr.includes('/api/auth/login')) {
+        return new Response(JSON.stringify({ data: userBTokens }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const logoutAOp = logout();
+
+    await login({ email: 'user.b@apihub.dev', password: 'PasswordB123!' });
+    expect(getSavedTokens()?.accessToken).toBe('token-user-b');
+
+    const logoutBOp = logout();
+    expect(getSavedTokens()).toBeNull();
+
+    const logoutBResult = await logoutBOp;
+    expect(logoutBResult.serverRevoked).toBe(true);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/logout'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token-user-b'
+        })
+      })
+    );
+
+    resolveLogoutA!(new Response(null, { status: 204 }));
+    const logoutAResult = await logoutAOp;
+    expect(logoutAResult.serverRevoked).toBe(true);
+
+    expect(getSavedTokens()).toBeNull();
   });
 });

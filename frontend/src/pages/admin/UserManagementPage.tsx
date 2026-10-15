@@ -26,6 +26,19 @@ export const UserManagementPage: React.FC = () => {
   const [pendingUser, setPendingUser] = useState<AdminUserRecord | null>(null);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const activeUserRef = useRef(currentUser?.id);
+
+  useEffect(() => {
+    activeUserRef.current = currentUser?.id;
+    if (!currentUser) {
+      requestIdRef.current++;
+      queueMicrotask(() => {
+        setData({ items: [], total: 0 });
+        setLoading(false);
+        setError(null);
+      });
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -38,12 +51,19 @@ export const UserManagementPage: React.FC = () => {
   useEffect(() => {
     const controller = new AbortController();
     const requestId = ++requestIdRef.current;
+    const requestUserId = currentUser?.id;
+
+    if (!currentUser) {
+      return;
+    }
+
     queueMicrotask(() => {
-      if (requestId === requestIdRef.current && !controller.signal.aborted) {
+      if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
         setLoading(true);
         setError(null);
       }
     });
+
     void listAdminUsers({
       search: debouncedSearch || undefined,
       role: role === 'all' ? undefined : role,
@@ -51,17 +71,25 @@ export const UserManagementPage: React.FC = () => {
       page,
       pageSize,
     }, controller.signal).then(result => {
-      setData({ items: result.items, total: result.total });
+      if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        setData({ items: result.items, total: result.total });
+        setError(null);
+      }
     }).catch(reason => {
-      if (!(reason instanceof ApiError && reason.code === 'ABORTED')) {
-        setError(formatBackendErrorMessage(reason));
-        setData({ items: [], total: 0 });
+      if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (!(reason instanceof ApiError && reason.code === 'ABORTED')) {
+          setError(formatBackendErrorMessage(reason));
+          setData({ items: [], total: 0 });
+        }
       }
     }).finally(() => {
-      if (requestId === requestIdRef.current && !controller.signal.aborted) setLoading(false);
+      if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        setLoading(false);
+      }
     });
+
     return () => controller.abort();
-  }, [active, debouncedSearch, page, pageSize, retryKey, role]);
+  }, [active, currentUser, debouncedSearch, page, pageSize, retryKey, role]);
 
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
 

@@ -18,8 +18,21 @@ const STORAGE_KEY = 'apihub_sprint1_auth';
 const REQUEST_TIMEOUT_MS = 10_000;
 const REFRESH_EARLY_MS = 30_000;
 let authGeneration = 0;
-let refreshPromise: { generation: number; promise: Promise<SavedTokens> } | null = null;
-let inFlightLogout: Promise<LogoutResult> | null = null;
+
+export function getAuthGeneration(): number {
+  return authGeneration;
+}
+
+interface ActiveRefreshState {
+  generation: number;
+  refreshToken: string;
+  promise: Promise<SavedTokens>;
+  rawPromise: Promise<BackendTokens>;
+}
+
+let refreshPromise: ActiveRefreshState | null = null;
+const inFlightLogouts = new Map<string, Promise<LogoutResult>>();
+let lastClearedLogout: { token: string; generation: number; promise: Promise<LogoutResult> } | null = null;
 
 export function backendRoleToFrontend(role: BackendRole): UserRole {
   if (role === 'Provider') return 'API_PROVIDER';
@@ -117,80 +130,145 @@ export async function refresh(): Promise<SavedTokens> {
   if (refreshPromise?.generation === generation) return refreshPromise.promise;
   const saved = getSavedTokens();
   if (!saved) throw new ApiError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn.');
+
+  const rawPromise = apiRequest<{ data: BackendTokens }>('/api/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken: saved.refreshToken }),
+  }).then(res => res.data);
+
   const promise = (async () => {
     try {
-      const response = await apiRequest<{ data: BackendTokens }>('/api/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshToken: saved.refreshToken }) });
-      return saveTokens(response.data, generation);
+      const rotated = await rawPromise;
+      if (generation !== authGeneration) {
+        throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên làm việc đã thay đổi trong khi đang làm mới token.');
+      }
+      return saveTokens(rotated, generation);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401 && generation === authGeneration) invalidateTrustedSession();
+      if (error instanceof ApiError && error.status === 401 && generation === authGeneration) {
+        invalidateTrustedSession();
+      }
       throw error;
     } finally {
-      if (refreshPromise?.generation === generation) refreshPromise = null;
+      if (refreshPromise?.generation === generation) {
+        refreshPromise = null;
+      }
     }
   })();
-  refreshPromise = { generation, promise };
+
+  refreshPromise = { generation, refreshToken: saved.refreshToken, promise, rawPromise };
   return promise;
 }
 
 export async function authenticatedRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const requestGeneration = authGeneration;
   let saved = getSavedTokens();
   if (!saved) throw new ApiError(401, 'UNAUTHORIZED', 'Bạn chưa đăng nhập.');
-  if (Date.now() >= saved.expiresAt) saved = await refresh();
-  const execute = (accessToken: string) => apiRequest<T>(path, { ...options, headers: { ...(options.headers ?? {}), Authorization: `Bearer ${accessToken}` } });
+  if (authGeneration !== requestGeneration) {
+    throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên đăng nhập đã thay đổi.');
+  }
+
+  if (Date.now() >= saved.expiresAt) {
+    saved = await refresh();
+    if (authGeneration !== requestGeneration) {
+      throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên đăng nhập đã thay đổi.');
+    }
+  }
+
+  const execute = (accessToken: string) =>
+    apiRequest<T>(path, {
+      ...options,
+      headers: { ...(options.headers ?? {}), Authorization: `Bearer ${accessToken}` },
+    });
+
+  let response: T;
   try {
-    return await execute(saved.accessToken);
+    response = await execute(saved.accessToken);
   } catch (error) {
+    if (authGeneration !== requestGeneration) {
+      throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên đăng nhập đã thay đổi.');
+    }
     if (!(error instanceof ApiError) || error.status !== 401) throw error;
+
     const refreshed = await refresh();
+    if (authGeneration !== requestGeneration) {
+      throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên đăng nhập đã thay đổi.');
+    }
+
     try {
-      return await execute(refreshed.accessToken);
+      const retryResult = await execute(refreshed.accessToken);
+      if (authGeneration !== requestGeneration) {
+        throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên đăng nhập đã thay đổi.');
+      }
+      return retryResult;
     } catch (retryError) {
-      if (retryError instanceof ApiError && retryError.status === 401) invalidateTrustedSession();
+      if (authGeneration === requestGeneration) {
+        if (retryError instanceof ApiError && retryError.status === 401) {
+          invalidateTrustedSession();
+        }
+      }
       throw retryError;
     }
   }
+
+  if (authGeneration !== requestGeneration) {
+    throw new ApiError(0, 'STALE_AUTH_RESULT', 'Phiên đăng nhập đã thay đổi.');
+  }
+
+  return response;
 }
 
 export async function getMe(): Promise<BackendUser> { return (await authenticatedRequest<{ data: BackendUser }>('/api/auth/me')).data; }
 export async function checkRoleAccess(role: 'consumer' | 'provider' | 'admin'): Promise<{ role: string }> { return (await authenticatedRequest<{ data: { role: string } }>(`/api/access/${role}`)).data; }
 
 export async function logout(): Promise<LogoutResult> {
-  if (inFlightLogout) return inFlightLogout;
-
   const currentTokens = getSavedTokens();
-  const activeRefresh = refreshPromise;
-
-  clearTokens();
+  const sessionGeneration = authGeneration;
 
   if (!currentTokens?.accessToken) {
+    if (lastClearedLogout && lastClearedLogout.generation === sessionGeneration && inFlightLogouts.has(lastClearedLogout.token)) {
+      return inFlightLogouts.get(lastClearedLogout.token)!;
+    }
     return { serverRevoked: true };
   }
 
-  inFlightLogout = (async (): Promise<LogoutResult> => {
-    let accessToken = currentTokens.accessToken;
+  const sessionToken = currentTokens.accessToken;
+  const existingLogout = inFlightLogouts.get(sessionToken);
+  if (existingLogout) {
+    return existingLogout;
+  }
 
-    // Phối hợp với refresh đang chạy hoặc token hết hạn để lấy token hợp lệ hủy phiên
-    if (Date.now() >= currentTokens.expiresAt && currentTokens.refreshToken) {
-      if (activeRefresh) {
-        try {
-          const refreshed = await activeRefresh.promise;
-          accessToken = refreshed.accessToken;
-        } catch {
-          // Tiếp tục thử refresh trực tiếp
+  const activeRefresh = (refreshPromise && refreshPromise.generation === sessionGeneration) ? refreshPromise : null;
+
+  clearTokens();
+  const clearedGeneration = authGeneration;
+
+  const logoutPromise = (async (): Promise<LogoutResult> => {
+    let accessToken = sessionToken;
+    let refreshTokenConsumed = false;
+
+    if (activeRefresh) {
+      try {
+        const rotated = await activeRefresh.rawPromise;
+        if (rotated?.accessToken) {
+          accessToken = rotated.accessToken;
         }
+        refreshTokenConsumed = true;
+      } catch {
+        refreshTokenConsumed = true;
       }
-      if (accessToken === currentTokens.accessToken) {
-        try {
-          const refreshed = await apiRequest<{ data: BackendTokens }>('/api/auth/refresh', {
-            method: 'POST',
-            body: JSON.stringify({ refreshToken: currentTokens.refreshToken }),
-          });
-          if (refreshed?.data?.accessToken) {
-            accessToken = refreshed.data.accessToken;
-          }
-        } catch {
-          // Tiếp tục thử với accessToken hiện có
+    }
+
+    if (Date.now() >= currentTokens.expiresAt && currentTokens.refreshToken && !refreshTokenConsumed) {
+      try {
+        const refreshed = await apiRequest<{ data: BackendTokens }>('/api/auth/refresh', {
+          method: 'POST',
+          body: JSON.stringify({ refreshToken: currentTokens.refreshToken }),
+        });
+        if (refreshed?.data?.accessToken) {
+          accessToken = refreshed.data.accessToken;
         }
+      } catch {
+        // Refresh failed (e.g. 401 revoked on server)
       }
     }
 
@@ -206,11 +284,17 @@ export async function logout(): Promise<LogoutResult> {
         warning: formatBackendErrorMessage(error) || 'Máy chủ không thể xác nhận thu hồi phiên.',
       };
     } finally {
-      inFlightLogout = null;
+      inFlightLogouts.delete(sessionToken);
+      if (lastClearedLogout?.token === sessionToken) {
+        lastClearedLogout = null;
+      }
     }
   })();
 
-  return inFlightLogout;
+  inFlightLogouts.set(sessionToken, logoutPromise);
+  lastClearedLogout = { token: sessionToken, generation: clearedGeneration, promise: logoutPromise };
+
+  return logoutPromise;
 }
 
 export function formatBackendErrorMessage(error: unknown): string {
