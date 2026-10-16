@@ -10,6 +10,9 @@ import type { Role } from './store.js';
 import { openapi } from './openapi.js';
 import { ProviderService } from './provider-service.js';
 import { providerRouter } from './provider-router.js';
+import type { AdminReviewService } from './admin-review-service.js';
+import type { AuditService } from './audit-service.js';
+import { adminReviewRouter } from './admin-review-router.js';
 import { ImportError } from './provider-openapi-import.js';
 import multer from 'multer';
 import { providerContract } from './provider-contract.js';
@@ -32,7 +35,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -114,6 +117,9 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     // Chỉ ADMIN truy cập được; sai vai trò trả 403.
     // =========================================
     const requireAdmin: RequestHandler[] = [requireAuth, requireRole('Admin')];
+    if (options.review && options.audit) {
+      app.use('/api/admin', adminReviewRouter(options.review, options.audit, requireAuth, requireRole('Admin')));
+    }
     app.get('/api/admin/users', ...requireAdmin, async (req, res) => {
       const query = listUsersSchema.parse(req.query);
       res.json({ data: await auth.listUsers(query) });
