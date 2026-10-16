@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSyn
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
+import { Pool } from 'pg';
 
 let directory, bin, started = false;
 const run = (file, args, options = {}) => execFileSync(file, args, { windowsHide: true, stdio: 'pipe', ...options });
@@ -20,6 +21,10 @@ try {
     started = true;
     databaseUrl = `postgresql://postgres@127.0.0.1:${port}/postgres`;
   }
+  // Prepare shared extension once before independent test files create schemas in parallel.
+  const bootstrap = new Pool({ connectionString: databaseUrl });
+  try { await bootstrap.query('CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public'); }
+  finally { await bootstrap.end(); }
   const tests = ['test', 'integration'].flatMap(folder => readdirSync(`backend/${folder}`).filter(name => name.endsWith('.test.ts')).map(name => `dist/${folder}/${name.replace(/\.ts$/, '.js')}`));
   const result = spawnSync(process.execPath, ['--test', ...tests], { stdio: 'inherit', windowsHide: true, env: { ...process.env, PG_TEST_URL: databaseUrl } });
   process.exitCode = result.status ?? 1;
