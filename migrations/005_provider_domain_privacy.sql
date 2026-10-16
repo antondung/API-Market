@@ -12,8 +12,8 @@ CHECK (
     jsonb_typeof(personal_data_types) = 'array'
     AND (
         (processes_personal_data IS NULL AND jsonb_array_length(personal_data_types) = 0 AND data_processing_purpose IS NULL)
-        OR (processes_personal_data = FALSE AND jsonb_array_length(personal_data_types) = 0 AND data_processing_purpose IS NULL)
-        OR (processes_personal_data = TRUE AND jsonb_array_length(personal_data_types) > 0 AND data_processing_purpose IS NOT NULL AND LENGTH(BTRIM(data_processing_purpose)) > 0)
+        OR (processes_personal_data IS FALSE AND jsonb_array_length(personal_data_types) = 0 AND data_processing_purpose IS NULL)
+        OR (processes_personal_data IS TRUE AND jsonb_array_length(personal_data_types) > 0 AND data_processing_purpose IS NOT NULL AND LENGTH(BTRIM(data_processing_purpose)) > 0)
     )
 );
 

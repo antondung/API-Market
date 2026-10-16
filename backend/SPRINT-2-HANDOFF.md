@@ -1,6 +1,8 @@
 # Bàn giao Backend Sprint 2 — Nguyễn Như Tùng Dương
 
-Ngày cập nhật: 14/10/2026. Issue #7, PR #49 vào develop. Phạm vi: US-06, US-08, US-09, US-10, US-11, US-12 và test backend liên quan.
+Ngày cập nhật: 16/10/2026. Issue #7, PR #49 vào develop. Phạm vi: US-06, US-08, US-09, US-10, US-11, US-12 và test backend liên quan.
+
+**Bổ sung mới nhất:** [DOMAIN-PRIVACY-HANDOFF.md](DOMAIN-PRIVACY-HANDOFF.md) thay thế các trạng thái chờ schema/domain/privacy/Admin tích hợp ghi ở bản 14/10 bên dưới. Đã thêm migration 005, DNS TXT verification, privacy declaration rõ ràng và tích hợp nguyên commit Admin/Audit 63e8aea của Dũng; Swagger có 30 thao tác Provider + 8 Admin review/audit. Các con số 59 test và trạng thái nguồn nhóm dưới đây là mốc 14/10; xem PR/issue cho kết quả CI bản 16/10. Frontend wiring, staging và QA còn chờ.
 
 ## Code và tài nguyên nhóm
 

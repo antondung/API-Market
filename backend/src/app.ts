@@ -16,6 +16,7 @@ import { adminReviewRouter } from './admin-review-router.js';
 import { ImportError } from './provider-openapi-import.js';
 import multer from 'multer';
 import { providerContract } from './provider-contract.js';
+import { adminReviewPaths } from './admin-review-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -74,7 +75,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   const document = options.provider ? {
     ...providerContract, info: { title: 'API Market — Auth and Provider', version: '0.2.0' },
     components: { securitySchemes: openapi.components.securitySchemes, schemas: { ...openapi.components.schemas, ...providerContract.components.schemas } },
-    paths: { ...openapi.paths, ...providerContract.paths },
+    paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));

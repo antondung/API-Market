@@ -139,7 +139,7 @@ export class AdminReviewService {
     )).rows[0];
     if (!api) throw new ApiError(404, 'NOT_FOUND', 'API not found');
 
-    const [versions, endpoints, plans, legal, documentation, reviews, verification] = await Promise.all([
+    const [versions, endpoints, plans, legal, documentation, reviews, verification, domainVerification] = await Promise.all([
       this.pool.query('SELECT * FROM api_versions WHERE api_id = $1 ORDER BY id', [apiId]),
       this.pool.query('SELECT * FROM api_endpoints WHERE api_id = $1 ORDER BY id', [apiId]),
       this.pool.query('SELECT * FROM api_plans WHERE api_id = $1 ORDER BY id', [apiId]),
@@ -155,6 +155,7 @@ export class AdminReviewService {
         'SELECT * FROM provider_verifications WHERE provider_id = $1 ORDER BY id DESC LIMIT 1',
         [api.provider_id],
       ),
+      this.pool.query('SELECT hostname,verified_at,verification_expires_at FROM api_domain_verifications WHERE api_id=$1', [apiId]),
     ]);
 
     return {
@@ -171,6 +172,7 @@ export class AdminReviewService {
       legal: legal.rows[0] ? row(legal.rows[0]) : null,
       documentation: documentation.rows.map(row),
       reviews: reviews.rows.map(row),
+      domainVerification: domainVerification.rows[0] ? row(domainVerification.rows[0]) : null,
     };
   }
 
@@ -223,7 +225,9 @@ export class AdminReviewService {
       }
 
       const current = next === 'Published' && api.status === 'Approved' ? 'Approved' : 'Under Review';
-      await move(current, next, reason);
+      // Submitted -> Under Review above already performed the requested step.
+      if (next !== 'Under Review') await move(current, next, reason);
+      else if (api.status !== 'Submitted') throw new ApiError(409, 'INVALID_TRANSITION', 'API is already under review');
 
       await this.audit.write(client, {
         actorId, actorRole: 'ADMIN',

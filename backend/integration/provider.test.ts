@@ -345,3 +345,17 @@ test('domain verifier performs real DNS TXT transport; IP/localhost and credenti
     for (const value of ['http://127.0.0.1', 'http://[::1]', 'http://localhost', 'https://x.internal', 'https://user:pass@example.com']) assert.throws(() => domainHostname(value));
   } finally { try { socket.close(); } catch {} await f.close(); }
 });
+
+test('Provider audit writes are atomic and never include domain tokens or personal declarations', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await ready(f);
+    const entries = (await f.store.pool.query("SELECT * FROM audit_logs WHERE target_id=$1 AND actor_role='API_PROVIDER'", [r.api.id])).rows;
+    for (const action of ['api.created','api.openapi.imported','api.legal.accepted','api.domain.challenge.created','api.domain.verified']) assert.ok(entries.some(e => e.action === action));
+    assert.ok(!JSON.stringify(entries).includes('platform-verification='));
+    assert.ok(!JSON.stringify(entries).includes(legal.ownershipDeclaration));
+    await f.store.pool.query("CREATE FUNCTION fail_provider_audit() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'Injected audit failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER fail_provider_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_provider_audit()");
+    await request(f.app).put(r.path).set('Authorization', bearer(r.token)).send({ ...metadata, name: 'Should rollback' }).expect(500);
+    assert.equal((await f.service.get(f.users[0]!.id, r.api.id)).name, 'Ready');
+  } finally { await f.close(); }
+});

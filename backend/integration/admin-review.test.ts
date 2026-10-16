@@ -22,7 +22,8 @@ async function fixture() {
   const schema = `admin_review_${randomUUID().replaceAll('-', '')}`;
   await control.query(`CREATE SCHEMA ${schema}`);
   const store = new PostgresAuthStore(url!, schema);
-  const provider = new ProviderService(store.pool);
+  const dns: Record<string, string[][]> = {};
+  const provider = new ProviderService(store.pool, async name => dns[name] ?? []);
   const audit = new AuditService(store.pool);
   const review = new AdminReviewService(store.pool, audit);
   try {
@@ -43,7 +44,7 @@ async function fixture() {
     const providerRow = (await store.pool.query('SELECT id FROM api_providers ORDER BY id')).rows[0];
     await store.pool.query("INSERT INTO agreements(version,content,is_active) VALUES('test-v1','Test agreement',true)");
     return {
-      store, provider, audit, review, auth, adminId, adminToken, providerId: String(providerRow.id), token, account,
+      store, provider, audit, review, auth, adminId, adminToken, dns, providerId: String(providerRow.id), token, account,
       app: createApp(auth, () => {}, { provider, review, audit }),
       async close() {
         await store.close();
@@ -91,7 +92,7 @@ async function submittedApi(f: Awaited<ReturnType<typeof fixture>>) {
   assert.equal(plan.status, 201, JSON.stringify(plan.body));
   const legal = await request(f.app).put(`/api/provider/apis/${apiId}/legal`).set('Authorization', bearer(f.token)).send({
     ownershipDeclaration: 'I own it', distributionRights: 'I can distribute',
-    dataClassification: 'Public', agreementVersion: 'test-v1', accepted: true,
+    dataClassification: 'Public', agreementVersion: 'test-v1', accepted: true, processesPersonalData: false, personalDataTypes: [],
   });
   assert.equal(legal.status, 200, JSON.stringify(legal.body));
   // Documentation must contain the endpoint path/method for submit-review to accept it.
@@ -99,6 +100,9 @@ async function submittedApi(f: Awaited<ReturnType<typeof fixture>>) {
     "INSERT INTO api_documentations(api_id,version_id,source,content) VALUES($1,$2,'MANUAL',$3)",
     [apiId, versionId, JSON.stringify({ paths: { '/forecast': { get: { summary: 'Get forecast' } } } })],
   );
+  const challenge = await f.provider.domainChallenge(f.account.id, apiId);
+  f.dns[challenge.recordName] = [[challenge.recordValue]];
+  await f.provider.verifyDomain(f.account.id, apiId);
   const submitted = await request(f.app).post(`/api/provider/apis/${apiId}/submit-review`).set('Authorization', bearer(f.token)).send({});
   assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
   assert.equal(submitted.body.data.status, 'Submitted');
@@ -189,6 +193,9 @@ test('Admin API review: Submitted moves through Under Review, Approved and Publi
     assert.equal(dossier.body.data.api.status, 'Submitted');
     assert.equal(dossier.body.data.plans.length, 1);
     assert.equal(dossier.body.data.endpoints.length, 1);
+    assert.equal(dossier.body.data.legal.processesPersonalData, false);
+    assert.equal(dossier.body.data.domainVerification.hostname, 'example.com');
+    assert.ok(dossier.body.data.domainVerification.verifiedAt);
     assert.ok(dossier.body.data.legal.ownershipDeclaration);
     assert.equal(dossier.body.data.provider.verification.status, 'Verified');
     assert.ok(dossier.body.data.provider.providerName);
@@ -207,13 +214,27 @@ test('Admin API review: Submitted moves through Under Review, Approved and Publi
     assert.deepEqual(reviews.map(r => `${r.from_status}->${r.to_status}`),
       ['Submitted->Under Review', 'Under Review->Approved', 'Approved->Published']);
 
-    const logs = await request(f.app).get('/api/admin/audit-logs?targetType=api').set('Authorization', bearer(token));
+    const logs = await request(f.app).get(`/api/admin/audit-logs?targetType=api&actorId=${f.adminId}`).set('Authorization', bearer(token));
     assert.equal(logs.body.data.total, 2);
     assert.deepEqual(logs.body.data.items.map((l: { action: string }) => l.action).sort(), ['api.review.approved', 'api.review.published']);
     const approvedEntry = logs.body.data.items.find((l: { action: string }) => l.action === 'api.review.approved');
     assert.deepEqual(approvedEntry.detail.steps, ['Submitted->Under Review', 'Under Review->Approved']);
     assert.equal(approvedEntry.targetId, String(apiId));
     assert.equal(approvedEntry.actorRole, 'ADMIN');
+  } finally { await f.close(); }
+});
+
+test('Admin can explicitly start Under Review without a duplicate self transition', async () => {
+  const f = await fixture();
+  try {
+    await verifyProvider(f); const api = await submittedApi(f);
+    const result = await request(f.app).post(`/api/admin/apis/${api}/review`).set('Authorization', bearer(f.adminToken)).send({ next: 'Under Review' }).expect(200);
+    assert.equal(result.body.data.status, 'Under Review');
+    await request(f.app).post(`/api/admin/apis/${api}/review`).set('Authorization', bearer(f.adminToken)).send({ next: 'Under Review' }).expect(409);
+    await request(f.app).post(`/api/admin/apis/${api}/review`).set('Authorization', bearer(f.adminToken)).send({ next: 'Approved' }).expect(200);
+    const documentation = (await request(f.app).get('/openapi.json').expect(200)).body;
+    assert.ok(documentation.paths['/api/admin/apis/{id}/review']);
+    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM api_reviews WHERE api_id=$1', [api])).rows[0].n, 2);
   } finally { await f.close(); }
 });
 

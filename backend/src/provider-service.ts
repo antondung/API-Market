@@ -5,6 +5,7 @@ import type { ApiState, VerificationState } from './provider-domain.js';
 import { importOpenApi } from './provider-openapi-import.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { domainHostname, domainRecordName, resolveDomainTxt, type TxtLookup } from './provider-dns.js';
+import { AuditService } from './audit-service.js';
 
 const hashDomainToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -22,6 +23,9 @@ export class ProviderService {
   async ready() {
     await this.pool.query('SELECT id,processes_personal_data FROM api_legal_declarations LIMIT 0');
     await this.pool.query('SELECT api_id FROM api_domain_verifications LIMIT 0');
+  }
+  private async audit(client: PoolClient, actor: string, action: string, api: string, detail: Record<string, unknown> = {}) {
+    await new AuditService(this.pool).write(client, { actorId: actor, actorRole: 'API_PROVIDER', action, targetType: 'api', targetId: api, detail });
   }
   private async transaction<T>(actor: string, action: (client: PoolClient, providerId: string) => Promise<T>) {
     const client = await this.pool.connect();
@@ -71,7 +75,9 @@ export class ProviderService {
   async create(actor: string, input: Input) {
     return this.transaction(actor, async (c, p) => {
       requireVerified((await this.verification(c, p))?.status ?? 'Pending');
-      return row((await c.query('INSERT INTO apis(provider_id,name,description,category,base_url,tags) VALUES($1,$2,$3,$4,$5,$6) RETURNING *', [p, input.name, input.description, input.category, input.baseUrl, JSON.stringify(input.tags)])).rows[0]);
+      const result = (await c.query('INSERT INTO apis(provider_id,name,description,category,base_url,tags) VALUES($1,$2,$3,$4,$5,$6) RETURNING *', [p, input.name, input.description, input.category, input.baseUrl, JSON.stringify(input.tags)])).rows[0];
+      await this.audit(c, actor, 'api.created', String(result.id));
+      return row(result);
     });
   }
   async get(actor: string, api: string) { return this.transaction(actor, async (c, p) => row(await this.owned(c, p, api))); }
@@ -79,6 +85,7 @@ export class ProviderService {
     return this.transaction(actor, async (c, p) => {
       const previous = await this.owned(c, p, api, true);
       if (new URL(previous.base_url).hostname !== new URL(input.baseUrl).hostname) await c.query('DELETE FROM api_domain_verifications WHERE api_id=$1', [api]);
+      await this.audit(c, actor, 'api.updated', api);
       return row((await c.query('UPDATE apis SET name=$1,description=$2,category=$3,base_url=$4,tags=$5 WHERE id=$6 RETURNING *', [input.name, input.description, input.category, input.baseUrl, JSON.stringify(input.tags), api])).rows[0]);
     });
   }
@@ -152,6 +159,7 @@ export class ProviderService {
         const agreement = (await c.query('SELECT id,version FROM agreements WHERE is_active AND effective_at<=NOW() FOR SHARE')).rows[0];
         if (!agreement || agreement.version !== input.agreementVersion) throw new ApiError(409, 'AGREEMENT_CHANGED', 'Accept the current agreement version');
         await c.query('INSERT INTO api_legal_declarations(api_id,agreement_id,ownership_declaration,distribution_rights,data_classification,processes_personal_data,personal_data_types,data_processing_purpose) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(api_id) DO UPDATE SET agreement_id=$2,ownership_declaration=$3,distribution_rights=$4,data_classification=$5,processes_personal_data=$6,personal_data_types=$7,data_processing_purpose=$8,accepted_at=NOW(),updated_at=NOW()', [api, agreement.id, input.ownershipDeclaration, input.distributionRights, input.dataClassification, input.processesPersonalData, JSON.stringify(input.personalDataTypes), input.dataProcessingPurpose ?? null]);
+        await this.audit(c, actor, 'api.legal.accepted', api, { agreementVersion: agreement.version });
       }
       const record = (await c.query('SELECT l.*,a.version AS agreement_version FROM api_legal_declarations l JOIN agreements a ON a.id=l.agreement_id WHERE l.api_id=$1', [api])).rows[0];
       return record ? row(record) : null;
@@ -169,6 +177,7 @@ export class ProviderService {
       const document = JSON.stringify(imported.documentation);
       await c.query('UPDATE api_versions SET openapi_document=$1,updated_at=NOW() WHERE id=$2 AND api_id=$3', [document, versionId, api]);
       await c.query("INSERT INTO api_documentations(api_id,version_id,source,content) VALUES($1,$2,'OPENAPI_IMPORT',$3) ON CONFLICT(version_id) DO UPDATE SET content=$3,source='OPENAPI_IMPORT',updated_at=NOW()", [api, versionId, document]);
+      await this.audit(c, actor, 'api.openapi.imported', api, { versionId, endpointCount: imported.endpoints.length });
       return { versionId, endpointCount: imported.endpoints.length, title: imported.title };
     });
   }
@@ -188,13 +197,16 @@ export class ProviderService {
         metadata: !!(record.name && record.description && record.category && record.base_url), endpoints: content.n,
         documentation: content.n > 0 && content.documented === content.n, plans: plans.n, legal: !!legal && typeof legal.processes_personal_data === 'boolean',
         acceptedAgreementVersion: legal?.agreement_id === agreement.id ? agreement.version : undefined, currentAgreementVersion: agreement.version });
-      return row((await c.query("UPDATE apis SET status='Submitted' WHERE id=$1 RETURNING *", [api])).rows[0]);
+      const result = (await c.query("UPDATE apis SET status='Submitted' WHERE id=$1 RETURNING *", [api])).rows[0];
+      await this.audit(c, actor, 'api.submitted', api);
+      return row(result);
     });
   }
   async reopen(actor: string, api: string) {
     return this.transaction(actor, async (c, p) => {
       const record = await this.owned(c, p, api);
       transitionApi(record.status, 'Draft', 'Provider');
+      await this.audit(c, actor, 'api.reopened', api);
       return row((await c.query("UPDATE apis SET status='Draft',submitted_at=NULL,approved_at=NULL WHERE id=$1 RETURNING *", [api])).rows[0]);
     });
   }
@@ -212,6 +224,7 @@ export class ProviderService {
       const hostname = domainHostname(record.base_url);
       const token = `platform-verification=${randomBytes(32).toString('base64url')}`;
       const result = (await c.query("INSERT INTO api_domain_verifications(api_id,hostname,token_hash,challenge_expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '24 hours') ON CONFLICT(api_id) DO UPDATE SET hostname=$2,token_hash=$3,challenge_expires_at=NOW()+INTERVAL '24 hours',verified_at=NULL,verification_expires_at=NULL,created_at=NOW() RETURNING challenge_expires_at", [api, hostname, hashDomainToken(token)])).rows[0];
+      await this.audit(c, actor, 'api.domain.challenge.created', api, { hostname });
       return { hostname, recordType: 'TXT', recordName: domainRecordName(hostname), recordValue: token, challengeExpiresAt: result.challenge_expires_at.toISOString() };
     });
   }
@@ -234,6 +247,7 @@ export class ProviderService {
       if (domainHostname(record.base_url) !== snapshot.hostname) throw new ApiError(409, 'DOMAIN_CHANGED', 'Base URL hostname changed');
       const result = await c.query("UPDATE api_domain_verifications SET verified_at=NOW(),verification_expires_at=NOW()+INTERVAL '7 days' WHERE api_id=$1 AND hostname=$2 AND token_hash=$3 AND challenge_expires_at>NOW() RETURNING hostname,verified_at,verification_expires_at", [api, snapshot.hostname, snapshot.token_hash]);
       if (!result.rows[0]) throw new ApiError(409, 'DOMAIN_CHALLENGE_CHANGED', 'Domain challenge expired or was replaced');
+      await this.audit(c, actor, 'api.domain.verified', api, { hostname: snapshot.hostname });
       return { ...row(result.rows[0]), verified: true };
     });
   }
