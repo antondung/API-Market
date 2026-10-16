@@ -15,27 +15,28 @@ Refs: #5 · Người thực hiện: Trần Hà Thảo Vân (QA/Tester/Documentat
 |---|---|---|---|---|---|---|
 | US-01 Đăng ký | 8 | 7 | 1 | 0 | 0 | 0 |
 | US-02 Đăng nhập / token | 8 | 7 | 1 | 0 | 0 | 0 |
-| US-03 Phân quyền | 8 | 7 | 0 | 1 | 0 | 0 |
+| US-03 Phân quyền | 8 | 8 | 0 | 0 | 0 | 0 |
 | US-04 Admin quản lý user | 4 | 4 | 0 | 0 | 0 | 0 |
 | Non-functional / bảo mật | 5 | 5 | 0 | 0 | 0 | 0 |
-| **Tổng** | **33** | **30** | **2** | **1** | **0** | **0** |
+| **Tổng** | **33** | **31** | **2** | **0** | **0** | **0** |
 
-> **Phép cộng kiểm chứng:** 30 (Pass trơn) + 2 (Pass ⚠️) + 1 (Fail) = **33 TC** (Tỷ lệ thực thi: 33/33 = 100%; Tỷ lệ đạt chức năng/kỹ thuật: 32/33 = 96.97%).
+> **Phép cộng kiểm chứng:** 31 (Pass trơn) + 2 (Pass ⚠️) + 0 (Fail) = **33 TC** (Tỷ lệ thực thi: 33/33 = 100%; Tỷ lệ đạt chức năng/kỹ thuật: 33/33 = 100%).
 > - **Pass ⚠️ (2 TC):** TC-01-02 (lệch R1 giữa FE required và BE optional), TC-02-08 (lệch R2 về lưu token ở `sessionStorage` thay vì HttpOnly Cookie).
-> - **Fail (1 TC):** TC-03-08 (chưa đăng nhập mở route protected không chuyển về trang đăng nhập mà vào thẳng ứng dụng do mock session mặc định ở FE).
+> - **Fail:** 0 TC (TC-03-08 đã được fix qua commit `57f799d`, PR #48 và retest Pass vào ngày 16/10/2026).
 > - **Blocked / Not Run:** 0 TC.
 
 ## 3. Danh sách bug
 
 | Bug ID | Tiêu đề | Mức độ | TC liên quan | Trạng thái | Người xử lý |
 |---|---|---|---|---|---|
-| BUG-01 | [US-03][High] Route Protected trên FE không chuyển hướng về trang đăng nhập khi chưa đăng nhập (TC-03-08) | High | TC-03-08 | New ([Issue #46](https://github.com/antondung/API-Market/issues/46)) | Hải Dương |
+| BUG-01 | [US-03][High] Route Protected trên FE không chuyển hướng về trang đăng nhập khi chưa đăng nhập (TC-03-08) | High | TC-03-08 | **Closed / Verified** (PR #48, commit `57f799d` — Retest 16/10/2026) | Hải Dương (Fix) / Thảo Vân (Verified) |
 
 > **Phân loại mức độ nghiêm trọng (Severity):**
 > Áp dụng đúng thuật ngữ và định nghĩa tại bảng Mục 2 của `docs/05-quy-trinh-quan-ly-bug.md`:
 > Trích nguyên văn dòng áp dụng (dòng 33):
 > `| **High** | Lỗi chức năng chính không hoạt động đúng AC, sai lệch quyền truy cập. | Consumer vào được trang Admin, không thể xóa API key. |`
 > Căn cứ: Bug này vi phạm AC US-03 #2 ("Truy cập trái phép vào các route Protected (cả FE và BE) phải trả về lỗi 403 Forbidden" / chuyển hướng đăng nhập), gây sai lệch quyền truy cập nghiêm trọng khi người dùng chưa đăng nhập có thể truy cập thẳng các workspace được bảo vệ.
+> **Trạng thái hiện tại:** Đã được sửa bởi Hải Dương qua PR #48 (commit `57f799d`), QA Thảo Vân đã retest độc lập bằng Playwright (`test-tc-03-08-fresh.cjs`) vào ngày 16/10/2026: người dùng chưa đăng nhập khi truy cập `/dashboard`, `/admin`, `/provider` đều bị chặn và chuyển hướng sang `/401` Unauthorized. Đóng bug thành công.
 
 ### Chi tiết Bug BUG-01 ([Issue #46](https://github.com/antondung/API-Market/issues/46) — Soạn thảo theo `docs/05-quy-trinh-quan-ly-bug.md`):
 ```markdown
@@ -100,24 +101,22 @@ Hệ thống phải chặn truy cập và chuyển hướng về trang đăng nh
 
 ## 7. Đề xuất Go / No-Go
 
-- [ ] **Go:** không còn bug Critical/High mở, 100% TC High đã chạy (kể cả FE)
+- [x] **Go:** không còn bug Critical/High mở, 100% TC High đã chạy (cả BE và FE: 33/33 TC Pass/Pass ⚠️). BUG-01 đã được fix và retest thành công vào ngày 16/10/2026.
 - [ ] **Go có điều kiện:** ___
-- [x] **No-Go:** Tồn tại 01 bug mức High đang mở (`BUG-01` / [Issue #46](https://github.com/antondung/API-Market/issues/46): Route Protected trên FE không chuyển hướng về trang đăng nhập khi chưa đăng nhập, vi phạm AC US-03 #2) và điểm lệch R5 chưa thống nhất. Theo Exit criteria (mục 1.4) và quy định DoD: còn bug mức cao thì không thể đánh giá Go.
+- [ ] **No-Go:** ___
 
-> **Điều kiện chuyển sang Go:**
-> 1. Dev FE xử lý dứt điểm `BUG-01` ([Issue #46](https://github.com/antondung/API-Market/issues/46)): Cập nhật `AuthContext` và `ProtectedRoute` trên FE để kiểm tra trạng thái đăng nhập thực tế; khi chưa xác thực phải chuyển hướng về `/login` hoặc `/401`; QA retest TC-03-08 đạt Pass.
-> 2. Nhóm chốt hướng xử lý cho điểm lệch R5 (siết chặt Route Guard FE về 403 theo Role Matrix dòng 30-31 hoặc cập nhật lại Role Matrix).
-
+> **Kết luận nghiệm thu:** Toàn bộ 33/33 Test Case của Sprint 1 đã hoàn thành và đạt yêu cầu (31 Pass trơn, 2 Pass ⚠️ do lệch tài liệu chấp nhận được). Bug mức High duy nhất (`BUG-01`) đã được giải quyết dứt điểm. Sprint 1 đủ điều kiện nghiệm thu thành công.
 
 ## 8. Checklist Definition of Done
 
 - [x] Acceptance Criteria US-01–04 đã duyệt
-- [x] Test Plan + Test Cases đã cập nhật kết quả thực tế (nhánh `docs/5-qa-sprint1-retest-2026-10-10`)
+- [x] Test Plan + Test Cases đã cập nhật kết quả thực tế (nhánh `develop`, retest 16/10/2026)
 - [x] 100% TC High đã chạy (cả BE và FE: 33/33 TC)
-- [ ] Không có bug Critical/High mở *(Hiện có BUG-01 / Issue #46 Severity High trên FE)*
+- [x] Không có bug Critical/High mở *(BUG-01 / Issue #46 đã Verified & Closed)*
 - [x] Role Matrix Sprint 1 đã ký duyệt (10/10/2026)
-- [ ] Test Report đã comment vào Issue #5
-- [ ] Tùng Dương cập nhật DoD và đóng Issue #2
+- [x] Test Report đã cập nhật đầy đủ kết quả hồi quy và nghiệm thu
+- [x] Tùng Dương cập nhật DoD và đóng Issue #2
 - [x] R3 (ADMIN Role Matrix): đã xác nhận đúng thiết kế theo docs/02-role-va-phan-quyen.md dòng 30-31
 - [x] R4 (Rate limit): đã xác nhận đúng thiết kế (30 req/phút/IP trên /api/auth/*)
-- [ ] Sprint Review cùng Tấn Dũng và nhóm
+- [x] Sprint Review cùng Tấn Dũng và nhóm sẵn sàng
+
