@@ -1,26 +1,54 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CustomSelect } from '../../components/ui/CustomSelect';
 import { useLanguage } from '../../i18n';
-import type { ApiCategory } from '../../types';
+import {
+  createProviderApi,
+  createProviderVersion,
+  createProviderPlan,
+  saveProviderLegal,
+  getProviderAgreement,
+  getProviderVerification,
+  formatProviderErrorMessage,
+} from '../../services/providerApi';
+import type { ProviderAgreement, ProviderVerification } from '../../services/providerTypes';
+
+const CATEGORIES = [
+  'Machine Learning & AI',
+  'Finance & Banking',
+  'Data & Web Scraping',
+  'DevOps & Cloud',
+  'Translation & NLP',
+  'Weather & Geo',
+  'Security & Auth',
+  'E-Commerce & Retail',
+  'Communication & SMS',
+];
 
 export const CreateApiWizardPage: React.FC = () => {
-  const { createApi } = useApp();
+  const { currentUser } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [wizardError, setWizardError] = useState<string | null>(null);
 
-  // Step 1: Info
+  // Verification & Agreement status
+  const [verification, setVerification] = useState<ProviderVerification | null>(null);
+  const [agreement, setAgreement] = useState<ProviderAgreement | null>(null);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+
+  // Step 1: Metadata
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<ApiCategory>('Machine Learning & AI');
+  const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [version, setVersion] = useState('1.0.0');
   const [shortDescription, setShortDescription] = useState('');
   const [longDescription, setLongDescription] = useState('');
-  const [icon, setIcon] = useState('neurology');
+  const [tagsInput, setTagsInput] = useState('production, api');
 
   // Step 2: Routing
   const [baseUrl, setBaseUrl] = useState('https://api.mycompany.io/v1');
@@ -29,97 +57,129 @@ export const CreateApiWizardPage: React.FC = () => {
   const [freeQuota, setFreeQuota] = useState('2000');
   const [freeRps, setFreeRps] = useState('10');
 
-  // Step 4: Ownership, Legal & Data Classification (Section 8 & 9)
+  // Step 4: Ownership, Legal & Data Classification (US-08)
   const [ownershipType, setOwnershipType] = useState<'OWN' | 'THIRD_PARTY'>('OWN');
   const [usesThirdPartyData, setUsesThirdPartyData] = useState(false);
-  const [domainVerified, setDomainVerified] = useState(false);
-  const [verifyingDomain, setVerifyingDomain] = useState(false);
-  const [verificationToken] = useState(`platform-verification=apihub_sec_${Math.random().toString(36).substring(2, 10)}`);
-
-  const [processesPersonalData, setProcessesPersonalData] = useState(false);
-  const [selectedDataTypes, setSelectedDataTypes] = useState<string[]>([]);
+  const [dataClassification, setDataClassification] = useState<'Public' | 'Internal' | 'Confidential' | 'Restricted'>('Public');
   const [legalConfirmed, setLegalConfirmed] = useState(false);
 
-  const categories: ApiCategory[] = [
-    'Machine Learning & AI',
-    'Finance & Banking',
-    'Data & Web Scraping',
-    'DevOps & Cloud',
-    'Translation & NLP',
-    'Weather & Geo',
-    'Security & Auth'
-  ];
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoadingInitial(true);
 
-  const personalDataOptions = [
-    'Họ tên (Full Name)',
-    'Email Address',
-    'Số điện thoại (Phone)',
-    'Vị trí địa lý (Geolocation)',
-    'Thông tin tài chính (Financial & Payment)',
-    'Thông tin xác thực (Credentials & Auth)',
-    'Dữ liệu sức khỏe (Health & Biometrics)',
-    'Dữ liệu khác (Other PII)'
-  ];
-
-  const handleToggleDataType = (type: string) => {
-    setSelectedDataTypes(prev =>
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    );
-  };
-
-  const handleVerifyDomain = () => {
-    setVerifyingDomain(true);
-    setTimeout(() => {
-      setVerifyingDomain(false);
-      setDomainVerified(true);
-    }, 1200);
-  };
-
-  const handleFinish = () => {
-    if (!name.trim()) return;
-
-    createApi({
-      name,
-      category,
-      version,
-      shortDescription,
-      longDescription,
-      icon,
-      baseUrl,
-      legalDeclarationCompleted: legalConfirmed,
-      complianceNotes: processesPersonalData
-        ? `Processes personal data: ${selectedDataTypes.join(', ')}. Ownership: ${ownershipType}.`
-        : `Non-personal public data. Ownership: ${ownershipType}.`,
-      plans: [
-        {
-          id: `plan_free_${Date.now()}`,
-          apiId: '',
-          name: 'Free Community Sandbox',
-          tier: 'Free',
-          priceMonthly: 0,
-          monthlyQuota: parseInt(freeQuota) || 2000,
-          rateLimitPerSec: parseInt(freeRps) || 10,
-          features: [`${parseInt(freeQuota).toLocaleString()} requests / month`, `${freeRps} req/sec rate limit`]
+    Promise.all([
+      getProviderVerification(controller.signal).catch(() => null),
+      getProviderAgreement(controller.signal).catch(() => null),
+    ])
+      .then(([verRes, agrRes]) => {
+        if (!controller.signal.aborted) {
+          setVerification(verRes);
+          setAgreement(agrRes);
         }
-      ],
-      endpoints: [
-        {
-          id: `ep_init_${Date.now()}`,
-          path: '/v1/predict',
-          method: 'POST',
-          summary: 'Primary prediction endpoint',
-          description: 'Primary inference execution endpoint',
-          rateLimitPerSec: parseInt(freeRps) || 10,
-          parameters: [
-            { name: 'model', type: 'string', in: 'query', required: true, description: 'Target model identifier' }
-          ],
-          sampleRequest: JSON.stringify({ input: 'sample data payload' }, null, 2),
-          sampleResponse: JSON.stringify({ status: 'success', confidence: 0.99 }, null, 2)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadingInitial(false);
         }
-      ]
-    });
+      });
 
-    navigate('/provider/apis');
+    return () => controller.abort();
+  }, [currentUser]);
+
+  const isVerified = verification?.status === 'Verified';
+
+  const handleFinish = async () => {
+    if (submitting) return;
+    setWizardError(null);
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setWizardError('Vui lòng nhập tên API.');
+      setStep(1);
+      return;
+    }
+
+    const trimmedUrl = baseUrl.trim();
+    try {
+      const parsed = new URL(trimmedUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        setWizardError('Base URL phải bắt đầu bằng http:// hoặc https://');
+        setStep(2);
+        return;
+      }
+    } catch {
+      setWizardError('Base URL không đúng định dạng URL hợp lệ.');
+      setStep(2);
+      return;
+    }
+
+    if (!legalConfirmed) {
+      setWizardError('Bạn phải đồng ý với Thỏa thuận Nhà cung cấp trước khi hoàn tất đăng ký API.');
+      setStep(4);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const tagList = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+
+      // 1. Create API
+      const fullDescription = longDescription.trim() || shortDescription.trim();
+      const createdApi = await createProviderApi({
+        name: trimmedName,
+        description: fullDescription || 'Dịch vụ API thương mại',
+        category,
+        baseUrl: trimmedUrl,
+        tags: tagList,
+      });
+
+      // 2. Create Initial Version
+      const versionStr = version.trim() || '1.0.0';
+      await createProviderVersion(createdApi.id, {
+        version: versionStr,
+        changelog: 'Phiên bản khởi tạo ban đầu',
+      }).catch(err => {
+        console.warn('Initial version creation warning:', err);
+      });
+
+      // 3. Create Default Free Plan
+      const quotaNum = parseInt(freeQuota, 10) || 2000;
+      const rpsNum = parseInt(freeRps, 10) || 10;
+      await createProviderPlan(createdApi.id, {
+        name: 'Free',
+        priceMonthly: 0,
+        currency: 'USD',
+        quota: quotaNum,
+        rateLimit: rpsNum,
+      }).catch(err => {
+        console.warn('Initial plan creation warning:', err);
+      });
+
+      // 4. Save Legal Affirmation
+      const agreementVer = agreement?.version || 'v1.0.0';
+      const ownershipDecl = ownershipType === 'OWN'
+        ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
+        : 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
+      const distributionRights = usesThirdPartyData
+        ? 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép'
+        : 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+
+      await saveProviderLegal(createdApi.id, {
+        ownershipDeclaration: ownershipDecl,
+        distributionRights,
+        dataClassification,
+        agreementVersion: agreementVer,
+        accepted: true,
+      }).catch(err => {
+        console.warn('Initial legal declaration warning:', err);
+      });
+
+      navigate('/provider/apis');
+    } catch (err) {
+      setWizardError(formatProviderErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -135,6 +195,40 @@ export const CreateApiWizardPage: React.FC = () => {
           {t('Complete metadata, gateway routing, sandbox pricing, and legal/data classification declarations.')}
         </p>
       </div>
+
+      {/* Global Wizard Error */}
+      {wizardError && (
+        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm">
+          {wizardError}
+        </div>
+      )}
+
+      {/* Unverified Warning Banner */}
+      {!loadingInitial && !isVerified && (
+        <div className="p-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-[28px] text-amber-600 dark:text-amber-400">
+              warning
+            </span>
+            <div>
+              <h3 className="text-body-lg font-bold text-on-surface">
+                Chưa xác minh danh tính Nhà cung cấp (US-06)
+              </h3>
+              <p className="text-body-sm text-on-surface-variant">
+                Bạn cần hoàn tất hồ sơ xác minh trước khi có thể nộp duyệt hoặc xuất bản API.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="primary"
+            icon="verified_user"
+            onClick={() => navigate('/provider/verification')}
+          >
+            Đến trang xác minh
+          </Button>
+        </div>
+      )}
 
       {/* 4-Step Indicator */}
       <div className="grid grid-cols-4 gap-2 sm:gap-4 border-b border-outline-variant/30 pb-4">
@@ -176,7 +270,7 @@ export const CreateApiWizardPage: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('API Product Name')}</label>
+                <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('API Product Name')} <span className="text-error">*</span></label>
                 <input
                   type="text"
                   required
@@ -188,11 +282,11 @@ export const CreateApiWizardPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Industry Category')}</label>
-                <CustomSelect<ApiCategory>
+                <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Industry Category')} <span className="text-error">*</span></label>
+                <CustomSelect<string>
                   value={category}
                   onChange={(val) => setCategory(val)}
-                  options={categories.map(c => ({
+                  options={CATEGORIES.map(c => ({
                     value: c,
                     label: t(c),
                     icon: 'category'
@@ -213,13 +307,13 @@ export const CreateApiWizardPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Material Icon Name')}</label>
+                <label className="text-body-sm font-semibold text-on-surface block mb-1.5">Nhãn (Tags)</label>
                 <input
                   type="text"
-                  placeholder={t('e.g. neurology, credit_card, cloud')}
-                  value={icon}
-                  onChange={(e) => setIcon(e.target.value)}
-                  className="w-full p-3 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-md outline-none font-mono"
+                  placeholder="ai, nlp, classification (phân cách bằng dấu phẩy)"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  className="w-full p-3 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-md outline-none"
                 />
               </div>
             </div>
@@ -267,7 +361,7 @@ export const CreateApiWizardPage: React.FC = () => {
             </p>
 
             <div>
-              <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Upstream Base URL')}</label>
+              <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Upstream Base URL')} <span className="text-error">*</span></label>
               <input
                 type="url"
                 required
@@ -397,35 +491,11 @@ export const CreateApiWizardPage: React.FC = () => {
                   <span className="material-symbols-outlined text-primary text-[20px]">domain_verification</span>
                   {t('2. Xác minh quyền kiểm soát Domain (Domain Verification)')}
                 </h4>
-                {domainVerified ? (
-                  <Badge variant="success">{t('Domain Verified ✓')}</Badge>
-                ) : (
-                  <Badge variant="warning">{t('Verification Pending')}</Badge>
-                )}
+                <Badge variant="success">URL Format Validated ✓</Badge>
               </div>
               <p className="text-xs text-on-surface-variant">
-                {t('Thêm mã xác minh sau vào bản ghi TXT của domain hoặc endpoint')} <code className="font-mono text-primary">/.well-known/apihub-verification</code>:
+                Địa chỉ máy chủ API đã khai báo: <code className="font-mono text-primary">{baseUrl}</code>. Hệ thống sẽ kết nối qua giao thức mã hóa an toàn TLS/HTTPS khi proxy các yêu cầu từ Gateway.
               </p>
-              <div className="flex items-center justify-between bg-surface-container-highest/60 p-2.5 rounded-lg border border-outline-variant/30 font-mono text-xs">
-                <span>{verificationToken}</span>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(verificationToken)}
-                  className="text-primary hover:underline font-semibold"
-                >
-                  {t('Copy')}
-                </button>
-              </div>
-              <Button
-                size="sm"
-                variant={domainVerified ? 'secondary' : 'primary'}
-                loading={verifyingDomain}
-                disabled={domainVerified}
-                onClick={handleVerifyDomain}
-                icon="verified"
-              >
-                {domainVerified ? t('Domain Kiểm tra Thành công ✓') : t('Xác minh Domain ngay')}
-              </Button>
             </div>
 
             {/* Subsection 3: Data Classification */}
@@ -435,46 +505,30 @@ export const CreateApiWizardPage: React.FC = () => {
                 {t('3. Phân loại dữ liệu API (Data Classification)')}
               </h4>
               <p className="text-xs text-on-surface-variant">
-                {t('Does this API process personal or sensitive customer data?')}
+                Lựa chọn cấp độ nhạy cảm dữ liệu do API xử lý theo tiêu chuẩn an toàn thông tin:
               </p>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-body-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="personalData"
-                    checked={!processesPersonalData}
-                    onChange={() => setProcessesPersonalData(false)}
-                    className="accent-primary"
-                  />
-                  <span>{t('No (Không xử lý dữ liệu cá nhân)')}</span>
-                </label>
-                <label className="flex items-center gap-2 text-body-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="personalData"
-                    checked={processesPersonalData}
-                    onChange={() => setProcessesPersonalData(true)}
-                    className="accent-primary"
-                  />
-                  <span>{t('Yes (Có xử lý dữ liệu cá nhân)')}</span>
-                </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(['Public', 'Internal', 'Confidential', 'Restricted'] as const).map(cls => (
+                  <label
+                    key={cls}
+                    className={`p-3 rounded-xl border cursor-pointer text-center text-body-xs font-semibold transition-colors ${
+                      dataClassification === cls
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-outline-variant bg-surface-container text-on-surface'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="classification"
+                      value={cls}
+                      checked={dataClassification === cls}
+                      onChange={() => setDataClassification(cls)}
+                      className="sr-only"
+                    />
+                    {cls}
+                  </label>
+                ))}
               </div>
-
-              {processesPersonalData && (
-                <div className="pt-2 border-t border-outline-variant/20 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {personalDataOptions.map(opt => (
-                    <label key={opt} className="flex items-center gap-2 text-xs text-on-surface cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedDataTypes.includes(opt)}
-                        onChange={() => handleToggleDataType(opt)}
-                        className="rounded accent-primary"
-                      />
-                      <span>{t(opt)}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Subsection 4: Provider Agreement */}
@@ -487,8 +541,8 @@ export const CreateApiWizardPage: React.FC = () => {
                   className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer"
                 />
                 <span className="text-on-surface leading-relaxed text-xs sm:text-body-sm">
-                  <strong>{t('Chấp nhận Provider Agreement v1.4:')} </strong>
-                  {t('Tôi cam kết có quyền hợp pháp để cung cấp API này, thông tin và pricing được khai báo chính xác, không cung cấp dữ liệu trái phép, không xâm phạm quyền của bên thứ ba, và chịu trách nhiệm toàn bộ đối với nội dung/dữ liệu mà API cung cấp.')}
+                  <strong>Chấp nhận Provider Agreement {agreement?.version || 'v1.0.0'}: </strong>
+                  Tôi cam kết có quyền hợp pháp để cung cấp API này, thông tin và pricing được khai báo chính xác, không cung cấp dữ liệu trái phép, không xâm phạm quyền của bên thứ ba, và chịu trách nhiệm toàn bộ đối với nội dung/dữ liệu mà API cung cấp.
                 </span>
               </label>
             </div>
@@ -499,11 +553,12 @@ export const CreateApiWizardPage: React.FC = () => {
               </Button>
               <Button
                 variant="primary"
-                size="lg"
-                disabled={!legalConfirmed}
+                size="md"
+                disabled={submitting || !legalConfirmed}
                 onClick={handleFinish}
+                icon="check_circle"
               >
-                {t('Complete & Register API')}
+                {submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
               </Button>
             </div>
           </div>

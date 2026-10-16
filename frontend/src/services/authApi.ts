@@ -88,10 +88,26 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   const abortFromCaller = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener('abort', abortFromCaller, { once: true });
   try {
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const headers: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
+    if (options.headers) {
+      if (options.headers instanceof Headers) {
+        options.headers.forEach((v, k) => { headers[k] = v; });
+      } else if (Array.isArray(options.headers)) {
+        options.headers.forEach(([k, v]) => { headers[k] = v; });
+      } else {
+        Object.assign(headers, options.headers);
+      }
+      if (isFormData) {
+        delete headers['Content-Type'];
+        delete headers['content-type'];
+      }
+    }
+
     const response = await fetch(`${getBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`, {
       ...options,
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+      headers,
     });
     if (response.status === 204) return undefined as T;
     const payload = response.headers.get('content-type')?.includes('application/json') ? await response.json().catch(() => null) : null;
