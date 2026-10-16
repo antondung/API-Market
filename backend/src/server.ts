@@ -2,6 +2,9 @@ import { createApp, localFrontendOrigins } from './app.js';
 import { AuthService } from './auth.js';
 import { MemoryAuthStore } from './store.js';
 import { PostgresAuthStore } from './postgres-store.js';
+import { ProviderService } from './provider-service.js';
+import { AdminReviewService } from './admin-review-service.js';
+import { AuditService } from './audit-service.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
 if (!['postgres', 'memory'].includes(mode)) throw new Error('AUTH_STORE must be postgres or memory');
@@ -15,7 +18,13 @@ if (store instanceof PostgresAuthStore) await store.ready();
 const allowedOrigins = process.env.CORS_ORIGINS !== undefined
   ? process.env.CORS_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
   : process.env.NODE_ENV === 'production' ? [] : localFrontendOrigins;
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins });
+const provider = store instanceof PostgresAuthStore ? new ProviderService(store.pool) : undefined;
+if (provider) await provider.ready();
+const audit = store instanceof PostgresAuthStore ? new AuditService(store.pool) : undefined;
+if (audit) await audit.ready();
+const review = store instanceof PostgresAuthStore && audit ? new AdminReviewService(store.pool, audit) : undefined;
+if (review) await review.ready();
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });

@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Product Catalog API", "version": "v1", "description": "Mock API danh mục sản phẩm phục vụ demo Sprint 2." },
+  "servers": [{ "url": "http://localhost:4013" }],
+  "paths": {
+    "/v1/products": {
+      "get": {
+        "summary": "Lấy danh sách sản phẩm",
+        "responses": { "200": { "description": "Danh sách sản phẩm", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProductList" } } } } }
+      }
+    }
+  },
+  "components": { "schemas": { "ProductList": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } } } }, "Product": { "type": "object", "required": ["id", "name", "price", "currency", "inStock"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "price": { "type": "number" }, "currency": { "type": "string" }, "inStock": { "type": "boolean" } } } } }
+}

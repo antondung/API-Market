@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info:
+  title: Provider import test fixture
+  version: 1.0.0
+paths:
+  /items:
+    post:
+      summary: Create item (test fixture only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
