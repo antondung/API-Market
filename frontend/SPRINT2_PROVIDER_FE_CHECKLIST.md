@@ -1,10 +1,10 @@
 # Sprint 2 Provider Frontend Implementation Checklist
 
-Dự án: **API-Market**  
-Nhánh: `codex/sprint2-provider-fe`  
-Phụ trách: **Lê Hải Dương** (@leduwn)  
-Baseline commit: `3a4d644fcf2fc4c41b874e65b7583cc610a77031`  
-Backend contract: PR #49 (`origin/codex/issue-7-provider-foundation:backend/provider-sprint2.openapi.json`)
+- Dự án: **API-Market**
+- Nhánh: `codex/sprint2-provider-fe`
+- Phụ trách: **Lê Hải Dương** (@leduwn)
+- Baseline commit: `3a4d644fcf2fc4c41b874e65b7583cc610a77031`
+- Backend contract: PR #49 (`origin/codex/issue-7-provider-foundation:backend/provider-sprint2.openapi.json`)
 
 ---
 
