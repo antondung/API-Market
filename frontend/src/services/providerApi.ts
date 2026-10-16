@@ -1,5 +1,8 @@
 import { authenticatedRequest, ApiError, formatBackendErrorMessage } from './authApi';
 import type {
+  DomainChallengeResult,
+  DomainVerificationStatus,
+  DomainVerifyResult,
   OpenApiImportResult,
   ProviderAgreement,
   ProviderApi,
@@ -421,17 +424,69 @@ export async function saveProviderLegal(
   input: ProviderLegalInput,
   signal?: AbortSignal
 ): Promise<ProviderLegal> {
+  const payload: Record<string, unknown> = {
+    ownershipDeclaration: input.ownershipDeclaration.trim(),
+    distributionRights: input.distributionRights.trim(),
+    dataClassification: input.dataClassification,
+    agreementVersion: input.agreementVersion.trim(),
+    accepted: true,
+    processesPersonalData: Boolean(input.processesPersonalData),
+    personalDataTypes: input.processesPersonalData ? (input.personalDataTypes ?? []) : [],
+  };
+  if (input.processesPersonalData && input.dataProcessingPurpose?.trim()) {
+    payload.dataProcessingPurpose = input.dataProcessingPurpose.trim();
+  }
+
   const response = await authenticatedRequest<{ data: ProviderLegal }>(
     `/api/provider/apis/${encodeURIComponent(apiId)}/legal`,
     {
       method: 'PUT',
-      body: JSON.stringify({
-        ownershipDeclaration: input.ownershipDeclaration.trim(),
-        distributionRights: input.distributionRights.trim(),
-        dataClassification: input.dataClassification,
-        agreementVersion: input.agreementVersion.trim(),
-        accepted: true,
-      }),
+      body: JSON.stringify(payload),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+// ==========================================
+// 7.1 DOMAIN VERIFICATION (US-08)
+// ==========================================
+
+export async function getProviderDomainVerification(
+  apiId: string,
+  signal?: AbortSignal
+): Promise<DomainVerificationStatus> {
+  const response = await authenticatedRequest<{ data: DomainVerificationStatus }>(
+    `/api/provider/apis/${encodeURIComponent(apiId)}/domain-verification`,
+    { method: 'GET', signal }
+  );
+  return response.data;
+}
+
+export async function createProviderDomainChallenge(
+  apiId: string,
+  signal?: AbortSignal
+): Promise<DomainChallengeResult> {
+  const response = await authenticatedRequest<{ data: DomainChallengeResult }>(
+    `/api/provider/apis/${encodeURIComponent(apiId)}/domain-verification/challenge`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
+      signal,
+    }
+  );
+  return response.data;
+}
+
+export async function verifyProviderDomain(
+  apiId: string,
+  signal?: AbortSignal
+): Promise<DomainVerifyResult> {
+  const response = await authenticatedRequest<{ data: DomainVerifyResult }>(
+    `/api/provider/apis/${encodeURIComponent(apiId)}/domain-verification/verify`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
       signal,
     }
   );

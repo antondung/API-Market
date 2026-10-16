@@ -11,6 +11,7 @@ import type {
   ProviderEndpoint,
   ProviderPlan,
   ProviderLegal,
+  DomainVerificationStatus,
 } from '../services/providerTypes';
 
 describe('PublishingWorkflowPage component tests', () => {
@@ -89,6 +90,13 @@ describe('PublishingWorkflowPage component tests', () => {
     acceptedAt: '2026-10-10T00:00:00Z',
   };
 
+  const mockDomainVerification: DomainVerificationStatus = {
+    hostname: 'search.example.com',
+    verified: true,
+    verificationExpiresAt: '2099-01-01T00:00:00Z',
+    verifiedAt: '2026-10-10T00:00:00Z',
+  };
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -105,6 +113,7 @@ describe('PublishingWorkflowPage component tests', () => {
     vi.spyOn(providerApiModule, 'listProviderEndpoints').mockResolvedValue(mockEndpoints);
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
     vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
+    vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
 
     render(
       <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
@@ -126,13 +135,14 @@ describe('PublishingWorkflowPage component tests', () => {
     expect(screen.getByText(/4\. Đã duyệt/i)).toBeDefined();
     expect(screen.getByText(/5\. Đã xuất bản/i)).toBeDefined();
 
-    // Check 4 readiness checklist items
+    // Check 5 readiness checklist items
     expect(screen.getByText(/1\. Xác minh Danh tính Nhà cung cấp/i)).toBeDefined();
     expect(screen.getByText(/2\. Định tuyến Endpoint & Phiên bản/i)).toBeDefined();
     expect(screen.getByText(/3\. Bảng giá & Gói cước/i)).toBeDefined();
     expect(screen.getByText(/4\. Cam kết Pháp lý & Phân loại Dữ liệu/i)).toBeDefined();
+    expect(screen.getByText(/5\. Xác minh Quyền kiểm soát Tên miền Upstream/i)).toBeDefined();
 
-    // Button should be enabled because all 4 checklist conditions are true
+    // Button should be enabled because all 5 checklist conditions are true
     const submitBtn = screen.getByRole('button', { name: /Nộp duyệt cho Quản trị viên/i });
     expect(submitBtn.hasAttribute('disabled')).toBe(false);
   });
@@ -152,6 +162,10 @@ describe('PublishingWorkflowPage component tests', () => {
     vi.spyOn(providerApiModule, 'listProviderEndpoints').mockResolvedValue([]); // No endpoints
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
     vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
+    vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue({
+      hostname: 'search.example.com',
+      verified: false,
+    });
 
     render(
       <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
@@ -184,6 +198,7 @@ describe('PublishingWorkflowPage component tests', () => {
     vi.spyOn(providerApiModule, 'listProviderEndpoints').mockResolvedValue(mockEndpoints);
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
     vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
+    vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
 
     const submitReviewSpy = vi.spyOn(providerApiModule, 'submitProviderApiReview').mockResolvedValue({
       ...mockApis[0],

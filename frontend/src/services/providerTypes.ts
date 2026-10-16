@@ -129,6 +129,16 @@ export interface ProviderPlanInput {
 
 export type DataClassification = 'Public' | 'Internal' | 'Confidential' | 'Restricted';
 
+export type PersonalDataType =
+  | 'FullName'
+  | 'Email'
+  | 'Phone'
+  | 'Geolocation'
+  | 'Financial'
+  | 'Credentials'
+  | 'HealthBiometrics'
+  | 'Other';
+
 export interface ProviderLegal {
   id: string;
   apiId: string;
@@ -138,6 +148,9 @@ export interface ProviderLegal {
   distributionRights: string;
   dataClassification: DataClassification;
   acceptedAt: string;
+  processesPersonalData?: boolean;
+  personalDataTypes?: PersonalDataType[];
+  dataProcessingPurpose?: string | null;
 }
 
 export interface ProviderLegalInput {
@@ -146,6 +159,32 @@ export interface ProviderLegalInput {
   dataClassification: DataClassification;
   agreementVersion: string;
   accepted: true;
+  processesPersonalData: boolean;
+  personalDataTypes: PersonalDataType[];
+  dataProcessingPurpose?: string;
+}
+
+export interface DomainVerificationStatus {
+  hostname: string;
+  verified: boolean;
+  challengeExpiresAt?: string | null;
+  verifiedAt?: string | null;
+  verificationExpiresAt?: string | null;
+}
+
+export interface DomainChallengeResult {
+  hostname: string;
+  recordType: 'TXT';
+  recordName: string;
+  recordValue: string;
+  challengeExpiresAt: string;
+}
+
+export interface DomainVerifyResult {
+  hostname: string;
+  verifiedAt: string;
+  verificationExpiresAt: string;
+  verified: true;
 }
 
 export interface ProviderAgreement {

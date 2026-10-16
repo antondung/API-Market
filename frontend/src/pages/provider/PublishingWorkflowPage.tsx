@@ -7,10 +7,14 @@ import {
   listProviderApis,
   getProviderPublishStatus,
   submitProviderApiReview,
+  reopenProviderApi,
   getProviderVerification,
   listProviderEndpoints,
   listProviderPlans,
   getProviderLegal,
+  getProviderDomainVerification,
+  createProviderDomainChallenge,
+  verifyProviderDomain,
   formatProviderErrorMessage,
 } from '../../services/providerApi';
 import type {
@@ -20,6 +24,8 @@ import type {
   ProviderEndpoint,
   ProviderPlan,
   ProviderLegal,
+  DomainVerificationStatus,
+  DomainChallengeResult,
   ApiStatus,
 } from '../../services/providerTypes';
 
@@ -40,9 +46,18 @@ export const PublishingWorkflowPage: React.FC = () => {
   const [endpoints, setEndpoints] = useState<ProviderEndpoint[]>([]);
   const [plans, setPlans] = useState<ProviderPlan[]>([]);
   const [legal, setLegal] = useState<ProviderLegal | null>(null);
+  const [domainVerification, setDomainVerification] = useState<DomainVerificationStatus | null>(null);
+
+  // Domain Challenge state
+  const [challengeData, setChallengeData] = useState<DomainChallengeResult | null>(null);
+  const [loadingChallenge, setLoadingChallenge] = useState(false);
+  const [verifyingDomain, setVerifyingDomain] = useState(false);
+  const [domainMessage, setDomainMessage] = useState<string | null>(null);
+  const [domainError, setDomainError] = useState<string | null>(null);
 
   const [_loadingDetails, setLoadingDetails] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 
@@ -90,6 +105,9 @@ export const PublishingWorkflowPage: React.FC = () => {
     const controller = new AbortController();
     setLoadingDetails(true);
     setError(null);
+    setChallengeData(null);
+    setDomainMessage(null);
+    setDomainError(null);
 
     Promise.all([
       getProviderPublishStatus(selectedApiId, controller.signal).catch(() => null),
@@ -97,14 +115,16 @@ export const PublishingWorkflowPage: React.FC = () => {
       listProviderEndpoints(selectedApiId, controller.signal).catch(() => []),
       listProviderPlans(selectedApiId, controller.signal).catch(() => []),
       getProviderLegal(selectedApiId, controller.signal).catch(() => null),
+      getProviderDomainVerification(selectedApiId, controller.signal).catch(() => null),
     ])
-      .then(([statusRes, verRes, epRes, plRes, legRes]) => {
+      .then(([statusRes, verRes, epRes, plRes, legRes, domainRes]) => {
         if (!controller.signal.aborted) {
           setPublishStatus(statusRes);
           setVerification(verRes);
           setEndpoints(epRes);
           setPlans(plRes);
           setLegal(legRes);
+          setDomainVerification(domainRes);
         }
       })
       .catch(err => {
@@ -152,7 +172,12 @@ export const PublishingWorkflowPage: React.FC = () => {
   const hasEndpoints = endpoints.length > 0;
   const hasPlans = plans.length > 0;
   const hasLegal = Boolean(legal && legal.acceptedAt);
-  const canSubmit = isVerified && hasEndpoints && hasPlans && hasLegal && currentStatus === 'Draft';
+  const isDomainVerified = Boolean(
+    domainVerification?.verified &&
+    domainVerification.verificationExpiresAt &&
+    new Date(domainVerification.verificationExpiresAt).getTime() > Date.now()
+  );
+  const canSubmit = isVerified && hasEndpoints && hasPlans && hasLegal && isDomainVerified && currentStatus === 'Draft';
 
   const handleSubmit = async () => {
     if (!selectedApiId || submitting) return;
@@ -173,6 +198,65 @@ export const PublishingWorkflowPage: React.FC = () => {
       setError(formatProviderErrorMessage(err));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    if (!selectedApiId || reopening) return;
+    setError(null);
+    setSubmitSuccess(null);
+    setReopening(true);
+
+    try {
+      const reopenedApi = await reopenProviderApi(selectedApiId);
+      setPublishStatus({
+        id: reopenedApi.id,
+        status: reopenedApi.status,
+      });
+      setApis(prev => prev.map(a => (a.id === reopenedApi.id ? reopenedApi : a)));
+      setSubmitSuccess('Hồ sơ API đã được mở lại về trạng thái Draft để bạn chỉnh sửa và cập nhật.');
+    } catch (err) {
+      setError(formatProviderErrorMessage(err));
+    } finally {
+      setReopening(false);
+    }
+  };
+
+  const handleCreateChallenge = async () => {
+    if (!selectedApiId || loadingChallenge) return;
+    setLoadingChallenge(true);
+    setDomainError(null);
+    setDomainMessage(null);
+
+    try {
+      const res = await createProviderDomainChallenge(selectedApiId);
+      setChallengeData(res);
+      setDomainMessage('Đã tạo mã xác thực DNS TXT. Vui lòng thêm bản ghi TXT vào cấu hình DNS của tên miền.');
+    } catch (err) {
+      setDomainError(formatProviderErrorMessage(err));
+    } finally {
+      setLoadingChallenge(false);
+    }
+  };
+
+  const handleVerifyDomain = async () => {
+    if (!selectedApiId || verifyingDomain) return;
+    setVerifyingDomain(true);
+    setDomainError(null);
+    setDomainMessage(null);
+
+    try {
+      const res = await verifyProviderDomain(selectedApiId);
+      setDomainVerification(res);
+      if (res.verified) {
+        setDomainMessage('Xác minh tên miền thành công! Quyền kiểm soát tên miền đã được phê duyệt.');
+      } else {
+        setDomainError('Chưa tìm thấy bản ghi DNS TXT hợp lệ hoặc bản ghi chưa phân giải. Vui lòng chờ vài phút rồi kiểm tra lại.');
+      }
+    } catch (err) {
+      setDomainError(formatProviderErrorMessage(err));
+    } finally {
+      setVerifyingDomain(false);
     }
   };
 
@@ -255,14 +339,34 @@ export const PublishingWorkflowPage: React.FC = () => {
 
       {/* Rejected Alert Banner */}
       {currentStatus === 'Rejected' && (
-        <div className="p-5 rounded-2xl border border-error/40 bg-error-container/20 flex items-start gap-3">
-          <span className="material-symbols-outlined text-error text-[28px] mt-0.5">error</span>
-          <div>
-            <h3 className="text-body-lg font-bold text-error">Hồ sơ API bị Từ chối Phê duyệt (Rejected)</h3>
-            <p className="text-body-sm text-on-surface mt-1">
-              Quản trị viên sàn đã từ chối hồ sơ xuất bản API này. Vui lòng kiểm tra lại cấu hình endpoint, tài liệu OpenAPI hoặc cập nhật giấy tờ pháp lý trước khi nộp lại.
-            </p>
+        <div className="p-5 rounded-2xl border border-error/40 bg-error-container/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-error text-[28px] mt-0.5">error</span>
+            <div>
+              <h3 className="text-body-lg font-bold text-error">Hồ sơ API bị Từ chối Phê duyệt (Rejected)</h3>
+              <p className="text-body-sm text-on-surface mt-1">
+                {(selectedApi as any)?.rejectionReason || (publishStatus as any)?.rejectionReason ? (
+                  <>
+                    <strong>Lý do từ Quản trị viên: </strong>
+                    <span className="text-error font-medium">
+                      {(selectedApi as any)?.rejectionReason || (publishStatus as any)?.rejectionReason}
+                    </span>
+                  </>
+                ) : (
+                  'Quản trị viên sàn đã từ chối hồ sơ xuất bản API này. Vui lòng mở lại hồ sơ để chỉnh sửa cấu hình endpoint, bảng giá hoặc thông tin pháp lý.'
+                )}
+              </p>
+            </div>
           </div>
+          <Button
+            variant="primary"
+            icon="restart_alt"
+            disabled={reopening}
+            onClick={handleReopen}
+            className="flex-shrink-0"
+          >
+            {reopening ? 'Đang mở lại...' : 'Mở lại hồ sơ (Reopen Draft)'}
+          </Button>
         </div>
       )}
 
@@ -346,7 +450,7 @@ export const PublishingWorkflowPage: React.FC = () => {
           Danh mục Sẵn sàng Nộp duyệt (Readiness Checklist)
         </h2>
         <p className="text-body-sm text-on-surface-variant mb-6">
-          Tất cả 4 điều kiện kỹ thuật và pháp lý dưới đây bắt buộc phải được thỏa mãn trước khi hệ thống cho phép kích hoạt quy trình nộp duyệt.
+          Tất cả 5 điều kiện kỹ thuật và pháp lý dưới đây bắt buộc phải được thỏa mãn trước khi hệ thống cho phép kích hoạt quy trình nộp duyệt.
         </p>
 
         <div className="divide-y divide-outline-variant/20">
@@ -431,6 +535,112 @@ export const PublishingWorkflowPage: React.FC = () => {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Check 5: DNS Domain Verification (US-08 & PR #49) */}
+          <div className="py-4 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className={`material-symbols-outlined text-[24px] ${isDomainVerified ? 'text-emerald-600' : 'text-amber-500'}`}>
+                  {isDomainVerified ? 'check_circle' : 'cancel'}
+                </span>
+                <div>
+                  <h4 className="text-body-md font-bold text-on-surface">
+                    5. Xác minh Quyền kiểm soát Tên miền Upstream (US-08)
+                  </h4>
+                  <p className="text-body-xs text-on-surface-variant">
+                    {isDomainVerified ? (
+                      <span className="text-emerald-600 font-medium">
+                        Tên miền <code className="font-mono">{domainVerification?.hostname}</code> đã được xác minh thành công qua DNS TXT (Có hiệu lực đến {new Date(domainVerification?.verificationExpiresAt || '').toLocaleDateString()}).
+                      </span>
+                    ) : (
+                      'Bắt buộc cấu hình bản ghi DNS TXT để chứng minh quyền sở hữu tên miền API máy chủ trước khi nộp duyệt.'
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {!isDomainVerified && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon="dns"
+                      disabled={loadingChallenge}
+                      onClick={handleCreateChallenge}
+                    >
+                      {loadingChallenge ? 'Đang tạo...' : 'Lấy mã DNS TXT'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon="verified"
+                      disabled={verifyingDomain}
+                      onClick={handleVerifyDomain}
+                    >
+                      {verifyingDomain ? 'Đang kiểm tra...' : 'Kiểm tra DNS'}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Domain Feedback Alerts */}
+            {domainMessage && (
+              <div role="status" className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-body-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                <span>{domainMessage}</span>
+              </div>
+            )}
+            {domainError && (
+              <div role="alert" className="p-3 rounded-xl bg-error-container/20 border border-error/30 text-error text-body-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{domainError}</span>
+              </div>
+            )}
+
+            {/* DNS TXT Challenge Configuration Box */}
+            {challengeData && !isDomainVerified && (
+              <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/40 space-y-3 mt-2">
+                <div className="flex items-center justify-between">
+                  <h5 className="text-body-xs font-bold text-on-surface uppercase tracking-wider">
+                    Hướng dẫn Cấu hình Bản ghi DNS TXT:
+                  </h5>
+                  <span className="text-[11px] font-mono text-on-surface-variant">
+                    Hết hạn: {new Date(challengeData.challengeExpiresAt).toLocaleTimeString()}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2 rounded-lg bg-surface-container-high border border-outline-variant/20">
+                    <span className="text-[11px] text-on-surface-variant block">Loại bản ghi (Type):</span>
+                    <strong className="font-mono text-primary font-bold">{challengeData.recordType || 'TXT'}</strong>
+                  </div>
+                  <div className="p-2 rounded-lg bg-surface-container-high border border-outline-variant/20">
+                    <span className="text-[11px] text-on-surface-variant block">Tên bản ghi (Host / Name):</span>
+                    <strong className="font-mono text-on-surface">{challengeData.recordName || '_platform-challenge'}</strong>
+                  </div>
+                  <div className="p-2 rounded-lg bg-surface-container-high border border-outline-variant/20">
+                    <span className="text-[11px] text-on-surface-variant block">Tên miền (Domain):</span>
+                    <strong className="font-mono text-on-surface">{challengeData.hostname}</strong>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] text-on-surface-variant block mb-1">
+                    Giá trị bản ghi (Value / Text content):
+                  </span>
+                  <div className="p-2.5 rounded-lg bg-surface-container-highest font-mono text-xs text-primary font-semibold break-all border border-primary/20 select-all">
+                    {challengeData.recordValue}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                  Sau khi thêm bản ghi trên nhà đăng ký tên miền (Cloudflare, GoDaddy, Namecheap...), vui lòng chờ 1-2 phút để DNS lan truyền và nhấn nút <strong>"Kiểm tra DNS"</strong> ở trên.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

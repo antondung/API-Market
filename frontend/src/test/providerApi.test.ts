@@ -298,6 +298,8 @@ describe('providerApi service unit tests', () => {
         dataClassification: 'Public',
         agreementVersion: ' v1.0.0 ',
         accepted: true,
+        processesPersonalData: false,
+        personalDataTypes: [],
       });
 
       expect(reqSpy).toHaveBeenCalledWith(
@@ -310,6 +312,8 @@ describe('providerApi service unit tests', () => {
             dataClassification: 'Public',
             agreementVersion: 'v1.0.0',
             accepted: true,
+            processesPersonalData: false,
+            personalDataTypes: [],
           }),
         })
       );

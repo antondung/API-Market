@@ -14,7 +14,12 @@ import {
   getProviderVerification,
   formatProviderErrorMessage,
 } from '../../services/providerApi';
-import type { ProviderAgreement, ProviderVerification } from '../../services/providerTypes';
+import type {
+  ProviderAgreement,
+  ProviderVerification,
+  PersonalDataType,
+  DataClassification,
+} from '../../services/providerTypes';
 
 const CATEGORIES = [
   'Machine Learning & AI',
@@ -28,6 +33,17 @@ const CATEGORIES = [
   'Communication & SMS',
 ];
 
+const ALL_PERSONAL_DATA_TYPES: { type: PersonalDataType; label: string }[] = [
+  { type: 'FullName', label: 'Họ và tên (FullName)' },
+  { type: 'Email', label: 'Địa chỉ Email (Email)' },
+  { type: 'Phone', label: 'Số điện thoại (Phone)' },
+  { type: 'Geolocation', label: 'Vị trí / Tọa độ GPS (Geolocation)' },
+  { type: 'Financial', label: 'Tài chính / Thẻ / Ngân hàng (Financial)' },
+  { type: 'Credentials', label: 'Mật khẩu / Khóa xác thực (Credentials)' },
+  { type: 'HealthBiometrics', label: 'Sức khỏe & Sinh trắc học (HealthBiometrics)' },
+  { type: 'Other', label: 'Dữ liệu nhận dạng cá nhân khác (Other)' },
+];
+
 export const CreateApiWizardPage: React.FC = () => {
   const { currentUser } = useAuth();
   const { t } = useLanguage();
@@ -36,6 +52,9 @@ export const CreateApiWizardPage: React.FC = () => {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
+
+  // Draft recovery state
+  const [createdDraftApiId, setCreatedDraftApiId] = useState<string | null>(null);
 
   // Verification & Agreement status
   const [verification, setVerification] = useState<ProviderVerification | null>(null);
@@ -60,7 +79,10 @@ export const CreateApiWizardPage: React.FC = () => {
   // Step 4: Ownership, Legal & Data Classification (US-08)
   const [ownershipType, setOwnershipType] = useState<'OWN' | 'THIRD_PARTY'>('OWN');
   const [usesThirdPartyData, setUsesThirdPartyData] = useState(false);
-  const [dataClassification, setDataClassification] = useState<'Public' | 'Internal' | 'Confidential' | 'Restricted'>('Public');
+  const [dataClassification, setDataClassification] = useState<DataClassification>('Public');
+  const [processesPersonalData, setProcessesPersonalData] = useState(false);
+  const [selectedPersonalDataTypes, setSelectedPersonalDataTypes] = useState<PersonalDataType[]>([]);
+  const [dataProcessingPurpose, setDataProcessingPurpose] = useState('');
   const [legalConfirmed, setLegalConfirmed] = useState(false);
 
   useEffect(() => {
@@ -88,6 +110,12 @@ export const CreateApiWizardPage: React.FC = () => {
 
   const isVerified = verification?.status === 'Verified';
 
+  const togglePersonalDataType = (type: PersonalDataType) => {
+    setSelectedPersonalDataTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+  };
+
   const handleFinish = async () => {
     if (submitting) return;
     setWizardError(null);
@@ -113,6 +141,19 @@ export const CreateApiWizardPage: React.FC = () => {
       return;
     }
 
+    if (processesPersonalData) {
+      if (selectedPersonalDataTypes.length === 0) {
+        setWizardError('Khi API xử lý dữ liệu cá nhân, vui lòng chọn ít nhất một loại dữ liệu (Personal Data Types).');
+        setStep(4);
+        return;
+      }
+      if (!dataProcessingPurpose.trim()) {
+        setWizardError('Khi API xử lý dữ liệu cá nhân, vui lòng nêu rõ mục đích xử lý dữ liệu (Data Processing Purpose).');
+        setStep(4);
+        return;
+      }
+    }
+
     if (!legalConfirmed) {
       setWizardError('Bạn phải đồng ý với Thỏa thuận Nhà cung cấp trước khi hoàn tất đăng ký API.');
       setStep(4);
@@ -120,42 +161,56 @@ export const CreateApiWizardPage: React.FC = () => {
     }
 
     setSubmitting(true);
+    let targetApiId = createdDraftApiId;
+
     try {
       const tagList = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-
-      // 1. Create API
       const fullDescription = longDescription.trim() || shortDescription.trim();
-      const createdApi = await createProviderApi({
-        name: trimmedName,
-        description: fullDescription || 'Dịch vụ API thương mại',
-        category,
-        baseUrl: trimmedUrl,
-        tags: tagList,
-      });
+
+      // 1. Create API if not already created as draft
+      if (!targetApiId) {
+        const createdApi = await createProviderApi({
+          name: trimmedName,
+          description: fullDescription || 'Dịch vụ API thương mại',
+          category,
+          baseUrl: trimmedUrl,
+          tags: tagList,
+        });
+        targetApiId = createdApi.id;
+        setCreatedDraftApiId(createdApi.id);
+      }
 
       // 2. Create Initial Version
       const versionStr = version.trim() || '1.0.0';
-      await createProviderVersion(createdApi.id, {
-        version: versionStr,
-        changelog: 'Phiên bản khởi tạo ban đầu',
-      }).catch(err => {
-        console.warn('Initial version creation warning:', err);
-      });
+      try {
+        await createProviderVersion(targetApiId, {
+          version: versionStr,
+          changelog: 'Phiên bản khởi tạo ban đầu',
+        });
+      } catch (versionErr: any) {
+        if (versionErr?.status !== 409 && versionErr?.code !== 'RESOURCE_EXISTS') {
+          throw versionErr;
+        }
+      }
 
       // 3. Create Default Free Plan
       const quotaNum = parseInt(freeQuota, 10) || 2000;
       const rpsNum = parseInt(freeRps, 10) || 10;
-      await createProviderPlan(createdApi.id, {
-        name: 'Free',
-        priceMonthly: 0,
-        currency: 'USD',
-        quota: quotaNum,
-        rateLimit: rpsNum,
-      }).catch(err => {
-        console.warn('Initial plan creation warning:', err);
-      });
+      try {
+        await createProviderPlan(targetApiId, {
+          name: 'Free',
+          priceMonthly: 0,
+          currency: 'USD',
+          quota: quotaNum,
+          rateLimit: rpsNum,
+        });
+      } catch (planErr: any) {
+        if (planErr?.status !== 409 && planErr?.code !== 'RESOURCE_EXISTS') {
+          throw planErr;
+        }
+      }
 
-      // 4. Save Legal Affirmation
+      // 4. Save Legal Affirmation & Privacy Contract (US-08)
       const agreementVer = agreement?.version || 'v1.0.0';
       const ownershipDecl = ownershipType === 'OWN'
         ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
@@ -164,17 +219,18 @@ export const CreateApiWizardPage: React.FC = () => {
         ? 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép'
         : 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
 
-      await saveProviderLegal(createdApi.id, {
+      await saveProviderLegal(targetApiId, {
         ownershipDeclaration: ownershipDecl,
         distributionRights,
         dataClassification,
         agreementVersion: agreementVer,
         accepted: true,
-      }).catch(err => {
-        console.warn('Initial legal declaration warning:', err);
+        processesPersonalData,
+        personalDataTypes: processesPersonalData ? selectedPersonalDataTypes : [],
+        dataProcessingPurpose: processesPersonalData ? dataProcessingPurpose.trim() : undefined,
       });
 
-      navigate('/provider/apis');
+      navigate(`/provider/publishing-workflow?api=${targetApiId}`);
     } catch (err) {
       setWizardError(formatProviderErrorMessage(err));
     } finally {
@@ -198,8 +254,13 @@ export const CreateApiWizardPage: React.FC = () => {
 
       {/* Global Wizard Error */}
       {wizardError && (
-        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm">
-          {wizardError}
+        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <span>{wizardError}</span>
+          {createdDraftApiId && (
+            <span className="text-xs text-on-surface font-mono bg-surface-container px-2.5 py-1 rounded-md border border-outline-variant/30">
+              Bản nháp #{createdDraftApiId} đã được lưu an toàn. Nhấn lại Hoàn tất để tiếp tục.
+            </span>
+          )}
         </div>
       )}
 
@@ -484,17 +545,17 @@ export const CreateApiWizardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Subsection 2: Domain Verification */}
+            {/* Subsection 2: Domain Verification Notice */}
             <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-on-surface text-body-sm flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-[20px]">domain_verification</span>
-                  {t('2. Xác minh quyền kiểm soát Domain (Domain Verification)')}
+                  {t('2. Xác minh quyền kiểm soát Domain (Domain Verification - US-08)')}
                 </h4>
-                <Badge variant="success">URL Format Validated ✓</Badge>
+                <Badge variant="neutral">Bắt buộc khi nộp duyệt</Badge>
               </div>
               <p className="text-xs text-on-surface-variant">
-                Địa chỉ máy chủ API đã khai báo: <code className="font-mono text-primary">{baseUrl}</code>. Hệ thống sẽ kết nối qua giao thức mã hóa an toàn TLS/HTTPS khi proxy các yêu cầu từ Gateway.
+                Địa chỉ máy chủ API: <code className="font-mono text-primary font-bold">{baseUrl}</code>. Trước khi nộp duyệt xuất bản chính thức, hệ thống yêu cầu cấu hình bản ghi DNS TXT để xác thực quyền kiểm soát tên miền này tại màn hình Publishing Workflow.
               </p>
             </div>
 
@@ -529,6 +590,73 @@ export const CreateApiWizardPage: React.FC = () => {
                   </label>
                 ))}
               </div>
+            </div>
+
+            {/* Subsection 3.1: Personal Data & Privacy Declaration (US-08 / Migration 005) */}
+            <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 space-y-3">
+              <h4 className="font-bold text-on-surface text-body-sm flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[20px]">security</span>
+                Khai báo Xử lý Dữ liệu Cá nhân & Quyền riêng tư (Privacy Contract)
+              </h4>
+              <p className="text-xs text-on-surface-variant">
+                Tuân thủ quy định bảo vệ dữ liệu cá nhân (GDPR / Nghị định 13/2023/NĐ-CP):
+              </p>
+
+              <label className="flex items-center gap-3 text-body-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={processesPersonalData}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setProcessesPersonalData(checked);
+                    if (!checked) {
+                      setSelectedPersonalDataTypes([]);
+                      setDataProcessingPurpose('');
+                    }
+                  }}
+                  className="rounded accent-primary w-4 h-4 cursor-pointer"
+                />
+                <span className="font-semibold text-on-surface">
+                  API này có tiếp nhận, xử lý hoặc truyền tải Dữ liệu Cá nhân của người dùng.
+                </span>
+              </label>
+
+              {processesPersonalData && (
+                <div className="space-y-4 pt-3 border-t border-outline-variant/20 pl-2">
+                  <div>
+                    <label className="text-body-xs font-bold text-on-surface block mb-1.5">
+                      Các loại dữ liệu cá nhân API xử lý <span className="text-error">*</span>:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {ALL_PERSONAL_DATA_TYPES.map(item => (
+                        <label key={item.type} className="flex items-center gap-2 text-xs text-on-surface cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={selectedPersonalDataTypes.includes(item.type)}
+                            onChange={() => togglePersonalDataType(item.type)}
+                            className="rounded accent-primary"
+                          />
+                          <span>{item.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-body-xs font-bold text-on-surface block mb-1.5">
+                      Mục đích xử lý dữ liệu (Data Processing Purpose) <span className="text-error">*</span>:
+                    </label>
+                    <textarea
+                      rows={2}
+                      required
+                      value={dataProcessingPurpose}
+                      onChange={e => setDataProcessingPurpose(e.target.value)}
+                      placeholder="Nêu rõ mục đích hợp pháp, ví dụ: Xác thực danh tính người dùng và thực hiện thanh toán giao dịch..."
+                      className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container-high text-on-surface text-body-xs outline-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Subsection 4: Provider Agreement */}
