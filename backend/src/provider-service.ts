@@ -3,6 +3,10 @@ import { ApiError } from './auth.js';
 import { requireDraft, requireVerified, submitApi, transitionApi } from './provider-domain.js';
 import type { ApiState, VerificationState } from './provider-domain.js';
 import { importOpenApi } from './provider-openapi-import.js';
+import { createHash, randomBytes } from 'node:crypto';
+import { domainHostname, domainRecordName, resolveDomainTxt, type TxtLookup } from './provider-dns.js';
+
+const hashDomainToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export const idPattern = /^[1-9][0-9]{0,9}$/;
 function id(value: string) {
@@ -14,8 +18,11 @@ const row = (r: Record<string, any>) => Object.fromEntries(Object.entries(r).map
   v instanceof Date ? v.toISOString() : (/^id$|_id$/.test(k) || k === 'reviewed_by') && v !== null ? String(v) : ['price_monthly', 'quota'].includes(k) ? Number(v) : v]));
 type Input = Record<string, any>;
 export class ProviderService {
-  constructor(readonly pool: Pool) {}
-  async ready() { await this.pool.query('SELECT id FROM apis LIMIT 0'); }
+  constructor(readonly pool: Pool, private lookupTxt: TxtLookup = resolveDomainTxt) {}
+  async ready() {
+    await this.pool.query('SELECT id,processes_personal_data FROM api_legal_declarations LIMIT 0');
+    await this.pool.query('SELECT api_id FROM api_domain_verifications LIMIT 0');
+  }
   private async transaction<T>(actor: string, action: (client: PoolClient, providerId: string) => Promise<T>) {
     const client = await this.pool.connect();
     try {
@@ -70,7 +77,8 @@ export class ProviderService {
   async get(actor: string, api: string) { return this.transaction(actor, async (c, p) => row(await this.owned(c, p, api))); }
   async update(actor: string, api: string, input: Input) {
     return this.transaction(actor, async (c, p) => {
-      await this.owned(c, p, api, true);
+      const previous = await this.owned(c, p, api, true);
+      if (new URL(previous.base_url).hostname !== new URL(input.baseUrl).hostname) await c.query('DELETE FROM api_domain_verifications WHERE api_id=$1', [api]);
       return row((await c.query('UPDATE apis SET name=$1,description=$2,category=$3,base_url=$4,tags=$5 WHERE id=$6 RETURNING *', [input.name, input.description, input.category, input.baseUrl, JSON.stringify(input.tags), api])).rows[0]);
     });
   }
@@ -143,7 +151,7 @@ export class ProviderService {
       if (input) {
         const agreement = (await c.query('SELECT id,version FROM agreements WHERE is_active AND effective_at<=NOW() FOR SHARE')).rows[0];
         if (!agreement || agreement.version !== input.agreementVersion) throw new ApiError(409, 'AGREEMENT_CHANGED', 'Accept the current agreement version');
-        await c.query('INSERT INTO api_legal_declarations(api_id,agreement_id,ownership_declaration,distribution_rights,data_classification) VALUES($1,$2,$3,$4,$5) ON CONFLICT(api_id) DO UPDATE SET agreement_id=$2,ownership_declaration=$3,distribution_rights=$4,data_classification=$5,accepted_at=NOW(),updated_at=NOW()', [api, agreement.id, input.ownershipDeclaration, input.distributionRights, input.dataClassification]);
+        await c.query('INSERT INTO api_legal_declarations(api_id,agreement_id,ownership_declaration,distribution_rights,data_classification,processes_personal_data,personal_data_types,data_processing_purpose) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(api_id) DO UPDATE SET agreement_id=$2,ownership_declaration=$3,distribution_rights=$4,data_classification=$5,processes_personal_data=$6,personal_data_types=$7,data_processing_purpose=$8,accepted_at=NOW(),updated_at=NOW()', [api, agreement.id, input.ownershipDeclaration, input.distributionRights, input.dataClassification, input.processesPersonalData, JSON.stringify(input.personalDataTypes), input.dataProcessingPurpose ?? null]);
       }
       const record = (await c.query('SELECT l.*,a.version AS agreement_version FROM api_legal_declarations l JOIN agreements a ON a.id=l.agreement_id WHERE l.api_id=$1', [api])).rows[0];
       return record ? row(record) : null;
@@ -170,13 +178,15 @@ export class ProviderService {
       const verification = await this.verification(c, p);
       const agreement = (await c.query('SELECT id,version FROM agreements WHERE is_active AND effective_at<=NOW() FOR SHARE')).rows[0];
       if (!agreement) throw new ApiError(409, 'AGREEMENT_UNAVAILABLE', 'No current agreement configured');
-      const legal = (await c.query('SELECT agreement_id FROM api_legal_declarations WHERE api_id=$1', [api])).rows[0];
+      const legal = (await c.query('SELECT agreement_id,processes_personal_data FROM api_legal_declarations WHERE api_id=$1', [api])).rows[0];
+      const domain = (await c.query('SELECT hostname FROM api_domain_verifications WHERE api_id=$1 AND verified_at IS NOT NULL AND verification_expires_at>NOW()', [api])).rows[0];
+      if (!domain || domain.hostname !== domainHostname(record.base_url)) throw new ApiError(400, 'DOMAIN_NOT_VERIFIED', 'Verify the current base URL hostname before submitting');
       // An endpoint and its documentation must belong to the same version.
       const content = (await c.query("SELECT COUNT(*)::int AS n, COUNT(d.id) FILTER (WHERE d.content->'paths'->e.path->LOWER(e.method) IS NOT NULL)::int AS documented FROM api_endpoints e LEFT JOIN api_documentations d ON d.version_id=e.version_id AND d.api_id=e.api_id WHERE e.api_id=$1", [api])).rows[0];
       const plans = (await c.query('SELECT COUNT(*)::int AS n FROM api_plans WHERE api_id=$1 AND is_active', [api])).rows[0];
       submitApi(record.status as ApiState, { verification: (verification?.status ?? 'Pending') as VerificationState,
         metadata: !!(record.name && record.description && record.category && record.base_url), endpoints: content.n,
-        documentation: content.n > 0 && content.documented === content.n, plans: plans.n, legal: !!legal,
+        documentation: content.n > 0 && content.documented === content.n, plans: plans.n, legal: !!legal && typeof legal.processes_personal_data === 'boolean',
         acceptedAgreementVersion: legal?.agreement_id === agreement.id ? agreement.version : undefined, currentAgreementVersion: agreement.version });
       return row((await c.query("UPDATE apis SET status='Submitted' WHERE id=$1 RETURNING *", [api])).rows[0]);
     });
@@ -186,6 +196,45 @@ export class ProviderService {
       const record = await this.owned(c, p, api);
       transitionApi(record.status, 'Draft', 'Provider');
       return row((await c.query("UPDATE apis SET status='Draft',submitted_at=NULL,approved_at=NULL WHERE id=$1 RETURNING *", [api])).rows[0]);
+    });
+  }
+  async domainStatus(actor: string, api: string) {
+    return this.transaction(actor, async (c, p) => {
+      const record = await this.owned(c, p, api);
+      const proof = (await c.query('SELECT hostname,challenge_expires_at,verified_at,verification_expires_at FROM api_domain_verifications WHERE api_id=$1', [api])).rows[0];
+      const hostname = domainHostname(record.base_url);
+      return { ...(proof && proof.hostname === hostname ? row(proof) : {}), hostname, verified: !!proof && proof.hostname === hostname && proof.verified_at !== null && proof.verification_expires_at > new Date() };
+    });
+  }
+  async domainChallenge(actor: string, api: string) {
+    return this.transaction(actor, async (c, p) => {
+      const record = await this.owned(c, p, api, true);
+      const hostname = domainHostname(record.base_url);
+      const token = `platform-verification=${randomBytes(32).toString('base64url')}`;
+      const result = (await c.query("INSERT INTO api_domain_verifications(api_id,hostname,token_hash,challenge_expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '24 hours') ON CONFLICT(api_id) DO UPDATE SET hostname=$2,token_hash=$3,challenge_expires_at=NOW()+INTERVAL '24 hours',verified_at=NULL,verification_expires_at=NULL,created_at=NOW() RETURNING challenge_expires_at", [api, hostname, hashDomainToken(token)])).rows[0];
+      return { hostname, recordType: 'TXT', recordName: domainRecordName(hostname), recordValue: token, challengeExpiresAt: result.challenge_expires_at.toISOString() };
+    });
+  }
+  async verifyDomain(actor: string, api: string) {
+    const snapshot = await this.transaction(actor, async (c, p) => {
+      const record = await this.owned(c, p, api, true);
+      const proof = (await c.query('SELECT * FROM api_domain_verifications WHERE api_id=$1', [api])).rows[0];
+      if (!proof || proof.hostname !== domainHostname(record.base_url) || proof.challenge_expires_at <= new Date()) throw new ApiError(409, 'DOMAIN_CHALLENGE_EXPIRED', 'Create a current domain challenge first');
+      return proof;
+    });
+    let records: string[][];
+    try { records = await this.lookupTxt(domainRecordName(snapshot.hostname)); }
+    catch (error) {
+      if (['ENODATA', 'ENOTFOUND'].includes((error as { code?: string }).code ?? '')) throw new ApiError(400, 'DOMAIN_PROOF_MISSING', 'DNS TXT proof not found');
+      throw new ApiError(503, 'DNS_UNAVAILABLE', 'DNS verification unavailable; retry later');
+    }
+    if (!records.some(parts => hashDomainToken(parts.join('')) === snapshot.token_hash)) throw new ApiError(400, 'DOMAIN_PROOF_MISMATCH', 'DNS TXT value does not match the challenge');
+    return this.transaction(actor, async (c, p) => {
+      const record = await this.owned(c, p, api, true);
+      if (domainHostname(record.base_url) !== snapshot.hostname) throw new ApiError(409, 'DOMAIN_CHANGED', 'Base URL hostname changed');
+      const result = await c.query("UPDATE api_domain_verifications SET verified_at=NOW(),verification_expires_at=NOW()+INTERVAL '7 days' WHERE api_id=$1 AND hostname=$2 AND token_hash=$3 AND challenge_expires_at>NOW() RETURNING hostname,verified_at,verification_expires_at", [api, snapshot.hostname, snapshot.token_hash]);
+      if (!result.rows[0]) throw new ApiError(409, 'DOMAIN_CHALLENGE_CHANGED', 'Domain challenge expired or was replaced');
+      return { ...row(result.rows[0]), verified: true };
     });
   }
 }

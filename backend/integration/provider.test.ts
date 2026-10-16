@@ -8,13 +8,15 @@ import { PostgresAuthStore } from '../src/postgres-store.js';
 import { AuthService } from '../src/auth.js';
 import { ProviderService } from '../src/provider-service.js';
 import { createApp } from '../src/app.js';
+import { createTxtLookup, domainHostname } from '../src/provider-dns.js';
+import { createSocket } from 'node:dgram';
 
 const url = process.env.PG_TEST_URL;
 if (!url) throw new Error('Run npm test to provide PostgreSQL');
 const secret = 'provider-integration-secret-with-32-bytes';
 const metadata = { name: 'Test API', description: 'Demo', category: 'Weather', baseUrl: 'https://example.com', tags: ['test'] };
 const free = { name: 'Free', priceMonthly: 0, currency: 'VND', quota: 100, rateLimit: 10 };
-const legal = { ownershipDeclaration: 'I own it', distributionRights: 'I can distribute', dataClassification: 'Public', agreementVersion: 'test-v1', accepted: true };
+const legal = { ownershipDeclaration: 'I own it', distributionRights: 'I can distribute', dataClassification: 'Public', agreementVersion: 'test-v1', accepted: true, processesPersonalData: false, personalDataTypes: [] };
 const spec = readFileSync('backend/test/fixtures/provider-import.openapi.yaml', 'utf8');
 async function fixture() {
   const control = new Pool({ connectionString: url });
@@ -22,11 +24,12 @@ async function fixture() {
   const schema = `provider_test_${randomUUID().replaceAll('-', '')}`;
   await control.query(`CREATE SCHEMA ${schema}`);
   const store = new PostgresAuthStore(url!, schema);
-  const service = new ProviderService(store.pool);
+  const dns: Record<string, string[][]> = {};
+  const service = new ProviderService(store.pool, async name => dns[name] ?? []);
   try {
     await store.migrate(false, true); await service.ready();
     const auth = new AuthService(store, secret);
-    const users = [];
+    const users: { id: string; token: string }[] = [];
     for (const role of ['Provider', 'Provider', 'Consumer'] as const) {
       const email = `${randomUUID()}@example.test`;
       const user = await auth.register(email, 'Test-password-12345', role);
@@ -35,7 +38,12 @@ async function fixture() {
     const admin = (await store.pool.query("INSERT INTO users(name,email,password_hash,role_id) VALUES('Admin','admin@test.invalid','unused',(SELECT id FROM roles WHERE name='ADMIN')) RETURNING id")).rows[0].id;
     const providers = (await store.pool.query('SELECT id,user_id FROM api_providers ORDER BY id')).rows;
     await store.pool.query("INSERT INTO agreements(version,content,is_active) VALUES('test-v1','Test agreement',true)");
-    return { store, service, auth, app: createApp(auth, () => {}, { provider: service }), users, providers, admin,
+    return { store, service, auth, dns, app: createApp(auth, () => {}, { provider: service }), users, providers, admin,
+      async prove(api: string, user = users[0]!) {
+        const challenge = await service.domainChallenge(user.id, api);
+        dns[challenge.recordName] = [[challenge.recordValue]];
+        return service.verifyDomain(user.id, api);
+      },
       async verify(index = 0) {
         await store.pool.query("INSERT INTO provider_verifications(provider_id,organization_name,contact_email,evidence_urls,status,reviewed_at,reviewed_by) VALUES($1,'Verified co','provider@test.invalid','[\"https://example.com/license\"]','Verified',NOW(),$2)", [providers[index].id, admin]);
       }, async close() { await store.close(); await control.query(`DROP SCHEMA ${schema} CASCADE`); await control.end(); } };
@@ -53,6 +61,7 @@ async function ready(f: Awaited<ReturnType<typeof fixture>>, name = 'Ready') {
   await request(f.app).post(`${record.path}/import-openapi`).set('Authorization', bearer(record.token)).field('versionId', record.version.id).attach('file', Buffer.from(spec), 'demo.yaml').expect(200);
   await request(f.app).post(`${record.path}/plans`).set('Authorization', bearer(record.token)).send(free).expect(201);
   await request(f.app).put(`${record.path}/legal`).set('Authorization', bearer(record.token)).send(legal).expect(200);
+  await f.prove(record.api.id);
   return record;
 }
 
@@ -180,7 +189,7 @@ test('manual endpoint changes invalidate docs and migration + seed rerun retain 
     // Fixture agreement is separate from Danh demo agreement; retire it explicitly in test DB.
     await f.store.pool.query('UPDATE agreements SET is_active=false');
     await f.store.migrate(true, true); await f.store.migrate(true, true);
-    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 4);
+    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 5);
     assert.equal((await f.store.pool.query("SELECT COUNT(*)::int AS n FROM apis WHERE name IN ('Weather Now API','Currency Rates API','Product Catalog API')")).rows[0].n, 3);
   } finally { await f.close(); }
 });
@@ -224,4 +233,115 @@ test('manual content edits clear cached version OpenAPI and submission requires 
     await f.store.pool.query("UPDATE api_documentations SET content='{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"Placeholder\",\"version\":\"v1\"}}'::jsonb WHERE api_id=$1", [r.api.id]);
     await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
   } finally { await f.close(); }
+});
+
+test('personal data declaration persists explicit yes/no, types and purpose with strict validation', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await create(f);
+    const input = { ...legal, processesPersonalData: true, personalDataTypes: ['Email', 'Phone'], dataProcessingPurpose: 'Account contact and support' };
+    const saved = await request(f.app).put(`${r.path}/legal`).set('Authorization', bearer(r.token)).send(input).expect(200);
+    assert.equal(saved.body.data.processesPersonalData, true);
+    assert.deepEqual(saved.body.data.personalDataTypes, ['Email','Phone']);
+    const loaded = await request(f.app).get(`${r.path}/legal`).set('Authorization', bearer(r.token)).expect(200);
+    assert.equal(loaded.body.data.dataProcessingPurpose, input.dataProcessingPurpose);
+    for (const patch of [{ personalDataTypes: [] }, { dataProcessingPurpose: '' }, { personalDataTypes: ['Email','Email'] }, { personalDataTypes: ['Unknown'] }, { processesPersonalData: false }]) {
+      await request(f.app).put(`${r.path}/legal`).set('Authorization', bearer(r.token)).send({ ...input, ...patch }).expect(400);
+    }
+    const { processesPersonalData, ...missing } = legal;
+    await request(f.app).put(`${r.path}/legal`).set('Authorization', bearer(r.token)).send(missing).expect(400);
+    await request(f.app).put(`${r.path}/legal`).set('Authorization', bearer(r.token)).send(legal).expect(200);
+    assert.equal((await f.service.legal(f.users[0]!.id, r.api.id))!.processesPersonalData, false);
+  } finally { await f.close(); }
+});
+
+test('domain proof is random, hashed, bound to owner/API/host and cannot be forged by client', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await create(f);
+    await request(f.app).get(`${r.path}/domain-verification`).expect(401);
+    await request(f.app).post(`${r.path}/domain-verification/challenge`).set('Authorization', bearer(f.users[2]!.token)).send({}).expect(403);
+    await request(f.app).post(`${r.path}/domain-verification/challenge`).set('Authorization', bearer(f.users[1]!.token)).send({}).expect(404);
+    await request(f.app).post(`${r.path}/domain-verification/challenge`).set('Authorization', bearer(r.token)).send({ verified: true }).expect(400);
+    const proof = (await request(f.app).post(`${r.path}/domain-verification/challenge`).set('Authorization', bearer(r.token)).send({}).expect(201)).body.data;
+    assert.equal(proof.recordName, '_apihub-verification.example.com');
+    const stored = (await f.store.pool.query('SELECT * FROM api_domain_verifications WHERE api_id=$1', [r.api.id])).rows[0];
+    assert.match(stored.token_hash, /^[a-f0-9]{64}$/); assert.ok(!JSON.stringify(stored).includes(proof.recordValue));
+    await request(f.app).post(`${r.path}/domain-verification/verify`).set('Authorization', bearer(r.token)).send({}).expect(400);
+    f.dns[proof.recordName] = [[proof.recordValue.slice(0, 25), proof.recordValue.slice(25)]];
+    await request(f.app).post(`${r.path}/domain-verification/verify`).set('Authorization', bearer(r.token)).send({}).expect(200);
+    const status = await request(f.app).get(`${r.path}/domain-verification`).set('Authorization', bearer(r.token)).expect(200);
+    assert.equal(status.body.data.verified, true); assert.equal(status.body.data.recordValue, undefined);
+    const second = await create(f, 'Another API same hostname');
+    await f.service.domainChallenge(f.users[0]!.id, second.api.id);
+    await assert.rejects(f.service.verifyDomain(f.users[0]!.id, second.api.id), (e: any) => e.code === 'DOMAIN_PROOF_MISMATCH');
+    await request(f.app).put(r.path).set('Authorization', bearer(r.token)).send({ ...metadata, baseUrl: 'https://other.example.com' }).expect(200);
+    assert.equal((await f.service.domainStatus(f.users[0]!.id, r.api.id)).verified, false);
+  } finally { await f.close(); }
+});
+
+test('expired, rotated and in-flight replaced challenges never verify; DNS failures do not mark proof', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await create(f); const actor = f.users[0]!.id;
+    const first = await f.service.domainChallenge(actor, r.api.id);
+    f.dns[first.recordName] = [[first.recordValue]];
+    await f.store.pool.query("UPDATE api_domain_verifications SET challenge_expires_at=NOW()-INTERVAL '1 minute' WHERE api_id=$1", [r.api.id]);
+    await assert.rejects(f.service.verifyDomain(actor, r.api.id), (e: any) => e.code === 'DOMAIN_CHALLENGE_EXPIRED');
+    await f.service.domainChallenge(actor, r.api.id);
+    await assert.rejects(f.service.verifyDomain(actor, r.api.id), (e: any) => e.code === 'DOMAIN_PROOF_MISMATCH');
+    let complete!: (records: string[][]) => void;
+    let started!: () => void;
+    const lookupStarted = new Promise<void>(resolve => { started = resolve; });
+    const slow = new ProviderService(f.store.pool, async () => { started(); return new Promise(resolve => { complete = resolve; }); });
+    const current = await f.service.domainChallenge(actor, r.api.id);
+    const pending = slow.verifyDomain(actor, r.api.id);
+    await lookupStarted; await f.service.domainChallenge(actor, r.api.id);
+    complete([[current.recordValue]]);
+    await assert.rejects(pending, (e: any) => e.code === 'DOMAIN_CHALLENGE_CHANGED');
+    const failure = new ProviderService(f.store.pool, async () => { throw Object.assign(new Error('timeout'), { code: 'ETIMEOUT' }); });
+    await assert.rejects(failure.verifyDomain(actor, r.api.id), (e: any) => e.status === 503);
+    assert.equal((await f.service.domainStatus(actor, r.api.id)).verified, false);
+  } finally { await f.close(); }
+});
+
+test('submission requires current domain proof and explicit privacy declaration; proof expires and rotates', async () => {
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await ready(f); const actor = f.users[0]!.id;
+    await f.store.pool.query("UPDATE api_domain_verifications SET verified_at=NOW()-INTERVAL '8 days',verification_expires_at=NOW()-INTERVAL '1 day' WHERE api_id=$1", [r.api.id]);
+    await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
+    await f.prove(r.api.id);
+    await f.store.pool.query('UPDATE api_legal_declarations SET processes_personal_data=NULL WHERE api_id=$1', [r.api.id]);
+    await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
+    await request(f.app).put(`${r.path}/legal`).set('Authorization', bearer(r.token)).send(legal).expect(200);
+    await f.service.domainChallenge(actor, r.api.id);
+    await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
+    await f.prove(r.api.id);
+    await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(200);
+    await request(f.app).post(`${r.path}/domain-verification/challenge`).set('Authorization', bearer(r.token)).send({}).expect(409);
+  } finally { await f.close(); }
+});
+
+test('domain verifier performs real DNS TXT transport; IP/localhost and credentials are rejected', async () => {
+  const socket = createSocket('udp4');
+  const f = await fixture();
+  try {
+    await f.verify(); const r = await create(f); const actor = f.users[0]!.id;
+    const challenge = await f.service.domainChallenge(actor, r.api.id);
+    await new Promise<void>(resolve => socket.bind(0, '127.0.0.1', resolve));
+    let queries = 0;
+    socket.on('message', (message, remote) => {
+      queries++;
+      const txt = Buffer.from(challenge.recordValue);
+      const answer = Buffer.concat([Buffer.from([0xc0,0x0c, 0,16, 0,1, 0,0,0,30, 0,txt.length+1,txt.length]), txt]);
+      const header = Buffer.from(message.subarray(0,12)); header.writeUInt16BE(0x8180,2); header.writeUInt16BE(1,6);
+      socket.send(Buffer.concat([header,message.subarray(12),answer]), remote.port, remote.address);
+    });
+    const lookup = createTxtLookup([`127.0.0.1:${socket.address().port}`]);
+    const service = new ProviderService(f.store.pool, lookup);
+    assert.equal((await service.verifyDomain(actor, r.api.id)).verified, true);
+    assert.equal(queries, 1);
+    for (const value of ['http://127.0.0.1', 'http://[::1]', 'http://localhost', 'https://x.internal', 'https://user:pass@example.com']) assert.throws(() => domainHostname(value));
+  } finally { try { socket.close(); } catch {} await f.close(); }
 });

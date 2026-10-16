@@ -299,6 +299,32 @@
           "accepted": {
             "type": "boolean",
             "const": true
+          },
+          "processesPersonalData": {
+            "type": "boolean"
+          },
+          "personalDataTypes": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FullName",
+                "Email",
+                "Phone",
+                "Geolocation",
+                "Financial",
+                "Credentials",
+                "HealthBiometrics",
+                "Other"
+              ]
+            }
+          },
+          "dataProcessingPurpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "pattern": "^[^\\u0000]*$"
           }
         },
         "required": [
@@ -306,7 +332,9 @@
           "distributionRights",
           "dataClassification",
           "agreementVersion",
-          "accepted"
+          "accepted",
+          "processesPersonalData",
+          "personalDataTypes"
         ],
         "additionalProperties": false
       },
@@ -575,10 +603,99 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "processesPersonalData": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "null on legacy rows; explicit declaration required before submit"
+          },
+          "personalDataTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dataProcessingPurpose": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "id"
+        ]
+      },
+      "DomainStatus": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "verifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "verificationExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "challengeExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "hostname",
+          "verified"
+        ]
+      },
+      "DomainChallenge": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string",
+            "enum": [
+              "TXT"
+            ]
+          },
+          "recordName": {
+            "type": "string"
+          },
+          "recordValue": {
+            "type": "string"
+          },
+          "challengeExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "hostname",
+          "recordType",
+          "recordName",
+          "recordValue",
+          "challengeExpiresAt"
         ]
       },
       "ProviderAgreement": {
@@ -1318,6 +1435,336 @@
             }
           },
           "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/domain-verification": {
+      "get": {
+        "summary": "Get domain verification status",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DomainStatus"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/domain-verification/challenge": {
+      "post": {
+        "summary": "Create DNS TXT challenge (24 hours; rotates previous proof)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DomainChallenge"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/provider/apis/{id}/domain-verification/verify": {
+      "post": {
+        "summary": "Verify DNS TXT proof for current base URL hostname (valid 7 days)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DomainStatus"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Standard error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderError"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Standard error envelope",
             "content": {
               "application/json": {

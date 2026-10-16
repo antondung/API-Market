@@ -7,6 +7,9 @@ const routes = [
   ['get', '/api/provider/apis', '', 'List own APIs'],
   ['post', '/api/provider/apis', 'api', 'Create Draft API (Verified only)'],
   ['get', '/api/provider/apis/{id}', '', 'Get own API'],
+  ['get', '/api/provider/apis/{id}/domain-verification', '', 'Get domain verification status'],
+  ['post', '/api/provider/apis/{id}/domain-verification/challenge', '', 'Create DNS TXT challenge (24 hours; rotates previous proof)'],
+  ['post', '/api/provider/apis/{id}/domain-verification/verify', '', 'Verify DNS TXT proof for current base URL hostname (valid 7 days)'],
   ['put', '/api/provider/apis/{id}', 'api', 'Replace Draft metadata'],
   ['delete', '/api/provider/apis/{id}', '', 'Delete own Draft API'],
   ['get', '/api/provider/apis/{id}/versions', '', 'List versions'],
@@ -46,12 +49,17 @@ Object.assign(schemas, {
   ProviderVersion: record({ id: string, apiId: string, version: string, changelog: string, openapiDocument: { type: ['object','null'] } }),
   ProviderEndpoint: record({ id: string, apiId: string, versionId: string, method: string, path: string, description: string, parameters: { type: 'array', items: { type: 'object' } }, requestSchema: {}, responseExample: {} }),
   ProviderPlan: record({ id: string, apiId: string, name: { type: 'string', enum: ['Free','Basic','Pro'] }, priceMonthly: { type: 'number' }, currency: string, quota: integer, rateLimit: integer, isActive: { type: 'boolean' } }),
-  ProviderLegal: record({ id: string, apiId: string, agreementId: string, agreementVersion: string, ownershipDeclaration: string, distributionRights: string, dataClassification: string, acceptedAt: timestamp }),
+  ProviderLegal: record({ id: string, apiId: string, agreementId: string, agreementVersion: string, ownershipDeclaration: string, distributionRights: string, dataClassification: string, acceptedAt: timestamp,
+    processesPersonalData: { type: ['boolean','null'], description: 'null on legacy rows; explicit declaration required before submit' }, personalDataTypes: { type: 'array', items: string }, dataProcessingPurpose: { type: ['string','null'] } }),
+  DomainStatus: record({ hostname: string, verified: { type: 'boolean' }, verifiedAt: timestamp, verificationExpiresAt: timestamp, challengeExpiresAt: timestamp }, ['hostname','verified']),
+  DomainChallenge: record({ hostname: string, recordType: { type: 'string', enum: ['TXT'] }, recordName: string, recordValue: string, challengeExpiresAt: timestamp }, ['hostname','recordType','recordName','recordValue','challengeExpiresAt']),
   ProviderAgreement: record({ id: string, version: string, content: string, effectiveAt: timestamp }),
   ProviderDocumentation: record({ id: string, apiId: string, versionId: string, source: string, content: { type: 'object' } }),
   ProviderError: record({ error: record({ code: string, message: string, requestId: string, details: { type: 'array', items: record({ field: string, message: string }, ['field','message']) } }, ['code','message','requestId']) }, ['error']),
 });
 function resultSchema(path: string, method: string): object {
+  if (path.endsWith('/domain-verification/challenge')) return ref('DomainChallenge');
+  if (path.includes('/domain-verification')) return ref('DomainStatus');
   if (path.endsWith('/import-openapi')) return record({ versionId: string, endpointCount: integer, title: string }, ['versionId','endpointCount','title']);
   if (path.endsWith('/publish-status')) return record({ id: string, status: string, submittedAt: timestamp, approvedAt: timestamp, publishedAt: timestamp });
   if (path.endsWith('/verification')) return method === 'get' ? { anyOf: [ref('ProviderVerification'), { type: 'null' }] } : ref('ProviderVerification');
@@ -76,7 +84,7 @@ export const providerContract = {
       ...(schema ? { requestBody: { required: true, content: schema === 'import'
         ? { 'multipart/form-data': { schema: { type: 'object', additionalProperties: false, properties: { file: { type: 'string', format: 'binary', description: 'JSON/YAML, max 1 MiB, internal refs only' }, versionId: { type: 'string', pattern: '^[1-9][0-9]{0,9}$' } }, required: ['file', 'versionId'] } } }
         : { 'application/json': { schema: { $ref: `#/components/schemas/${schema}` } } } } } : {}),
-      responses: Object.fromEntries([method === 'delete' ? '204' : method === 'post' && !['import', ''].includes(schema) ? '201' : '200', '400', '401', '403', '404', '409', ...(schema === 'import' ? ['413', '415'] : [])].map(code => [code, {
+      responses: Object.fromEntries([method === 'delete' ? '204' : path.endsWith('/challenge') || method === 'post' && !['import', ''].includes(schema) ? '201' : '200', '400', '401', '403', '404', '409', ...(path.includes('/domain-verification') ? ['429','503'] : []), ...(schema === 'import' ? ['413', '415'] : [])].map(code => [code, {
         description: ['200', '201', '204'].includes(code) ? 'Success' : 'Standard error envelope',
         ...(code === '204' ? {} : { content: { 'application/json': { schema: ['200','201'].includes(code) ? record({ data: resultSchema(path, method) }, ['data']) : ref('ProviderError') } } }),
       }])),

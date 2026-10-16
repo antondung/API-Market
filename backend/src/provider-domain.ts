@@ -10,7 +10,13 @@ export const providerSchemas = {
   version: z.object({ version: text(64), changelog: text(5000) }).strict(),
   endpoint: z.object({ versionId: z.string().regex(/^[1-9][0-9]{0,9}$/), method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE']), path: text(2048).regex(/^\//), description: text(5000), parameters: z.array(z.object({ name: text(200), in: z.enum(['path', 'query', 'header', 'cookie', 'body', 'formData']), required: z.boolean(), schema: z.record(z.string(), z.unknown()).optional(), description: text(5000).optional() }).strict()).max(100).default([]), requestSchema: z.record(z.string(), z.unknown()).nullable().optional(), responseExample: z.unknown().optional() }).strict(),
   plan: z.object({ name: z.enum(['Free', 'Basic', 'Pro']), priceMonthly: z.number().finite().min(0).max(999999999999.99).refine(v => Math.abs(v * 100 - Math.round(v * 100)) < 0.001, 'At most two decimal places'), currency: z.string().regex(/^[A-Z]{3}$/), quota: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), rateLimit: z.number().int().min(1).max(1000000) }).strict().refine(value => value.name !== 'Free' || value.priceMonthly === 0, { path: ['priceMonthly'], message: 'Free plan price must be zero' }),
-  legal: z.object({ ownershipDeclaration: text(10000), distributionRights: text(10000), dataClassification: z.enum(['Public', 'Internal', 'Confidential', 'Restricted']), agreementVersion: text(64), accepted: z.literal(true) }).strict(),
+  legal: z.object({ ownershipDeclaration: text(10000), distributionRights: text(10000), dataClassification: z.enum(['Public', 'Internal', 'Confidential', 'Restricted']), agreementVersion: text(64), accepted: z.literal(true),
+    processesPersonalData: z.boolean(), personalDataTypes: z.array(z.enum(['FullName', 'Email', 'Phone', 'Geolocation', 'Financial', 'Credentials', 'HealthBiometrics', 'Other'])).max(8), dataProcessingPurpose: text(5000).optional(),
+  }).strict().superRefine((value, ctx) => {
+    if (value.processesPersonalData && (!value.personalDataTypes.length || !value.dataProcessingPurpose)) ctx.addIssue({ code: 'custom', path: ['personalDataTypes'], message: 'Declare data types and processing purpose when processing personal data' });
+    if (!value.processesPersonalData && (value.personalDataTypes.length || value.dataProcessingPurpose !== undefined)) ctx.addIssue({ code: 'custom', path: ['processesPersonalData'], message: 'No data types or purpose allowed when personal data is not processed' });
+    if (new Set(value.personalDataTypes).size !== value.personalDataTypes.length) ctx.addIssue({ code: 'custom', path: ['personalDataTypes'], message: 'Data types must be unique' });
+  }),
 };
 export type ApiState = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Published' | 'Rejected';
 export type VerificationState = 'Pending' | 'Verified' | 'Rejected';

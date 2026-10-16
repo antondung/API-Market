@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ApiError } from './auth.js';
 import { providerSchemas, validateProviderJson } from './provider-domain.js';
 import { ProviderService } from './provider-service.js';
+import { rateLimit } from 'express-rate-limit';
 
 export function providerRouter(service: ProviderService, authenticate: RequestHandler, providerRole: RequestHandler) {
   const router = Router();
@@ -17,6 +18,17 @@ export function providerRouter(service: ProviderService, authenticate: RequestHa
   router.get('/apis', async (req, res) => { const query = pagination.parse(req.query); res.json({ data: await service.list(actor(res), query.page, query.pageSize) }); });
   router.post('/apis', async (req, res) => { res.status(201).json({ data: await service.create(actor(res), providerSchemas.api.parse(req.body)) }); });
   router.get('/apis/:id', async (req, res) => { res.json({ data: await service.get(actor(res), String(req.params.id)) }); });
+  const domainLimit = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: (_req, res) => actor(res), handler: (_req, _res, next) => next(new ApiError(429, 'DOMAIN_RATE_LIMITED', 'Too many domain verification requests')) });
+  router.get('/apis/:id/domain-verification', async (req, res) => { res.json({ data: await service.domainStatus(actor(res), String(req.params.id)) }); });
+  router.post('/apis/:id/domain-verification/challenge', domainLimit, async (req, res) => {
+    z.object({}).strict().parse(req.body ?? {});
+    res.status(201).json({ data: await service.domainChallenge(actor(res), String(req.params.id)) });
+  });
+  router.post('/apis/:id/domain-verification/verify', domainLimit, async (req, res) => {
+    z.object({}).strict().parse(req.body ?? {});
+    res.json({ data: await service.verifyDomain(actor(res), String(req.params.id)) });
+  });
   router.put('/apis/:id', async (req, res) => { res.json({ data: await service.update(actor(res), String(req.params.id), providerSchemas.api.parse(req.body)) }); });
   router.delete('/apis/:id', async (req, res) => { await service.deleteApi(actor(res), String(req.params.id)); res.status(204).end(); });
   for (const kind of ['versions', 'endpoints', 'plans', 'documentation'] as const) {
