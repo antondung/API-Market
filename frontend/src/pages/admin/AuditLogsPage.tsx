@@ -1,94 +1,251 @@
-import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import React, { useEffect, useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
+import {
+  listAdminAuditLogs,
+  getAdminAuditActions,
+  type AdminAuditLog,
+} from '../../services/adminReviewApi';
+import { formatBackendErrorMessage } from '../../services/authApi';
 
 export const AuditLogsPage: React.FC = () => {
-  const { auditLogs } = useApp();
   const { t } = useLanguage();
-  const [filterType, setFilterType] = useState<string>('all');
 
-  const filteredLogs = auditLogs.filter(log => {
-    if (filterType !== 'all' && log.targetType !== filterType) return false;
-    return true;
-  });
+  const [logs, setLogs] = useState<AdminAuditLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters
+  const [filterScope, setFilterScope] = useState<string>('all');
+  const [actionOptions, setActionOptions] = useState<string[]>([]);
+  const [selectedAction, setSelectedAction] = useState<string>('all');
+
+  // Load distinct actions
+  useEffect(() => {
+    const controller = new AbortController();
+    getAdminAuditActions(controller.signal)
+      .then(actions => {
+        if (!controller.signal.aborted) {
+          setActionOptions(actions || []);
+        }
+      })
+      .catch(() => {
+        // Non-blocking fallback
+      });
+    return () => controller.abort();
+  }, []);
+
+  const fetchLogs = (currentPage = page, scope = filterScope, action = selectedAction) => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+
+    const query: Parameters<typeof listAdminAuditLogs>[0] = {
+      page: currentPage,
+      pageSize,
+    };
+    if (scope !== 'all') {
+      query.targetType = scope;
+    }
+    if (action !== 'all') {
+      query.action = action;
+    }
+
+    listAdminAuditLogs(query, controller.signal)
+      .then(res => {
+        if (!controller.signal.aborted) {
+          setLogs(res.items || []);
+          setTotal(res.total || 0);
+        }
+      })
+      .catch(err => {
+        if (!controller.signal.aborted) {
+          setError(formatBackendErrorMessage(err));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  };
+
+  useEffect(() => {
+    return fetchLogs(page, filterScope, selectedAction);
+  }, [page, filterScope, selectedAction]);
+
+  const handleScopeFilterChange = (scope: string) => {
+    setFilterScope(scope);
+    setPage(1);
+  };
+
+  const handleActionFilterChange = (act: string) => {
+    setSelectedAction(act);
+    setPage(1);
+  };
+
+  const totalPages = Math.ceil(total / pageSize);
 
   return (
     <div className="space-y-6">
       <div className="pb-6 border-b border-outline-variant/30">
-        <h1 className="text-headline-lg font-bold text-on-surface">{t('Enterprise Audit Logs & Administrative Activity')}</h1>
+        <h1 className="text-headline-lg font-bold text-on-surface">
+          {t('Enterprise Audit Logs & Administrative Activity')}
+        </h1>
         <p className="text-body-md text-on-surface-variant">
-          {t('Immutable historical trail of administrative mutations, policy changes, and security events.')}
+          {t('Immutable historical trail of administrative mutations, policy changes, and security events (US-14).')}
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-body-sm font-semibold text-on-surface-variant">{t('Scope Filter:')}</span>
-        {['all', 'USER', 'API', 'PROVIDER', 'SUBSCRIPTION', 'SECURITY'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFilterType(f)}
-            className={`px-3 py-1 rounded-lg text-body-sm transition-colors uppercase font-medium ${
-              filterType === f
-                ? 'bg-primary-container text-on-primary-container'
-                : 'text-on-surface-variant hover:bg-surface-container'
-            }`}
-          >
-            {f === 'all' ? t('All Scopes') : f}
-          </button>
-        ))}
+      {/* Filter Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/30">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-body-sm font-semibold text-on-surface-variant">{t('Scope Filter:')}</span>
+          {['all', 'USER', 'API', 'PROVIDER', 'PROVIDER_VERIFICATION', 'API_REVIEW'].map(f => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => handleScopeFilterChange(f)}
+              className={`px-3 py-1 rounded-lg text-body-sm transition-colors uppercase font-medium ${
+                filterScope === f
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              {f === 'all' ? t('All Scopes') : f}
+            </button>
+          ))}
+        </div>
+
+        {actionOptions.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="audit-action-select" className="text-body-sm font-semibold text-on-surface-variant">Hành động:</label>
+            <select
+              id="audit-action-select"
+              value={selectedAction}
+              onChange={e => handleActionFilterChange(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none"
+            >
+              <option value="all">Tất cả hành động</option>
+              {actionOptions.map(act => (
+                <option key={act} value={act}>{act}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
+      {error && (
+        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error flex items-center justify-between gap-3 text-body-sm">
+          <span>{error}</span>
+          <Button size="sm" variant="secondary" onClick={() => fetchLogs()}>
+            Thử lại
+          </Button>
+        </div>
+      )}
+
+      {/* Table */}
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl overflow-hidden shadow-sm">
-        <table className="w-full text-left text-body-sm">
-          <thead className="bg-surface-container text-on-surface-variant text-[11px] uppercase font-semibold border-b border-outline-variant/20">
-            <tr>
-              <th className="px-5 py-3.5">{t('Timestamp')}</th>
-              <th className="px-5 py-3.5">{t('Actor')}</th>
-              <th className="px-5 py-3.5">{t('Action Code')}</th>
-              <th className="px-5 py-3.5">{t('Target Scope')}</th>
-              <th className="px-5 py-3.5">{t('Target ID')}</th>
-              <th className="px-5 py-3.5">{t('Details')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-outline-variant/15 text-on-surface">
-            {filteredLogs.length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-body-sm">
+            <thead className="bg-surface-container text-on-surface-variant text-[11px] uppercase font-semibold border-b border-outline-variant/20">
               <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-on-surface-variant">
-                  <div className="flex flex-col items-center justify-center">
-                    <span className="material-symbols-outlined text-[36px] text-on-surface-variant/40 mb-2">receipt_long</span>
-                    <p className="font-semibold text-on-surface">{t('No audit log entries')}</p>
-                    <p className="text-body-sm text-on-surface-variant max-w-sm mt-1">{t('Administrative operations, policy adjustments, and access reviews will appear here in chronological order.')}</p>
-                  </div>
-                </td>
+                <th className="px-5 py-3.5">{t('Timestamp')}</th>
+                <th className="px-5 py-3.5">{t('Actor')}</th>
+                <th className="px-5 py-3.5">{t('Action Code')}</th>
+                <th className="px-5 py-3.5">{t('Target Scope')}</th>
+                <th className="px-5 py-3.5">{t('Target ID')}</th>
+                <th className="px-5 py-3.5">{t('Details')}</th>
               </tr>
-            ) : (
-              filteredLogs.map(log => (
-                <tr key={log.id} className="hover:bg-surface-container/40 transition-colors">
-                  <td className="px-5 py-3.5 font-code-sm text-on-surface-variant whitespace-nowrap">
-                    {new Date(log.timestamp).toLocaleString()}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className="font-semibold text-on-surface block">{log.actorEmail}</span>
-                    <span className="text-[11px] font-code-sm text-on-surface-variant uppercase">{log.actorRole}</span>
-                  </td>
-                  <td className="px-5 py-3.5 font-code-md text-primary font-bold">
-                    {log.action}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <Badge variant="neutral" size="sm">{log.targetType}</Badge>
-                  </td>
-                  <td className="px-5 py-3.5 font-code-sm text-on-surface-variant">
-                    {log.targetId}
-                  </td>
-                  <td className="px-5 py-3.5 text-on-surface-variant leading-relaxed">
-                    {log.details}
+            </thead>
+            <tbody className="divide-y divide-outline-variant/15 text-on-surface">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-on-surface-variant animate-pulse">
+                    Đang truy vấn nhật ký kiểm toán từ máy chủ...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : logs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-on-surface-variant">
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined text-[36px] text-on-surface-variant/40 mb-2">receipt_long</span>
+                      <p className="font-semibold text-on-surface">{t('No audit log entries')}</p>
+                      <p className="text-body-sm text-on-surface-variant max-w-sm mt-1">
+                        Chưa có bản ghi hoạt động nào phù hợp với bộ lọc đã chọn.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                logs.map(log => (
+                  <tr key={log.id} className="hover:bg-surface-container/40 transition-colors">
+                    <td className="px-5 py-3.5 font-mono text-xs text-on-surface-variant whitespace-nowrap">
+                      {new Date(log.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="font-semibold text-on-surface block font-mono text-xs">
+                        {log.actorId ? `User #${log.actorId}` : 'Hệ thống'}
+                      </span>
+                      <span className="text-[11px] font-mono text-on-surface-variant uppercase">
+                        {log.actorRole || 'System'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-xs text-primary font-bold">
+                      {log.action}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <Badge variant="neutral" size="sm">{log.targetType || 'N/A'}</Badge>
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-xs text-on-surface-variant">
+                      {log.targetId || '-'}
+                    </td>
+                    <td className="px-5 py-3.5 text-on-surface-variant leading-relaxed text-xs">
+                      {log.detail ? (
+                        <code className="font-mono bg-surface-container px-2 py-1 rounded block max-w-md truncate">
+                          {JSON.stringify(log.detail)}
+                        </code>
+                      ) : '-'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-outline-variant/20 flex items-center justify-between text-body-sm text-on-surface-variant">
+            <span>
+              Hiển thị {logs.length} / {total} bản ghi (Trang {page} / {totalPages})
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+              >
+                Trang trước
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              >
+                Trang sau
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

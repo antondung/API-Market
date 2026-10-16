@@ -5,25 +5,34 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
 import { listAdminUsers } from '../../services/adminUsersApi';
+import {
+  listAdminVerifications,
+  listAdminApis,
+  listAdminAuditLogs,
+} from '../../services/adminReviewApi';
 import { ApiError, formatBackendErrorMessage } from '../../services/authApi';
 
 export const AdminDashboardPage: React.FC = () => {
-  const { verifications, apis, reports } = useApp();
+  const { reports } = useApp();
   const { t } = useLanguage();
 
   const [liveUserCount, setLiveUserCount] = useState<number | null>(null);
   const [liveActiveProviderCount, setLiveActiveProviderCount] = useState<number | null>(null);
   const [liveTotalProviderCount, setLiveTotalProviderCount] = useState<number | null>(null);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const [userFetchError, setUserFetchError] = useState<string | null>(null);
+  const [livePendingVerifications, setLivePendingVerifications] = useState<number | null>(null);
+  const [livePendingReviews, setLivePendingReviews] = useState<number | null>(null);
+  const [liveAuditLogCount, setLiveAuditLogCount] = useState<number | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     queueMicrotask(() => {
       if (!controller.signal.aborted) {
-        setLoadingUsers(true);
-        setUserFetchError(null);
+        setLoading(true);
+        setFetchError(null);
       }
     });
 
@@ -31,27 +40,31 @@ export const AdminDashboardPage: React.FC = () => {
       listAdminUsers({ page: 1, pageSize: 1 }, controller.signal),
       listAdminUsers({ role: 'Provider', active: true, page: 1, pageSize: 1 }, controller.signal),
       listAdminUsers({ role: 'Provider', page: 1, pageSize: 1 }, controller.signal),
+      listAdminVerifications('Pending', 1, 1, controller.signal),
+      listAdminApis('Submitted', 1, 1, controller.signal),
+      listAdminAuditLogs({ page: 1, pageSize: 1 }, controller.signal),
     ])
-      .then(([allUsersRes, activeProvidersRes, totalProvidersRes]) => {
+      .then(([allUsersRes, activeProvidersRes, totalProvidersRes, verifRes, apisRes, auditRes]) => {
         setLiveUserCount(allUsersRes.total);
         setLiveActiveProviderCount(activeProvidersRes.total);
         setLiveTotalProviderCount(totalProvidersRes.total);
+        setLivePendingVerifications(verifRes.total);
+        setLivePendingReviews(apisRes.total);
+        setLiveAuditLogCount(auditRes.total);
       })
       .catch(reason => {
         if (reason instanceof ApiError && reason.code === 'ABORTED') return;
-        setUserFetchError(formatBackendErrorMessage(reason));
+        setFetchError(formatBackendErrorMessage(reason));
       })
       .finally(() => {
         if (!controller.signal.aborted) {
-          setLoadingUsers(false);
+          setLoading(false);
         }
       });
 
     return () => controller.abort();
   }, [retryKey]);
 
-  const pendingVerifications = verifications.filter(v => v.status === 'Pending').length;
-  const pendingReviews = apis.filter(a => a.status === 'Submitted' || a.status === 'UnderReview').length;
   const pendingReports = reports.filter(r => r.status === 'Pending' || r.status === 'Under Investigation').length;
 
   return (
@@ -95,18 +108,18 @@ export const AdminDashboardPage: React.FC = () => {
 
       <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-body-sm text-on-surface flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <span>
-          <strong>Sprint 1 Live API:</strong> Dữ liệu Người dùng và Nhà cung cấp bên dưới được truy vấn trực tiếp từ backend qua <code>/api/admin/users</code>. Các phân hệ còn lại là dữ liệu minh họa cho Sprint sau.
+          <strong>Sprint 2 Admin Console Live:</strong> Dữ liệu Người dùng, Nhà cung cấp, Xác minh KYC, Hàng đợi thẩm định API và Nhật ký kiểm toán được đồng bộ trực tiếp từ cơ sở dữ liệu hệ thống.
         </span>
-        {userFetchError && (
+        {fetchError && (
           <Button size="sm" variant="secondary" onClick={() => setRetryKey(k => k + 1)}>
             Thử lại kết nối
           </Button>
         )}
       </div>
 
-      {userFetchError && (
+      {fetchError && (
         <div role="alert" className="rounded-xl border border-error/30 bg-error-container/20 p-4 text-error text-body-sm flex items-center justify-between">
-          <span>Lỗi tải dữ liệu người dùng: {userFetchError}</span>
+          <span>Lỗi tải dữ liệu: {fetchError}</span>
           <Button size="sm" variant="secondary" onClick={() => setRetryKey(k => k + 1)}>
             Thử lại
           </Button>
@@ -126,7 +139,7 @@ export const AdminDashboardPage: React.FC = () => {
           <span className="text-label-md text-on-surface-variant uppercase tracking-wider block mb-1">{t('Total Users')}</span>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-extrabold text-on-surface font-code-md">
-              {loadingUsers ? '...' : (liveUserCount ?? 0)}
+              {loading ? '...' : (liveUserCount ?? 0)}
             </span>
             <span className="text-code-sm text-on-surface-variant font-medium">{t('accounts')}</span>
           </div>
@@ -146,10 +159,10 @@ export const AdminDashboardPage: React.FC = () => {
           <span className="text-label-md text-on-surface-variant uppercase tracking-wider block mb-1">{t('Active Providers')}</span>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-extrabold text-on-surface font-code-md">
-              {loadingUsers ? '...' : (liveActiveProviderCount ?? 0)}
+              {loading ? '...' : (liveActiveProviderCount ?? 0)}
             </span>
             <span className="text-code-sm text-on-surface-variant font-medium">
-              / {loadingUsers ? '...' : (liveTotalProviderCount ?? 0)} {t('providers')}
+              / {loading ? '...' : (liveTotalProviderCount ?? 0)} {t('providers')}
             </span>
           </div>
           <Link to="/admin/users" className="text-body-sm text-primary font-semibold hover:underline mt-4 block">
@@ -157,17 +170,19 @@ export const AdminDashboardPage: React.FC = () => {
           </Link>
         </div>
 
-        {/* Card 3: Verification Queue (DEMO) */}
+        {/* Card 3: Verification Queue (LIVE) */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 relative overflow-hidden group shadow-sm transition-all hover:shadow-md">
           <div className="absolute right-4 top-4 flex flex-col items-end gap-1">
             <div className="w-10 h-10 rounded-xl bg-surface-container-high flex items-center justify-center text-amber-600">
               <span className="material-symbols-outlined text-[22px]">pending_actions</span>
             </div>
-            <Badge variant="neutral">Sprint sau</Badge>
+            <Badge variant="success">Live API</Badge>
           </div>
           <span className="text-label-md text-on-surface-variant uppercase tracking-wider block mb-1">{t('Pending Verifications')}</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-on-surface font-code-md">{pendingVerifications}</span>
+            <span className="text-3xl font-extrabold text-on-surface font-code-md">
+              {loading ? '...' : (livePendingVerifications ?? 0)}
+            </span>
             <span className="text-code-sm text-amber-600 font-semibold">{t('Requires Action')}</span>
           </div>
           <Link to="/admin/verifications" className="text-body-sm text-primary font-semibold hover:underline mt-4 block">
@@ -215,49 +230,49 @@ export const AdminDashboardPage: React.FC = () => {
               </p>
             </div>
             <span className="text-primary font-semibold text-body-sm flex items-center gap-1 mt-6">
-              {t('Manage Users')} ({loadingUsers ? '...' : (liveUserCount ?? 0)}) →
+              {t('Manage Users')} ({loading ? '...' : (liveUserCount ?? 0)}) →
             </span>
           </Link>
 
           <Link
             to="/admin/api-reviews"
-            className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant/30 hover:border-outline-variant hover:shadow-md transition-all flex flex-col justify-between opacity-80"
+            className="p-6 rounded-2xl bg-surface-container-low border border-primary/40 hover:border-primary hover:shadow-md transition-all flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-surface-container-high text-on-surface-variant flex items-center justify-center">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
                   <span className="material-symbols-outlined text-[24px]">rate_review</span>
                 </div>
-                <Badge variant="neutral">Dữ liệu mẫu</Badge>
+                <Badge variant="success">Tích hợp Live</Badge>
               </div>
               <h3 className="text-headline-sm font-bold text-on-surface mb-1">{t('API Reviews & Publishing')}</h3>
               <p className="text-body-sm text-on-surface-variant">
                 {t('Approve, reject, or suspend APIs. Audit upstream URLs and legal ownership declarations.')}
               </p>
             </div>
-            <span className="text-on-surface-variant font-semibold text-body-sm flex items-center gap-1 mt-6">
-              {t('Review Submissions')} ({pendingReviews}) →
+            <span className="text-primary font-semibold text-body-sm flex items-center gap-1 mt-6">
+              {t('Review Submissions')} ({loading ? '...' : (livePendingReviews ?? 0)}) →
             </span>
           </Link>
 
           <Link
             to="/admin/audit-logs"
-            className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant/30 hover:border-outline-variant hover:shadow-md transition-all flex flex-col justify-between opacity-80"
+            className="p-6 rounded-2xl bg-surface-container-low border border-primary/40 hover:border-primary hover:shadow-md transition-all flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-surface-container-high text-on-surface-variant flex items-center justify-center">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
                   <span className="material-symbols-outlined text-[24px]">receipt_long</span>
                 </div>
-                <Badge variant="neutral">Dữ liệu mẫu</Badge>
+                <Badge variant="success">Tích hợp Live</Badge>
               </div>
               <h3 className="text-headline-sm font-bold text-on-surface mb-1">{t('Enterprise Audit Trail')}</h3>
               <p className="text-body-sm text-on-surface-variant">
                 {t('Immutable activity logs recording every lock, suspension, role assignment, and key revocation.')}
               </p>
             </div>
-            <span className="text-on-surface-variant font-semibold text-body-sm flex items-center gap-1 mt-6">
-              {t('Inspect Audit Log →')}
+            <span className="text-primary font-semibold text-body-sm flex items-center gap-1 mt-6">
+              {t('Inspect Audit Log')} ({loading ? '...' : (liveAuditLogCount ?? 0)}) →
             </span>
           </Link>
         </div>
