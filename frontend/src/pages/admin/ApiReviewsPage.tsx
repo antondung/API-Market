@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import {
   listAdminApis,
@@ -24,6 +25,7 @@ const STATUS_TABS: AdminApiStatus[] = [
 ];
 
 export const ApiReviewsPage: React.FC = () => {
+  const { currentUser } = useAuth();
   const { t } = useLanguage();
 
   const [statusFilter, setStatusFilter] = useState<AdminApiStatus>('Submitted');
@@ -33,6 +35,12 @@ export const ApiReviewsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Session-bound request isolation refs
+  const requestIdRef = useRef(0);
+  const activeUserRef = useRef(currentUser?.id);
+  const dossierAbortControllerRef = useRef<AbortController | null>(null);
+  const dossierRequestIdRef = useRef(0);
 
   // Review action state
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -50,25 +58,59 @@ export const ApiReviewsPage: React.FC = () => {
   const [loadingDossier, setLoadingDossier] = useState(false);
   const [dossierError, setDossierError] = useState<string | null>(null);
 
+  // Reset and abort when admin user identity changes (e.g., Admin A -> Admin B or logout)
+  useEffect(() => {
+    const prevUserId = activeUserRef.current;
+    activeUserRef.current = currentUser?.id;
+    if (prevUserId !== currentUser?.id) {
+      requestIdRef.current++;
+      dossierRequestIdRef.current++;
+      if (dossierAbortControllerRef.current) {
+        dossierAbortControllerRef.current.abort();
+        dossierAbortControllerRef.current = null;
+      }
+      setApis([]);
+      setTotal(0);
+      setError(null);
+      setActionSuccess(null);
+      setDossierModalOpen(false);
+      setSelectedApiForDossier(null);
+      setDossier(null);
+      setDossierError(null);
+      setRejectModalOpen(false);
+      setSelectedApiForReject(null);
+      if (!currentUser) {
+        setLoading(false);
+      }
+    }
+  }, [currentUser]);
+
   const fetchApis = (status = statusFilter, currentPage = page) => {
     const controller = new AbortController();
+    const requestId = ++requestIdRef.current;
+    const requestUserId = currentUser?.id;
+
+    if (!currentUser) {
+      return () => controller.abort();
+    }
+
     setLoading(true);
     setError(null);
 
     listAdminApis(status, currentPage, 20, controller.signal)
       .then(res => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setApis(res.items || []);
           setTotal(res.total || 0);
         }
       })
       .catch(err => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setError(formatBackendErrorMessage(err));
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setLoading(false);
         }
       });
@@ -78,7 +120,7 @@ export const ApiReviewsPage: React.FC = () => {
 
   useEffect(() => {
     return fetchApis(statusFilter, page);
-  }, [statusFilter, page]);
+  }, [statusFilter, page, currentUser?.id]);
 
   const handleStatusTabChange = (newStatus: AdminApiStatus) => {
     setStatusFilter(newStatus);
@@ -137,26 +179,33 @@ export const ApiReviewsPage: React.FC = () => {
   };
 
   const handleOpenDossier = (api: AdminApiItem) => {
+    if (dossierAbortControllerRef.current) {
+      dossierAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    dossierAbortControllerRef.current = controller;
+    const dossierRequestId = ++dossierRequestIdRef.current;
+    const requestUserId = currentUser?.id;
+
     setSelectedApiForDossier(api);
     setDossier(null);
     setDossierError(null);
     setLoadingDossier(true);
     setDossierModalOpen(true);
 
-    const controller = new AbortController();
     getAdminApiDossier(api.id, controller.signal)
       .then(data => {
-        if (!controller.signal.aborted) {
+        if (dossierRequestId === dossierRequestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setDossier(data);
         }
       })
       .catch(err => {
-        if (!controller.signal.aborted) {
+        if (dossierRequestId === dossierRequestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setDossierError(formatBackendErrorMessage(err));
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (dossierRequestId === dossierRequestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setLoadingDossier(false);
         }
       });
@@ -326,7 +375,13 @@ export const ApiReviewsPage: React.FC = () => {
       {/* Dossier Modal */}
       <Modal
         isOpen={dossierModalOpen}
-        onClose={() => setDossierModalOpen(false)}
+        onClose={() => {
+          if (dossierAbortControllerRef.current) {
+            dossierAbortControllerRef.current.abort();
+            dossierAbortControllerRef.current = null;
+          }
+          setDossierModalOpen(false);
+        }}
         title={`Hồ sơ kiểm duyệt (Dossier): ${selectedApiForDossier?.name}`}
         description="Toàn bộ thông tin kỹ thuật, endpoint, pricing, pháp lý và xác minh domain của API."
       >
@@ -355,22 +410,59 @@ export const ApiReviewsPage: React.FC = () => {
               </div>
 
               {/* Domain Verification */}
-              <div className="p-4 rounded-xl bg-surface-container space-y-2">
-                <h4 className="font-bold text-on-surface flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-primary">domain_verification</span>
-                  Xác minh quyền kiểm soát Domain (US-08)
-                </h4>
-                <div className="text-xs space-y-1">
-                  <div>Hostname: <code className="font-mono text-primary">{dossier.domainVerification?.hostname || 'Chưa có'}</code></div>
-                  <div>
-                    Trạng thái DNS: {dossier.domainVerification?.verifiedAt ? (
-                      <span className="text-emerald-600 font-semibold">Đã xác minh (Hợp lệ đến: {new Date(dossier.domainVerification.verificationExpiresAt || '').toLocaleDateString()})</span>
-                    ) : (
-                      <span className="text-amber-600 font-semibold">Chưa hoàn tất xác minh DNS</span>
-                    )}
+              {(() => {
+                const apiHostname = (() => {
+                  try {
+                    return dossier.api?.baseUrl ? new URL(dossier.api.baseUrl).hostname : null;
+                  } catch {
+                    return null;
+                  }
+                })();
+                const isExpired = Boolean(
+                  dossier.domainVerification?.verificationExpiresAt &&
+                  new Date(dossier.domainVerification.verificationExpiresAt).getTime() <= Date.now()
+                );
+                const isHostnameMatched = Boolean(
+                  !apiHostname ||
+                  !dossier.domainVerification?.hostname ||
+                  dossier.domainVerification.hostname === apiHostname
+                );
+
+                return (
+                  <div className="p-4 rounded-xl bg-surface-container space-y-2">
+                    <h4 className="font-bold text-on-surface flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-primary">domain_verification</span>
+                      Xác minh quyền kiểm soát Domain (US-08)
+                    </h4>
+                    <div className="text-xs space-y-1">
+                      <div>
+                        Hostname: <code className="font-mono text-primary">{dossier.domainVerification?.hostname || 'Chưa có'}</code>
+                        {apiHostname && apiHostname !== dossier.domainVerification?.hostname && (
+                          <span className="text-error ml-1 font-medium">(Base URL Hostname: {apiHostname})</span>
+                        )}
+                      </div>
+                      <div>
+                        Trạng thái DNS:{' '}
+                        {!dossier.domainVerification?.verifiedAt ? (
+                          <span className="text-amber-600 font-semibold">Chưa hoàn tất xác minh DNS</span>
+                        ) : isExpired ? (
+                          <span className="text-error font-semibold">
+                            Đã hết hạn xác minh ({new Date(dossier.domainVerification.verificationExpiresAt || '').toLocaleDateString()}) - Yêu cầu xác minh lại
+                          </span>
+                        ) : !isHostnameMatched ? (
+                          <span className="text-error font-semibold">
+                            Tên miền đã xác minh ({dossier.domainVerification.hostname}) không khớp với Base URL ({apiHostname})
+                          </span>
+                        ) : (
+                          <span className="text-emerald-600 font-semibold">
+                            Đã xác minh hợp lệ (Có hiệu lực đến: {new Date(dossier.domainVerification.verificationExpiresAt || '').toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Endpoints & Versions */}
               <div className="p-4 rounded-xl bg-surface-container space-y-2">

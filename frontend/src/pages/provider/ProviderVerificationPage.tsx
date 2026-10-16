@@ -343,7 +343,7 @@ export const ProviderVerificationPage: React.FC = () => {
                   )}
                 </div>
                 <p className="text-body-xs text-on-surface-variant">
-                  Cung cấp các đường dẫn HTTP/HTTPS công khai trỏ tới giấy chứng nhận ĐKKD, giấy phép hoạt động, hoặc hồ sơ năng lực.
+                  Cung cấp các đường dẫn HTTP/HTTPS công khai trỏ tới giấy chứng nhận ĐKKD, giấy phép hoạt động, hoặc hồ sơ năng lực (hệ thống lưu trữ danh sách URL minh chứng trực tuyến, không hỗ trợ tải trực tiếp tệp tin nhị phân).
                 </p>
 
                 {evidenceUrlInputs.map((val, idx) => (

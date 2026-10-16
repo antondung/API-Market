@@ -293,37 +293,58 @@ export const MyApisInventoryPage: React.FC = () => {
       )}
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">
-            search
-          </span>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo tên, mô tả hoặc nhãn..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
-          />
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">
+              search
+            </span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Lọc trong trang hiện tại (tên, mô tả, nhãn)..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-body-xs font-semibold text-on-surface-variant whitespace-nowrap">
+              Danh mục:
+            </label>
+            <select
+              value={selectedCategory}
+              onChange={e => setSelectedCategory(e.target.value)}
+              className="p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="ALL">Tất cả danh mục</option>
+              {CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-body-xs font-semibold text-on-surface-variant whitespace-nowrap">
-            Danh mục:
-          </label>
-          <select
-            value={selectedCategory}
-            onChange={e => setSelectedCategory(e.target.value)}
-            className="p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="ALL">Tất cả danh mục</option>
-            {CATEGORIES.map(cat => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Filter status indicator */}
+        {(searchQuery.trim() || selectedCategory !== 'ALL') && (
+          <div className="flex items-center justify-between text-body-xs text-on-surface-variant bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/30">
+            <span>
+              Đang lọc trong trang hiện tại: <strong>{filteredApis.length}</strong> / <strong>{apis.length}</strong> APIs (Tổng danh mục: <strong>{total}</strong> APIs). Để tìm trên toàn bộ danh mục, chuyển trang hoặc xóa bộ lọc.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedCategory('ALL');
+              }}
+              className="text-primary hover:underline font-semibold ml-2 cursor-pointer"
+            >
+              Xóa bộ lọc
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Content Area */}
@@ -493,9 +514,9 @@ export const MyApisInventoryPage: React.FC = () => {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t border-outline-variant/20">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-outline-variant/20">
               <span className="text-body-sm text-on-surface-variant">
-                Trang {page} / {totalPages} (Tổng cộng {total} APIs)
+                Trang {page} / {totalPages} (Tổng cộng {total} APIs{(searchQuery.trim() || selectedCategory !== 'ALL') ? `, hiển thị ${filteredApis.length}/${apis.length} trên trang này` : ''})
               </span>
               <div className="flex items-center gap-2">
                 <Button

@@ -251,9 +251,9 @@ describe('EndpointManagementPage component tests', () => {
       expect(screen.getByText(/Cú pháp JSON của Parameters không hợp lệ/i)).toBeDefined();
     });
 
-    // Fix parameters JSON
+    // Fix parameters JSON with valid Zod strict schema (using schema instead of root type)
     fireEvent.change(paramsTextarea, {
-      target: { value: '[{"name": "date", "in": "query", "required": true, "type": "string"}]' },
+      target: { value: '[{"name": "date", "in": "query", "required": true, "schema": {"type": "string"}}]' },
     });
 
     fireEvent.click(submitEpBtn);
@@ -264,7 +264,7 @@ describe('EndpointManagementPage component tests', () => {
         method: 'GET',
         path: '/v1/forecast/history',
         description: 'Historical weather query',
-        parameters: [{ name: 'date', in: 'query', required: true, type: 'string' }],
+        parameters: [{ name: 'date', in: 'query', required: true, schema: { type: 'string' } }],
         requestSchema: null,
         responseExample: { status: 'success' },
       });

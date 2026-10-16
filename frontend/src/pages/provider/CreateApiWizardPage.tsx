@@ -84,19 +84,29 @@ export const CreateApiWizardPage: React.FC = () => {
   const [selectedPersonalDataTypes, setSelectedPersonalDataTypes] = useState<PersonalDataType[]>([]);
   const [dataProcessingPurpose, setDataProcessingPurpose] = useState('');
   const [legalConfirmed, setLegalConfirmed] = useState(false);
+  const [agreementError, setAgreementError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoadingInitial(true);
+    setAgreementError(null);
 
-    Promise.all([
-      getProviderVerification(controller.signal).catch(() => null),
-      getProviderAgreement(controller.signal).catch(() => null),
+    Promise.allSettled([
+      getProviderVerification(controller.signal),
+      getProviderAgreement(controller.signal),
     ])
-      .then(([verRes, agrRes]) => {
+      .then(([verSettled, agrSettled]) => {
         if (!controller.signal.aborted) {
-          setVerification(verRes);
-          setAgreement(agrRes);
+          if (verSettled.status === 'fulfilled') {
+            setVerification(verSettled.value);
+          }
+          if (agrSettled.status === 'fulfilled' && agrSettled.value) {
+            setAgreement(agrSettled.value);
+            setAgreementError(null);
+          } else {
+            setAgreement(null);
+            setAgreementError('Không thể tải Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ. Vui lòng thử lại kết nối.');
+          }
         }
       })
       .finally(() => {
@@ -211,7 +221,12 @@ export const CreateApiWizardPage: React.FC = () => {
       }
 
       // 4. Save Legal Affirmation & Privacy Contract (US-08)
-      const agreementVer = agreement?.version || 'v1.0.0';
+      if (!agreement?.version) {
+        setWizardError('Chưa tải được Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ. Vui lòng thử lại kết nối.');
+        setStep(4);
+        return;
+      }
+      const agreementVer = agreement.version;
       const ownershipDecl = ownershipType === 'OWN'
         ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
         : 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
@@ -661,16 +676,50 @@ export const CreateApiWizardPage: React.FC = () => {
 
             {/* Subsection 4: Provider Agreement */}
             <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 space-y-3">
-              <label className="flex items-start gap-3 text-body-sm cursor-pointer select-none">
+              <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+                <span className="text-body-xs font-bold uppercase tracking-wider text-primary">
+                  Thỏa thuận Nhà cung cấp ({agreement ? `Phiên bản: ${agreement.version}` : 'Đang tải...'})
+                </span>
+                {agreement?.effectiveAt && (
+                  <span className="text-[11px] text-on-surface-variant font-mono">
+                    Hiệu lực từ: {new Date(agreement.effectiveAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
+              {agreementError ? (
+                <div role="alert" className="p-3 rounded-lg bg-error-container/20 border border-error/30 text-error text-body-xs flex items-center justify-between">
+                  <span>{agreementError}</span>
+                  <Button size="sm" variant="secondary" onClick={() => {
+                    setAgreementError(null);
+                    getProviderAgreement().then(res => {
+                      setAgreement(res);
+                    }).catch(err => setAgreementError(formatProviderErrorMessage(err)));
+                  }}>
+                    Thử lại
+                  </Button>
+                </div>
+              ) : agreement?.content ? (
+                <div className="p-3 rounded-lg bg-surface-container-high border border-outline-variant/20 max-h-36 overflow-y-auto text-body-xs text-on-surface-variant leading-relaxed whitespace-pre-wrap font-sans">
+                  {agreement.content}
+                </div>
+              ) : (
+                <div className="text-body-xs text-on-surface-variant italic">
+                  Đang đồng bộ điều khoản thỏa thuận từ hệ thống...
+                </div>
+              )}
+
+              <label className="flex items-start gap-3 text-body-sm cursor-pointer select-none pt-1">
                 <input
                   type="checkbox"
+                  disabled={!agreement || Boolean(agreementError)}
                   checked={legalConfirmed}
                   onChange={(e) => setLegalConfirmed(e.target.checked)}
-                  className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer"
+                  className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer disabled:opacity-50"
                 />
                 <span className="text-on-surface leading-relaxed text-xs sm:text-body-sm">
-                  <strong>Chấp nhận Provider Agreement {agreement?.version || 'v1.0.0'}: </strong>
-                  Tôi cam kết có quyền hợp pháp để cung cấp API này, thông tin và pricing được khai báo chính xác, không cung cấp dữ liệu trái phép, không xâm phạm quyền của bên thứ ba, và chịu trách nhiệm toàn bộ đối với nội dung/dữ liệu mà API cung cấp.
+                  <strong>Tôi đã đọc, hiểu rõ và đồng ý với Thỏa thuận Nhà cung cấp ({agreement?.version || 'N/A'}): </strong>
+                  Tôi cam kết có quyền hợp pháp để cung cấp API này, thông tin và bảng giá được khai báo chính xác, không cung cấp dữ liệu trái phép, không xâm phạm quyền của bên thứ ba, và chịu trách nhiệm toàn bộ đối với nội dung/dữ liệu mà API cung cấp.
                 </span>
               </label>
             </div>
@@ -682,7 +731,7 @@ export const CreateApiWizardPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="md"
-                disabled={submitting || !legalConfirmed}
+                disabled={submitting || !legalConfirmed || !agreement || Boolean(agreementError)}
                 onClick={handleFinish}
                 icon="check_circle"
               >

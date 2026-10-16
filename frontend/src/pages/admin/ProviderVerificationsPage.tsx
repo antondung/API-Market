@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import {
   listAdminVerifications,
@@ -12,6 +13,7 @@ import {
 import { formatBackendErrorMessage } from '../../services/authApi';
 
 export const ProviderVerificationsPage: React.FC = () => {
+  const { currentUser } = useAuth();
   const { t } = useLanguage();
 
   const [statusFilter, setStatusFilter] = useState<AdminVerificationStatus>('Pending');
@@ -22,6 +24,10 @@ export const ProviderVerificationsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
+  // Session-bound request isolation refs
+  const requestIdRef = useRef(0);
+  const activeUserRef = useRef(currentUser?.id);
+
   // Review states
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -30,25 +36,50 @@ export const ProviderVerificationsPage: React.FC = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState<string | null>(null);
 
+  // Reset and abort when admin user identity changes (e.g., Admin A -> Admin B or logout)
+  useEffect(() => {
+    const prevUserId = activeUserRef.current;
+    activeUserRef.current = currentUser?.id;
+    if (prevUserId !== currentUser?.id) {
+      requestIdRef.current++;
+      setVerifications([]);
+      setTotal(0);
+      setError(null);
+      setActionSuccess(null);
+      setRejectModalOpen(false);
+      setSelectedProviderId(null);
+      if (!currentUser) {
+        setLoading(false);
+      }
+    }
+  }, [currentUser]);
+
   const fetchVerifications = (status = statusFilter, currentPage = page) => {
     const controller = new AbortController();
+    const requestId = ++requestIdRef.current;
+    const requestUserId = currentUser?.id;
+
+    if (!currentUser) {
+      return () => controller.abort();
+    }
+
     setLoading(true);
     setError(null);
 
     listAdminVerifications(status, currentPage, 20, controller.signal)
       .then(res => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setVerifications(res.items || []);
           setTotal(res.total || 0);
         }
       })
       .catch(err => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setError(formatBackendErrorMessage(err));
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setLoading(false);
         }
       });
@@ -58,7 +89,7 @@ export const ProviderVerificationsPage: React.FC = () => {
 
   useEffect(() => {
     return fetchVerifications(statusFilter, page);
-  }, [statusFilter, page]);
+  }, [statusFilter, page, currentUser?.id]);
 
   const handleStatusChange = (newStatus: AdminVerificationStatus) => {
     setStatusFilter(newStatus);
@@ -209,7 +240,7 @@ export const ProviderVerificationsPage: React.FC = () => {
                 {/* Evidence URLs */}
                 <div>
                   <span className="text-[11px] text-on-surface-variant uppercase font-semibold block mb-1">
-                    Tài liệu minh chứng ({v.evidenceUrls?.length || 0}):
+                    Liên kết tài liệu minh chứng ({v.evidenceUrls?.length || 0}):
                   </span>
                   <div className="flex flex-wrap gap-2">
                     {v.evidenceUrls?.map((url, idx) => (

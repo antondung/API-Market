@@ -15,6 +15,8 @@ import {
   getProviderDomainVerification,
   createProviderDomainChallenge,
   verifyProviderDomain,
+  getProviderAgreement,
+  listProviderDocumentation,
   formatProviderErrorMessage,
 } from '../../services/providerApi';
 import type {
@@ -24,8 +26,10 @@ import type {
   ProviderEndpoint,
   ProviderPlan,
   ProviderLegal,
+  ProviderDocumentation,
   DomainVerificationStatus,
   DomainChallengeResult,
+  ProviderAgreement,
   ApiStatus,
 } from '../../services/providerTypes';
 
@@ -47,6 +51,8 @@ export const PublishingWorkflowPage: React.FC = () => {
   const [plans, setPlans] = useState<ProviderPlan[]>([]);
   const [legal, setLegal] = useState<ProviderLegal | null>(null);
   const [domainVerification, setDomainVerification] = useState<DomainVerificationStatus | null>(null);
+  const [currentAgreement, setCurrentAgreement] = useState<ProviderAgreement | null>(null);
+  const [documentation, setDocumentation] = useState<ProviderDocumentation[]>([]);
 
   // Domain Challenge state
   const [challengeData, setChallengeData] = useState<DomainChallengeResult | null>(null);
@@ -56,6 +62,8 @@ export const PublishingWorkflowPage: React.FC = () => {
   const [domainError, setDomainError] = useState<string | null>(null);
 
   const [_loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsFetchError, setDetailsFetchError] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,38 +106,96 @@ export const PublishingWorkflowPage: React.FC = () => {
     setSubmitSuccess(null);
   };
 
-  // 2. Fetch Readiness Checklist & Status for Selected API
+  // 2. Fetch Readiness Checklist & Status for Selected API with Promise.allSettled
   useEffect(() => {
     if (!selectedApiId) return;
 
     const controller = new AbortController();
     setLoadingDetails(true);
     setError(null);
+    setDetailsFetchError(null);
     setChallengeData(null);
     setDomainMessage(null);
     setDomainError(null);
 
-    Promise.all([
-      getProviderPublishStatus(selectedApiId, controller.signal).catch(() => null),
-      getProviderVerification(controller.signal).catch(() => null),
-      listProviderEndpoints(selectedApiId, controller.signal).catch(() => []),
-      listProviderPlans(selectedApiId, controller.signal).catch(() => []),
-      getProviderLegal(selectedApiId, controller.signal).catch(() => null),
-      getProviderDomainVerification(selectedApiId, controller.signal).catch(() => null),
+    Promise.allSettled([
+      getProviderPublishStatus(selectedApiId, controller.signal),
+      getProviderVerification(controller.signal),
+      listProviderEndpoints(selectedApiId, controller.signal),
+      listProviderPlans(selectedApiId, controller.signal),
+      getProviderLegal(selectedApiId, controller.signal),
+      getProviderDomainVerification(selectedApiId, controller.signal),
+      getProviderAgreement(controller.signal),
+      listProviderDocumentation(selectedApiId, controller.signal),
     ])
-      .then(([statusRes, verRes, epRes, plRes, legRes, domainRes]) => {
-        if (!controller.signal.aborted) {
-          setPublishStatus(statusRes);
-          setVerification(verRes);
-          setEndpoints(epRes);
-          setPlans(plRes);
-          setLegal(legRes);
-          setDomainVerification(domainRes);
+      .then(([statusRes, verRes, epRes, plRes, legRes, domainRes, agrRes, docRes]) => {
+        if (controller.signal.aborted) return;
+        const failedResources: string[] = [];
+
+        if (statusRes.status === 'fulfilled') {
+          setPublishStatus(statusRes.value);
+        } else {
+          setPublishStatus(null);
+          failedResources.push('trạng thái xuất bản');
+        }
+
+        if (verRes.status === 'fulfilled') {
+          setVerification(verRes.value);
+        } else {
+          setVerification(null);
+          failedResources.push('xác minh nhà cung cấp');
+        }
+
+        if (epRes.status === 'fulfilled') {
+          setEndpoints(epRes.value);
+        } else {
+          setEndpoints([]);
+          failedResources.push('danh sách endpoint');
+        }
+
+        if (plRes.status === 'fulfilled') {
+          setPlans(plRes.value);
+        } else {
+          setPlans([]);
+          failedResources.push('bảng giá gói cước');
+        }
+
+        if (legRes.status === 'fulfilled') {
+          setLegal(legRes.value);
+        } else {
+          setLegal(null);
+          failedResources.push('hồ sơ pháp lý');
+        }
+
+        if (domainRes.status === 'fulfilled') {
+          setDomainVerification(domainRes.value);
+        } else {
+          setDomainVerification(null);
+          failedResources.push('xác minh tên miền');
+        }
+
+        if (agrRes.status === 'fulfilled') {
+          setCurrentAgreement(agrRes.value);
+        } else {
+          setCurrentAgreement(null);
+          failedResources.push('thỏa thuận nhà cung cấp');
+        }
+
+        if (docRes.status === 'fulfilled') {
+          setDocumentation(docRes.value);
+        } else {
+          setDocumentation([]);
+        }
+
+        if (failedResources.length > 0) {
+          setDetailsFetchError(
+            `Không thể tải đầy đủ thông tin kiểm tra (${failedResources.join(', ')}). Vui lòng thử tải lại dữ liệu.`
+          );
         }
       })
       .catch(err => {
         if (!controller.signal.aborted) {
-          setError(formatProviderErrorMessage(err));
+          setDetailsFetchError(formatProviderErrorMessage(err));
         }
       })
       .finally(() => {
@@ -139,7 +205,7 @@ export const PublishingWorkflowPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [selectedApiId]);
+  }, [selectedApiId, refreshTrigger]);
 
   const selectedApi = apis.find(a => a.id === selectedApiId);
   const currentStatus: ApiStatus = publishStatus?.status || selectedApi?.status || 'Draft';
@@ -167,17 +233,39 @@ export const PublishingWorkflowPage: React.FC = () => {
 
   const currentIdx = getStageIndex(currentStatus);
 
-  // Validation checklist
+  // Validation checklist with authoritative alignment
   const isVerified = verification?.status === 'Verified';
+  const hasMetadata = Boolean(selectedApi?.name && selectedApi?.description && selectedApi?.category && selectedApi?.baseUrl);
   const hasEndpoints = endpoints.length > 0;
   const hasPlans = plans.length > 0;
-  const hasLegal = Boolean(legal && legal.acceptedAt);
+  const hasActivePlans = plans.some(p => p.isActive !== false);
+  const isAgreementCurrent = Boolean(
+    currentAgreement &&
+    legal?.agreementVersion &&
+    legal.agreementVersion === currentAgreement.version
+  );
+  const hasLegal = Boolean(
+    legal &&
+    legal.acceptedAt &&
+    typeof legal.processesPersonalData === 'boolean' &&
+    (!currentAgreement || isAgreementCurrent)
+  );
   const isDomainVerified = Boolean(
     domainVerification?.verified &&
     domainVerification.verificationExpiresAt &&
     new Date(domainVerification.verificationExpiresAt).getTime() > Date.now()
   );
-  const canSubmit = isVerified && hasEndpoints && hasPlans && hasLegal && isDomainVerified && currentStatus === 'Draft';
+  const hasDocumentation = endpoints.length === 0 || documentation.length > 0;
+
+  const canSubmit = isVerified &&
+    hasMetadata &&
+    hasEndpoints &&
+    hasActivePlans &&
+    hasLegal &&
+    isDomainVerified &&
+    hasDocumentation &&
+    !detailsFetchError &&
+    currentStatus === 'Draft';
 
   const handleSubmit = async () => {
     if (!selectedApiId || submitting) return;
@@ -190,7 +278,9 @@ export const PublishingWorkflowPage: React.FC = () => {
       setPublishStatus({
         id: updatedApi.id,
         status: updatedApi.status,
-        submittedAt: new Date().toISOString(),
+        submittedAt: updatedApi.submittedAt || null,
+        approvedAt: null,
+        publishedAt: null,
       });
       setApis(prev => prev.map(a => (a.id === updatedApi.id ? updatedApi : a)));
       setSubmitSuccess('Đã nộp hồ sơ API thành công! API đã chuyển sang trạng thái Submitted để quản trị viên kiểm duyệt.');
@@ -329,6 +419,19 @@ export const PublishingWorkflowPage: React.FC = () => {
         </div>
       )}
 
+      {/* Network / Details Fetch Error Banner */}
+      {detailsFetchError && (
+        <div role="alert" className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 flex items-center justify-between gap-3 text-body-sm">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-amber-600">warning</span>
+            <span>{detailsFetchError}</span>
+          </div>
+          <Button size="sm" variant="secondary" onClick={() => setRefreshTrigger(prev => prev + 1)}>
+            Tải lại dữ liệu
+          </Button>
+        </div>
+      )}
+
       {/* Success Notification Banner */}
       {submitSuccess && (
         <div role="status" className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 flex items-center gap-3 text-body-sm">
@@ -446,11 +549,16 @@ export const PublishingWorkflowPage: React.FC = () => {
 
       {/* Submission Readiness Checklist (US-12) */}
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 lg:p-8 shadow-sm">
-        <h2 className="text-headline-sm font-bold text-on-surface mb-2">
-          Danh mục Sẵn sàng Nộp duyệt (Readiness Checklist)
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+          <h2 className="text-headline-sm font-bold text-on-surface">
+            Điều kiện Sơ bộ để Nộp Duyệt (Pre-flight Checks)
+          </h2>
+          <span className="text-body-xs font-semibold px-2.5 py-1 rounded-full bg-surface-container-highest text-primary">
+            Client-side Pre-flight
+          </span>
+        </div>
         <p className="text-body-sm text-on-surface-variant mb-6">
-          Tất cả 5 điều kiện kỹ thuật và pháp lý dưới đây bắt buộc phải được thỏa mãn trước khi hệ thống cho phép kích hoạt quy trình nộp duyệt.
+          Các điều kiện kỹ thuật và pháp lý sơ bộ dưới đây cần được đáp ứng trước khi gửi yêu cầu. <em>Lưu ý: Máy chủ backend giữ quyền quyết định thẩm định cuối cùng (Authoritative Server Evaluation) theo quy định tại US-12.</em>
         </p>
 
         <div className="divide-y divide-outline-variant/20">
@@ -476,18 +584,20 @@ export const PublishingWorkflowPage: React.FC = () => {
             )}
           </div>
 
-          {/* Check 2: Endpoints */}
+          {/* Check 2: Endpoints & Documentation */}
           <div className="py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className={`material-symbols-outlined text-[24px] ${hasEndpoints ? 'text-emerald-600' : 'text-amber-500'}`}>
-                {hasEndpoints ? 'check_circle' : 'cancel'}
+              <span className={`material-symbols-outlined text-[24px] ${hasEndpoints && hasDocumentation ? 'text-emerald-600' : 'text-amber-500'}`}>
+                {hasEndpoints && hasDocumentation ? 'check_circle' : 'cancel'}
               </span>
               <div>
-                <h4 className="text-body-md font-bold text-on-surface">2. Định tuyến Endpoint & Phiên bản (US-09)</h4>
+                <h4 className="text-body-md font-bold text-on-surface">2. Định tuyến Endpoint & Tài liệu API (US-09, US-10)</h4>
                 <p className="text-body-xs text-on-surface-variant">
-                  {hasEndpoints
-                    ? `Đã định cấu hình ${endpoints.length} tuyến đường endpoint khả dụng.`
-                    : 'Cần có ít nhất 1 endpoint route để người dùng có thể gọi API.'}
+                  {!hasEndpoints
+                    ? 'Cần có ít nhất 1 endpoint route để người dùng có thể gọi API.'
+                    : documentation.length === 0
+                    ? `Đã cấu hình ${endpoints.length} endpoint nhưng chưa tải lên tài liệu OpenAPI tương ứng.`
+                    : `Đã định cấu hình ${endpoints.length} tuyến đường endpoint khả dụng và có tài liệu OpenAPI đồng bộ.`}
                 </p>
               </div>
             </div>
@@ -501,21 +611,23 @@ export const PublishingWorkflowPage: React.FC = () => {
           {/* Check 3: Pricing Plans */}
           <div className="py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className={`material-symbols-outlined text-[24px] ${hasPlans ? 'text-emerald-600' : 'text-amber-500'}`}>
-                {hasPlans ? 'check_circle' : 'cancel'}
+              <span className={`material-symbols-outlined text-[24px] ${hasActivePlans ? 'text-emerald-600' : 'text-amber-500'}`}>
+                {hasActivePlans ? 'check_circle' : 'cancel'}
               </span>
               <div>
                 <h4 className="text-body-md font-bold text-on-surface">3. Bảng giá & Gói cước (US-11)</h4>
                 <p className="text-body-xs text-on-surface-variant">
-                  {hasPlans
-                    ? `Đã thiết lập ${plans.length} gói cước với hạn mức quota và rate limit rõ ràng.`
+                  {hasActivePlans
+                    ? `Đã thiết lập ${plans.length} gói cước (${plans.filter(p => p.isActive !== false).length} gói đang hoạt động) với hạn mức quota và rate limit rõ ràng.`
+                    : hasPlans
+                    ? 'Tất cả gói cước hiện đang bị vô hiệu hóa. Bắt buộc có ít nhất 1 gói cước hoạt động (active).'
                     : 'Cần có ít nhất 1 gói cước (ví dụ Free) để người dùng đăng ký sử dụng.'}
                 </p>
               </div>
             </div>
-            {!hasPlans && (
+            {!hasActivePlans && (
               <Button size="sm" variant="ghost" icon="launch" onClick={() => navigate(`/provider/pricing?api=${selectedApiId}`)}>
-                Thêm Gói cước
+                {hasPlans ? 'Kích hoạt Gói cước' : 'Thêm Gói cước'}
               </Button>
             )}
           </div>
@@ -529,9 +641,15 @@ export const PublishingWorkflowPage: React.FC = () => {
               <div>
                 <h4 className="text-body-md font-bold text-on-surface">4. Cam kết Pháp lý & Phân loại Dữ liệu (US-08)</h4>
                 <p className="text-body-xs text-on-surface-variant">
-                  {hasLegal
-                    ? `Đã cam kết bản quyền sở hữu (${legal?.ownershipDeclaration}) và chấp thuận Thỏa thuận Nhà cung cấp (${legal?.agreementVersion}).`
-                    : 'Chưa hoàn tất tuyên bố quyền sở hữu và chấp thuận Thỏa thuận Nhà cung cấp.'}
+                  {!legal || !legal.acceptedAt ? (
+                    'Chưa hoàn tất cam kết bản quyền và chấp thuận Thỏa thuận Nhà cung cấp.'
+                  ) : currentAgreement && !isAgreementCurrent ? (
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">
+                      Phiên bản Thỏa thuận đã cam kết ({legal.agreementVersion}) không khớp với phiên bản có hiệu lực hiện hành ({currentAgreement.version}). Vui lòng cập nhật lại cam kết pháp lý.
+                    </span>
+                  ) : (
+                    `Đã cam kết bản quyền sở hữu (${legal.ownershipDeclaration}), phân loại dữ liệu (${legal.dataClassification}) và chấp thuận Thỏa thuận Nhà cung cấp (${legal.agreementVersion}).`
+                  )}
                 </p>
               </div>
             </div>
@@ -570,7 +688,7 @@ export const PublishingWorkflowPage: React.FC = () => {
                       disabled={loadingChallenge}
                       onClick={handleCreateChallenge}
                     >
-                      {loadingChallenge ? 'Đang tạo...' : 'Lấy mã DNS TXT'}
+                      {loadingChallenge ? 'Đang tạo...' : challengeData ? 'Tạo lại mã DNS TXT' : 'Lấy mã DNS TXT'}
                     </Button>
                     <Button
                       size="sm"
@@ -597,6 +715,16 @@ export const PublishingWorkflowPage: React.FC = () => {
               <div role="alert" className="p-3 rounded-xl bg-error-container/20 border border-error/30 text-error text-body-xs flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px]">error</span>
                 <span>{domainError}</span>
+              </div>
+            )}
+
+            {/* DNS TXT Challenge Guidance when not yet requested */}
+            {!challengeData && !isDomainVerified && (
+              <div className="p-3 bg-surface-container-high rounded-xl text-xs text-on-surface-variant flex items-start gap-2">
+                <span className="material-symbols-outlined text-[18px] text-primary flex-shrink-0 mt-0.5">info</span>
+                <span>
+                  Chưa có mã thử thách DNS cho phiên làm việc này. Nhấn <strong>"Lấy mã DNS TXT"</strong> để nhận mã bảo mật. Máy chủ chỉ trả về mã thô một lần duy nhất theo mô hình băm bảo mật SHA-256.
+                </span>
               </div>
             )}
 
@@ -636,6 +764,19 @@ export const PublishingWorkflowPage: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">info</span>
+                    Lưu ý bảo mật về mã xác thực DNS TXT:
+                  </p>
+                  <p>
+                    Hệ thống chỉ lưu trữ chuỗi băm mật mã (SHA-256 hash) trên cơ sở dữ liệu. Giá trị bản ghi thô (raw token) chỉ được cung cấp một lần duy nhất lúc tạo challenge. Vui lòng sao chép ngay vào cấu hình DNS.
+                  </p>
+                  <p>
+                    Nếu làm mới trang hoặc chuyển trang, mã này sẽ không thể hiển thị lại. Nhấn <strong>"Tạo lại mã DNS TXT"</strong> để tạo challenge mới; challenge mới sẽ thay thế và vô hiệu hóa mã xác thực cũ.
+                  </p>
+                </div>
+
                 <p className="text-[11px] text-on-surface-variant leading-relaxed">
                   Sau khi thêm bản ghi trên nhà đăng ký tên miền (Cloudflare, GoDaddy, Namecheap...), vui lòng chờ 1-2 phút để DNS lan truyền và nhấn nút <strong>"Kiểm tra DNS"</strong> ở trên.
                 </p>
@@ -650,7 +791,7 @@ export const PublishingWorkflowPage: React.FC = () => {
             {canSubmit ? (
               <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[20px]">check</span>
-                Hồ sơ đã đạt 100% điều kiện sẵn sàng. Bạn có thể nộp duyệt ngay bây giờ.
+                Hồ sơ đã đạt các điều kiện sơ bộ phía máy khách. Bạn có thể nộp duyệt ngay bây giờ (máy chủ sẽ xác minh có thẩm quyền).
               </span>
             ) : currentStatus !== 'Draft' ? (
               <span>Hồ sơ đang ở giai đoạn <strong>{currentStatus}</strong>, không cần nộp lại trừ khi bị từ chối.</span>

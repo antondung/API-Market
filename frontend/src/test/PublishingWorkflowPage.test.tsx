@@ -12,6 +12,8 @@ import type {
   ProviderPlan,
   ProviderLegal,
   DomainVerificationStatus,
+  ProviderAgreement,
+  ProviderDocumentation,
 } from '../services/providerTypes';
 
 describe('PublishingWorkflowPage component tests', () => {
@@ -88,6 +90,7 @@ describe('PublishingWorkflowPage component tests', () => {
     distributionRights: 'Sở hữu toàn diện bản quyền mã nguồn',
     dataClassification: 'Public',
     acceptedAt: '2026-10-10T00:00:00Z',
+    processesPersonalData: false,
   };
 
   const mockDomainVerification: DomainVerificationStatus = {
@@ -96,6 +99,24 @@ describe('PublishingWorkflowPage component tests', () => {
     verificationExpiresAt: '2099-01-01T00:00:00Z',
     verifiedAt: '2026-10-10T00:00:00Z',
   };
+
+  const mockAgreement: ProviderAgreement = {
+    id: 'agr-1',
+    version: 'v1.0.0',
+    content: 'Thỏa thuận mẫu',
+    effectiveAt: '2026-01-01T00:00:00Z',
+  };
+
+  const mockDocs: ProviderDocumentation[] = [
+    {
+      id: 'doc-1',
+      apiId: 'api-1',
+      versionId: 'ver-1',
+      source: 'OPENAPI_IMPORT',
+      content: { paths: { '/v1/search': { post: {} } } },
+      updatedAt: '2026-10-10T00:00:00Z',
+    },
+  ];
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -114,6 +135,8 @@ describe('PublishingWorkflowPage component tests', () => {
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
     vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
     vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(mockAgreement);
+    vi.spyOn(providerApiModule, 'listProviderDocumentation').mockResolvedValue(mockDocs);
 
     render(
       <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
@@ -137,7 +160,7 @@ describe('PublishingWorkflowPage component tests', () => {
 
     // Check 5 readiness checklist items
     expect(screen.getByText(/1\. Xác minh Danh tính Nhà cung cấp/i)).toBeDefined();
-    expect(screen.getByText(/2\. Định tuyến Endpoint & Phiên bản/i)).toBeDefined();
+    expect(screen.getByText(/2\. Định tuyến Endpoint/i)).toBeDefined();
     expect(screen.getByText(/3\. Bảng giá & Gói cước/i)).toBeDefined();
     expect(screen.getByText(/4\. Cam kết Pháp lý & Phân loại Dữ liệu/i)).toBeDefined();
     expect(screen.getByText(/5\. Xác minh Quyền kiểm soát Tên miền Upstream/i)).toBeDefined();
@@ -166,6 +189,8 @@ describe('PublishingWorkflowPage component tests', () => {
       hostname: 'search.example.com',
       verified: false,
     });
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(mockAgreement);
+    vi.spyOn(providerApiModule, 'listProviderDocumentation').mockResolvedValue(mockDocs);
 
     render(
       <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
@@ -199,6 +224,8 @@ describe('PublishingWorkflowPage component tests', () => {
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
     vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
     vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(mockAgreement);
+    vi.spyOn(providerApiModule, 'listProviderDocumentation').mockResolvedValue(mockDocs);
 
     const submitReviewSpy = vi.spyOn(providerApiModule, 'submitProviderApiReview').mockResolvedValue({
       ...mockApis[0],

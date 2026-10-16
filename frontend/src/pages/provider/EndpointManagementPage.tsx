@@ -21,6 +21,8 @@ import type {
   ProviderVersion,
   ProviderEndpoint,
   HttpMethod,
+  ProviderEndpointParameter,
+  ParameterIn,
 } from '../../services/providerTypes';
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
@@ -254,13 +256,50 @@ export const EndpointManagementPage: React.FC = () => {
       return;
     }
 
-    let parsedParameters = [];
+    const parsedParameters: ProviderEndpointParameter[] = [];
     if (epParametersJson.trim()) {
       try {
-        parsedParameters = JSON.parse(epParametersJson);
-        if (!Array.isArray(parsedParameters)) {
+        const raw = JSON.parse(epParametersJson);
+        if (!Array.isArray(raw)) {
           setEpError('Parameters phải là một mảng JSON (Array).');
           return;
+        }
+        const validIn: ParameterIn[] = ['path', 'query', 'header', 'cookie', 'body', 'formData'];
+        for (let i = 0; i < raw.length; i++) {
+          const item = raw[i];
+          if (!item || typeof item !== 'object') {
+            setEpError(`Phần tử Parameters [${i}] phải là một object.`);
+            return;
+          }
+          if (!item.name || typeof item.name !== 'string') {
+            setEpError(`Tham số [${i}] thiếu trường "name" (chuỗi).`);
+            return;
+          }
+          if (!item.in || !validIn.includes(item.in)) {
+            setEpError(`Tham số "${item.name}" có trường "in" không hợp lệ (hỗ trợ: ${validIn.join(', ')}).`);
+            return;
+          }
+          if (typeof item.required !== 'boolean') {
+            setEpError(`Tham số "${item.name}" phải có trường "required" kiểu boolean (true/false).`);
+            return;
+          }
+          // Backend provider-domain.ts uses .strict(): schema is accepted, root type is rejected
+          let itemSchema = item.schema;
+          if (!itemSchema && (item as any).type) {
+            itemSchema = { type: (item as any).type };
+          }
+          const normalized: ProviderEndpointParameter = {
+            name: item.name.trim(),
+            in: item.in as ParameterIn,
+            required: item.required,
+          };
+          if (itemSchema && typeof itemSchema === 'object') {
+            normalized.schema = itemSchema;
+          }
+          if (item.description && typeof item.description === 'string') {
+            normalized.description = item.description.trim();
+          }
+          parsedParameters.push(normalized);
         }
       } catch {
         setEpError('Cú pháp JSON của Parameters không hợp lệ.');
@@ -821,7 +860,7 @@ export const EndpointManagementPage: React.FC = () => {
               rows={3}
               value={epParametersJson}
               onChange={e => setEpParametersJson(e.target.value)}
-              placeholder='[{"name": "id", "in": "path", "required": true, "type": "string"}]'
+              placeholder='[{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]'
               className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-xs font-mono outline-none focus:ring-2 focus:ring-primary"
             />
           </div>

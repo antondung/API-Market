@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import {
   listAdminAuditLogs,
@@ -10,6 +11,7 @@ import {
 import { formatBackendErrorMessage } from '../../services/authApi';
 
 export const AuditLogsPage: React.FC = () => {
+  const { currentUser } = useAuth();
   const { t } = useLanguage();
 
   const [logs, setLogs] = useState<AdminAuditLog[]>([]);
@@ -24,12 +26,38 @@ export const AuditLogsPage: React.FC = () => {
   const [actionOptions, setActionOptions] = useState<string[]>([]);
   const [selectedAction, setSelectedAction] = useState<string>('all');
 
+  // Session-bound request isolation refs
+  const requestIdRef = useRef(0);
+  const actionsRequestIdRef = useRef(0);
+  const activeUserRef = useRef(currentUser?.id);
+
+  // Reset and abort when admin user identity changes (e.g., Admin A -> Admin B or logout)
+  useEffect(() => {
+    const prevUserId = activeUserRef.current;
+    activeUserRef.current = currentUser?.id;
+    if (prevUserId !== currentUser?.id) {
+      requestIdRef.current++;
+      actionsRequestIdRef.current++;
+      setLogs([]);
+      setTotal(0);
+      setError(null);
+      setActionOptions([]);
+      if (!currentUser) {
+        setLoading(false);
+      }
+    }
+  }, [currentUser]);
+
   // Load distinct actions
   useEffect(() => {
+    if (!currentUser) return;
     const controller = new AbortController();
+    const actionsRequestId = ++actionsRequestIdRef.current;
+    const requestUserId = currentUser?.id;
+
     getAdminAuditActions(controller.signal)
       .then(actions => {
-        if (!controller.signal.aborted) {
+        if (actionsRequestId === actionsRequestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setActionOptions(actions || []);
         }
       })
@@ -37,10 +65,17 @@ export const AuditLogsPage: React.FC = () => {
         // Non-blocking fallback
       });
     return () => controller.abort();
-  }, []);
+  }, [currentUser?.id]);
 
   const fetchLogs = (currentPage = page, scope = filterScope, action = selectedAction) => {
     const controller = new AbortController();
+    const requestId = ++requestIdRef.current;
+    const requestUserId = currentUser?.id;
+
+    if (!currentUser) {
+      return () => controller.abort();
+    }
+
     setLoading(true);
     setError(null);
 
@@ -57,18 +92,18 @@ export const AuditLogsPage: React.FC = () => {
 
     listAdminAuditLogs(query, controller.signal)
       .then(res => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setLogs(res.items || []);
           setTotal(res.total || 0);
         }
       })
       .catch(err => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setError(formatBackendErrorMessage(err));
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
           setLoading(false);
         }
       });
@@ -78,7 +113,7 @@ export const AuditLogsPage: React.FC = () => {
 
   useEffect(() => {
     return fetchLogs(page, filterScope, selectedAction);
-  }, [page, filterScope, selectedAction]);
+  }, [page, filterScope, selectedAction, currentUser?.id]);
 
   const handleScopeFilterChange = (scope: string) => {
     setFilterScope(scope);
