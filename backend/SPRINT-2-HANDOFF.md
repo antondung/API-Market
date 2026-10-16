@@ -1,66 +1,75 @@
-# Bàn giao Backend Sprint 2 — Nguyễn Như Tùng Dương
+# Bàn giao Sprint 2 — Nguyễn Như Tùng Dương
 
-Ngày cập nhật: 16/10/2026. Issue #7, PR #49 vào develop. Phạm vi: US-06, US-08, US-09, US-10, US-11, US-12 và test backend liên quan.
+Cập nhật 16/10/2026. Phạm vi backend issue [#7](https://github.com/antondung/API-Market/issues/7), PR [#49](https://github.com/antondung/API-Market/pull/49) vào `develop`. Đây là trạng thái hiện hành, thay thế các báo cáo tiến độ trước ngày 16/10.
 
-**Bổ sung mới nhất:** [DOMAIN-PRIVACY-HANDOFF.md](DOMAIN-PRIVACY-HANDOFF.md) thay thế các trạng thái chờ schema/domain/privacy/Admin tích hợp ghi ở bản 14/10 bên dưới. Đã thêm migration 005, DNS TXT verification, privacy declaration rõ ràng và tích hợp nguyên commit Admin/Audit 63e8aea của Dũng; Swagger có 30 thao tác Provider + 8 Admin review/audit. Các con số 59 test và trạng thái nguồn nhóm dưới đây là mốc 14/10; xem PR/issue cho kết quả CI bản 16/10. Frontend wiring, staging và QA còn chờ.
+## Đối chiếu nhiệm vụ và bằng chứng
 
-## Code và tài nguyên nhóm
+| Nhiệm vụ | Kết quả backend | Bằng chứng trong repo |
+|---|---|---|
+| US-06: hồ sơ xác minh | Gửi/xem Pending, Admin Verified/Rejected, có lý do từ chối, gửi lại sau Rejected | provider-router/service; admin-review-router/service; integration/provider.test.ts và admin-review.test.ts |
+| US-09: API/Endpoint/Version | CRUD Draft, Provider Verified mới tạo; owner-only; phân trang; version phải thuộc API | provider-service.ts; integration/provider.test.ts: role/ownership, Draft CRUD/version binding, freeze Submitted |
+| US-10: OpenAPI Import | Multipart JSON/YAML, Swagger 2.0/OpenAPI 3.0; parse params/request body/response, docs; lỗi có vị trí; import nguyên tử | provider-openapi-import.ts; provider-foundation.test.ts; import 3 demo Danh và injected failure rollback trong integration/provider.test.ts |
+| US-11: Pricing | Free/Basic/Pro, giá/quota/rate limit, Free giá 0, kiểm tra độ chính xác và ràng buộc | provider-domain.ts; provider-service.ts; unit validation và PostgreSQL CRUD tests |
+| US-08: pháp lý | Cam kết sở hữu/phân phối, Data Classification; explicit personal data yes/no, loại/mục đích; agreement version và server timestamp | migration 005; provider-domain/service.ts; personal data/current agreement tests |
+| Bổ sung checklist: domain | DNS TXT proof thật, challenge ngẫu nhiên/hash/expiry, owner/API/hostname binding, rate limit, race protection | provider-dns.ts; provider-service.ts; DNS TXT transport/rotation/expiry/timeout tests |
+| US-12: gửi duyệt | Draft → Submitted → Under Review → Approved → Published/Rejected; Rejected reopen; chặn gửi thiếu hồ sơ/domain/privacy/docs/pricing/agreement | submitApi/transitionApi; DB trigger Danh; provider/admin integration tests |
+| Unit/integration test | 74 test, gồm 37 unit/HTTP và 37 PostgreSQL integration, không skip | `npm test`; CI commit triển khai 315f835 bên dưới |
+| Swagger/tài liệu | Swagger chung có 30 thao tác Provider, 8 Admin review/audit ngoài Auth/Admin user | `/docs/`, `/openapi.json`, provider-sprint2.openapi.json; DOMAIN-PRIVACY-HANDOFF.md |
 
-| Thành viên | Kết quả kiểm tra GitHub ngày 14/10 |
-|---|---|
-| Danh | Đã push schema, seed, ERD và OpenAPI demo tại nhánh feature/9-provider-database, commit 8af8805. Chưa có PR/merge vào develop. Backend dùng nguyên file SQL 003/004 và ba file demo JSON từ commit này; không sửa SQL của Danh. |
-| Dũng | Chưa thấy code/bàn giao Sprint 2 mới; issue #6 còn mở, chưa có comment. Admin duyệt Provider/API, Audit Log dùng chung và staging thuộc phần Dũng. |
-| Hải Dương | Frontend Sprint 1 và màn hình Provider dùng dữ liệu mock có trên develop; chưa thấy API client Provider Sprint 2 được bàn giao ở issue #8. |
-| Vân | Test report Sprint 1 đã có; chưa thấy acceptance/test report Sprint 2 bàn giao ở issue #10. |
+Test trên PostgreSQL thật đã chạy trọn luồng Provider tạo hồ sơ → Admin duyệt Provider → Provider tạo và gửi API → Admin approve/publish, kèm audit. DNS transport test dùng DNS UDP fixture cục bộ; production dùng resolver thật có timeout, không có bypass verified từ client. Không coi test tự động là nghiệm thu QA trên staging.
 
-## Đã triển khai
+## Phiên bản và kiểm chứng
 
-- HTTP `/api/provider` có JWT, role Provider, ownership và lỗi chuẩn; Admin/Consumer không tự thao tác thay Provider. GET API khác owner trả 404 để không lộ tài nguyên.
-- Xác minh Provider: GET/POST `/verification`. Hồ sơ mới Pending; chặn gửi trùng Pending/Verified, Rejected được gửi hồ sơ mới. Backend dùng hồ sơ mới nhất để quyết định Verified; không tự viết endpoint Admin approve/reject.
-- API Draft: list có page/pageSize, create chỉ cho Verified, get/update/delete thuộc owner và chỉ edit/delete Draft. IDs là PostgreSQL integer nhưng trả dạng string; không nhận owner/status từ client.
-- Version: list/create/update/delete; endpoint list/create/update/delete có versionId, method/path, parameters/requestSchema/responseExample; chặn versionId của API khác. Xóa version cascade nội dung theo schema.
-- Pricing Free/Basic/Pro: list/create/update/delete; giá không âm, tối đa hai số thập phân theo NUMERIC(14,2), Free giá 0, quota/rate limit dương. Currency mã ba chữ cái; quota theo tháng, rateLimit theo giây theo contract đề xuất để nhóm xác nhận.
-- Pháp lý: quyền sở hữu/phân phối, Data Classification, agreement version. Chỉ accept agreement đang active/effective; acceptedAt ghi bằng thời gian server, không cho client gửi. Agreement chưa cấu hình hoặc đổi version trả 409.
-- Import multipart JSON/YAML, max 1 MiB, một file và versionId. Swagger 2.0/OpenAPI 3.0.x; parse parameters/request body/responses/security, giải local refs, sinh documentation. Cấm URL/file external refs, circular refs, alias đệ quy, tài liệu quá sâu/phức tạp, duplicate operationId, thiếu path parameter; tối đa 1000 operations. Không fetch baseUrl hoặc evidence URL.
-- Import thay endpoints và documentation trong cùng transaction; rollback giữ dữ liệu cũ nếu ghi lỗi. Manual endpoint/version edit vô hiệu docs import để yêu cầu import lại trước gửi duyệt.
-- Gửi duyệt: Draft → Submitted khi Provider mới nhất Verified, có metadata, endpoint + documentation cùng version, pricing và pháp lý đã accept agreement hiện hành. Ownership/state/content checks và write nằm trong transaction; lock Provider/API chống hai submission cùng thành công hoặc ghi tiếp vào Submitted. Rejected → Draft qua `/reopen`.
-- Workflow policy hỗ trợ Submitted → Under Review → Approved → Published hoặc Rejected để Dũng tích hợp; endpoint Admin và Audit Log dùng chung do Dũng thực hiện. Trigger trạng thái của Danh giữ nguyên.
-- Swagger chạy thật `/docs/`, OpenAPI `/openapi.json` gồm Auth và 27 thao tác Provider khi server dùng PostgreSQL. Contract riêng `provider-sprint2.openapi.json` sinh từ provider-contract.ts, có request/response schemas.
+- Commit chức năng và tích hợp hiện hành: `315f835`.
+- CI thành công của commit này: [run 38835072910](https://github.com/antondung/API-Market/actions/runs/38835072910).
+- Build/typecheck, repo checker và diff-check đạt. Không phát hiện lỗi Critical/High trong phạm vi kiểm tra này; chưa có QA acceptance Sprint 2.
+- Các lỗi đã sửa: malformed multipart 400 thay vì 500; NUL trước TEXT/JSONB; xóa cached docs khi sửa nội dung; mọi endpoint cần docs đúng operation; giới hạn graph sau dereference; reviewedBy string; Under Review không chuyển trùng hai lần.
+- Đợt cập nhật tài liệu cuối không đổi chức năng. CI đúng commit bàn giao cuối được dẫn tại PR #49 và issue #7.
 
-## Chạy và nhận API
+## Nhận và chạy lại
 
 ```powershell
 npm ci
-# Cấu hình .env: AUTH_STORE=postgres, DATABASE_URL, JWT_SECRET, CORS_ORIGINS
+# .env: AUTH_STORE=postgres, DATABASE_URL, JWT_SECRET, CORS_ORIGINS
 npm run db:migrate
 npm run dev
 ```
 
-Migration CLI áp dụng 001 + 003 mặc định, giữ history/checksum/advisory lock. 002 + 004 chỉ chạy explicit `npm run db:seed` ở development; bị chặn production. Server không tự migrate/seed và kiểm tra schema Provider khi startup. Database Auth đã có phải migrate 003 trước khi chạy server mới.
+Migrate mặc định áp dụng **001 + 003 + 005**, có history/checksum/advisory lock. 002 + 004 chỉ explicit `npm run db:seed` cho development và bị chặn production. Server không tự migrate/seed; DB cũ cần migration trước startup. Schema Danh 001–004 giữ nguyên; 005 bổ sung privacy/domain thuộc checklist backend này. Không chạy lại migration CREATE TABLE nếu DB do nhóm tạo trực tiếp mà chưa quản lý history tương ứng.
 
-Seed demo chỉ dùng DB development dành riêng cho demo. Nếu đã có agreement active khác, seed 004 của Danh trả conflict; backend không tự tắt agreement hoặc ghi đè dữ liệu hiện có. Migration SQL đã tạo trực tiếp không có history cần được quản lý bởi nhóm DB, không chạy lại CREATE TABLE trên schema hiện có.
+Swagger: `http://127.0.0.1:3000/docs/`; OpenAPI: `/openapi.json` trên máy chạy backend. Đây là URL local, chưa phải staging public. API đều dùng Bearer token, prefix `/api/provider` hoặc `/api/admin`; payload/response thực tế có trong Swagger. IDs opaque string; API status là Draft, Submitted, Under Review, Approved, Published, Rejected.
 
-Ví dụ import sau khi tạo Draft API và version:
+Legal cũ giữ `processesPersonalData=null` đến khi khai báo lại. Domain proof chưa có/hết hạn hoặc hồ sơ chưa đủ sẽ chặn submit; demo localhost/placeholder của seed không được tự coi là xác minh thật. Agreement production cần nhóm cấu hình riêng. Chi tiết DNS TXT, payload và mapping frontend: [DOMAIN-PRIVACY-HANDOFF.md](DOMAIN-PRIVACY-HANDOFF.md).
+
+Kiểm tra lại:
 
 ```powershell
-curl.exe -H "Authorization: Bearer <access-token>" -F "versionId=<version-id>" -F "file=@mock-services/weather/openapi.json" http://127.0.0.1:3000/api/provider/apis/<api-id>/import-openapi
+npm run lint
+npm test
+npm run build
+./scripts/kiem-tra-kho-ma-nguon.ps1
+git diff --check
 ```
 
-CLI parse độc lập: `npm run provider:import -- mock-services/weather/openapi.json`. Không ghi database hoặc gọi network. Chỉ mở Swagger ở máy chạy backend; chưa có URL staging public được bàn giao.
+Test cần PostgreSQL CLI hoặc PG_TEST_URL cho DB test riêng; runner tạo server/schema tạm, chạy tests rồi dọn tài nguyên thuộc test. CLI import độc lập: `npm run provider:import -- mock-services/weather/openapi.json`.
 
-## Kiểm tra
+## Bàn giao giữa các thành viên
 
-59 test backend pass: 37 unit/HTTP và 22 integration PostgreSQL thật (11 test Provider mới). Kiểm tra CRUD/ownership/version binding, Pending/Rejected/Verified, import cả ba demo Danh, multipart lỗi/quá lớn, rollback bằng lỗi DB cố ý, docs tồn tại sau reconnect, agreement server timestamp/current version, điều kiện gửi duyệt, submission cạnh tranh, freeze Submitted, reopen Rejected, migration/seed rerun. Test Admin chỉ mô phỏng cập nhật SQL trong fixture, không triển khai module Admin sản phẩm.
+| Thành viên | Đã nhận/tích hợp | Việc còn cần xác nhận |
+|---|---|---|
+| Danh | Nguyên schema/seed 003/004, ERD/query guide và ba OpenAPI demo từ 8af8805 | Review dependency/schema bổ sung 005 cùng nhóm |
+| Dũng | Nguyên commit Admin/Audit 63e8aea từ nhánh PR #51, Provider audit đã nối trong transaction; fix tích hợp Under Review và bổ sung dossier domain/privacy | Review PR #49, staging/CD và cấu hình agreement/environment |
+| Hải Dương | Đã thông báo bắt đầu frontend Provider tại issue #8 và dùng contract PR #49 | Nối API thực vào UI, đặc biệt Draft ID trước DNS challenge, privacy payload và mapping trạng thái; trả lỗi backend nếu có |
+| Vân | Chưa có báo cáo acceptance Sprint 2 tại issue #10 | Nghiệm thu trên môi trường tích hợp/staging và xác nhận bug severity |
 
-Đợt rà soát đã sửa multipart bị cắt trả 400 thay vì 500; chặn NUL trong input/JSONB import; xóa cached OpenAPI khi sửa nội dung; yêu cầu documentation cho mọi endpoint ở mọi version trước gửi duyệt. Parser giới hạn graph sau dereference trước validate/serialize để chặn local refs phóng đại dữ liệu. reviewedBy trả ID string đúng contract. Test hồi quy tái hiện lỗi và xác nhận bản sửa; schema Danh giữ nguyên.
+## Definition of Done — trạng thái trung thực
 
-`npm test`, `npm run lint`, `npm run build`, `scripts/kiem-tra-kho-ma-nguon.ps1` và `git diff --check` dùng để kiểm tra lại. Runner tạo PostgreSQL tạm hoặc dùng PG_TEST_URL cho DB test riêng; bootstrap pgcrypto trước khi các file test chạy song song. Kết quả CI đúng commit bàn giao được dẫn trong PR #49 và issue #7.
+| Tiêu chí issue #7 | Trạng thái |
+|---|---|
+| Nhiệm vụ và Acceptance Criteria | Chức năng backend và tests đã triển khai; yêu cầu chạy trên staging/acceptance còn chờ môi trường và QA |
+| Test đạt; CI xanh | Đạt trên commit triển khai nêu trên; CI bản tài liệu cuối theo PR |
+| Không còn Critical/High | Không phát hiện trong phạm vi kiểm tra; chưa thay xác nhận QA |
+| Tài liệu/Swagger/migration | Đã cập nhật |
+| PR vào develop; review và QA đạt | PR #49 đã mở; chưa có approval hoặc QA sign-off tại thời điểm kiểm tra |
 
-## Các bước còn cần nghiệm thu
-
-1. Danh mở PR schema hoặc nhóm chấp nhận dependency commit 8af8805; bản này mang theo nguyên SQL và demo JSON để backend/test chạy được, không đưa thay đổi Docker của Danh vào phạm vi PR.
-2. Dũng nối Admin approval/review/publish, Audit Log và deploy staging; cấu hình agreement production riêng. Tùng Dương bàn giao state policy và schema mapping.
-3. Hải Dương nối API client với prefix `/api/provider`, payload/versionId, response camelCase và trạng thái Submitted/Under Review (frontend cũ dùng PENDING_REVIEW cần mapping).
-4. Vân kiểm thử acceptance/role matrix và luồng tích hợp Provider → Admin → Publish; Tùng Dương sửa bug backend phát sinh.
-
-Phần backend của Tùng Dương đã triển khai và kiểm thử; chưa tuyên bố toàn bộ Sprint 2 đạt DoD vì staging, tích hợp frontend/Admin, review và QA vẫn chờ. Issue #7 giữ mở. OpenAPI 3.1 import chưa hỗ trợ; contract mô tả API của hệ thống dùng OpenAPI 3.1. Evidence/baseUrl chỉ lưu dưới dạng URL; chưa triển khai lưu trữ file hồ sơ. Không thực hiện phần của Danh, Hải Dương, Dũng hoặc Vân thay họ.
+Không còn hạng mục lập trình backend nào trong checklist được ghi nhận là chưa triển khai. Issue #7 giữ mở đến khi staging, review và QA có bằng chứng đạt; không đóng issue hoặc tự approve thay nhóm. Tùng Dương tiếp nhận/sửa lỗi backend từ tích hợp và QA. Frontend, triển khai hạ tầng và nghiệm thu là phần việc tương ứng của Hải Dương, Dũng và Vân.
