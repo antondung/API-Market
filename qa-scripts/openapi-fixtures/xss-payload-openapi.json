@@ -1,0 +1,52 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "XSS Test API <script>alert('title-xss')</script>",
+    "version": "1.0.0",
+    "description": "Mock API testing XSS vectors: <script>alert('xss-desc')</script> and <img src=x onerror=alert('img-xss')> and [evil link](javascript:alert('link-xss'))"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4099/<script>alert(1)</script>",
+      "description": "Server description with javascript:void(0)"
+    }
+  ],
+  "paths": {
+    "/v1/xss": {
+      "get": {
+        "summary": "Summary with <svg onload=alert('svg-xss')>",
+        "description": "Operation description with <iframe src=\"javascript:alert('iframe')\"></iframe>",
+        "parameters": [
+          {
+            "name": "payload",
+            "in": "query",
+            "required": true,
+            "description": "Param description <script>alert('param-xss')</script>",
+            "schema": {
+              "type": "string",
+              "default": "<script>alert('default-val')</script>"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response description <script>alert('resp-xss')</script>",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "string",
+                      "description": "Property description <img src=x onerror=alert(2)>"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
