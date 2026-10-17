@@ -88,18 +88,34 @@ export const CreateApiWizardPage: React.FC = () => {
   const [agreementError, setAgreementError] = useState<string | null>(null);
   const lastAgreementIdRef = useRef<string | null>(null);
   const lastUserIdRef = useRef<string | null>(currentUser?.id || null);
+  const currentUserIdRef = useRef<string | null>(currentUser?.id || null);
 
-  // Reset agreement confirmation if current user changes
+  const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Maintain current user ID ref and reset account-specific wizard state if current user changes
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.id || null;
     if (lastUserIdRef.current !== currentUser?.id) {
       lastUserIdRef.current = currentUser?.id || null;
+      setCreatedDraftApiId(null);
+      setAgreement(null);
       setLegalConfirmed(false);
       setAcceptedAgreementVersion(null);
+      setAgreementError(null);
+      setWizardError(null);
+      setSubmitting(false);
     }
   }, [currentUser?.id]);
 
   useEffect(() => {
     const controller = new AbortController();
+    const effectUserId = currentUser?.id || null;
     setLoadingInitial(true);
     setAgreementError(null);
 
@@ -108,7 +124,7 @@ export const CreateApiWizardPage: React.FC = () => {
       getProviderAgreement(controller.signal),
     ])
       .then(([verSettled, agrSettled]) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && isMountedRef.current && currentUserIdRef.current === effectUserId) {
           if (verSettled.status === 'fulfilled') {
             setVerification(verSettled.value);
           }
@@ -137,7 +153,7 @@ export const CreateApiWizardPage: React.FC = () => {
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && isMountedRef.current && currentUserIdRef.current === effectUserId) {
           setLoadingInitial(false);
         }
       });
@@ -173,6 +189,16 @@ export const CreateApiWizardPage: React.FC = () => {
     if (submitting) return;
     setWizardError(null);
 
+    const pinnedUserId = currentUserIdRef.current;
+    if (!pinnedUserId) {
+      setWizardError('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');
+      return;
+    }
+
+    const checkSession = (): boolean => {
+      return isMountedRef.current && currentUserIdRef.current === pinnedUserId;
+    };
+
     const trimmedName = name.trim();
     if (!trimmedName) {
       setWizardError('Vui lòng nhập tên API.');
@@ -207,44 +233,58 @@ export const CreateApiWizardPage: React.FC = () => {
       }
     }
 
-    // 4. US-08 / Finding F2: Authoritative check against current server agreement version BEFORE any resource creation
-    let currentServerAgreement: ProviderAgreement | null = null;
-    try {
-      currentServerAgreement = await getProviderAgreement();
-    } catch {
-      currentServerAgreement = agreement;
-    }
-
-    if (!currentServerAgreement || !currentServerAgreement.version || !currentServerAgreement.content?.trim()) {
-      setWizardError('Chưa tải được Điều khoản Thỏa thuận Nhà cung cấp hợp lệ từ máy chủ. Vui lòng kiểm tra lại kết nối.');
-      setAgreement(null);
-      setLegalConfirmed(false);
-      setAcceptedAgreementVersion(null);
-      setStep(4);
-      return;
-    }
-
-    if (currentServerAgreement.version !== acceptedAgreementVersion) {
-      setAgreement(currentServerAgreement);
-      setLegalConfirmed(false);
-      setAcceptedAgreementVersion(null);
-      setWizardError(`Thỏa thuận Nhà cung cấp đã được cập nhật phiên bản mới (${currentServerAgreement.version}). Vui lòng đọc lại và xác nhận đồng ý.`);
-      setStep(4);
-      return;
-    }
-
-    if (!legalConfirmed || acceptedAgreementVersion !== currentServerAgreement.version) {
-      setWizardError('Bạn phải đọc và tích xác nhận đồng ý với Thỏa thuận Nhà cung cấp (phiên bản hiện hành) trước khi hoàn tất.');
-      setStep(4);
-      return;
-    }
-
     setSubmitting(true);
     let targetApiId = createdDraftApiId;
 
     try {
+      // 4. US-08 / Finding F2: Authoritative check against current server agreement version BEFORE any resource creation
+      let currentServerAgreement: ProviderAgreement | null = null;
+      try {
+        currentServerAgreement = await getProviderAgreement();
+      } catch {
+        if (!checkSession()) return;
+        setWizardError('Không thể xác thực Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ. Vui lòng kiểm tra lại kết nối và thử lại.');
+        setAgreement(null);
+        setAgreementError('Không thể xác thực Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ. Vui lòng kiểm tra lại kết nối và thử lại.');
+        setLegalConfirmed(false);
+        setAcceptedAgreementVersion(null);
+        setStep(4);
+        return;
+      }
+
+      // Verify authentication identity after agreement verification
+      if (!checkSession()) return;
+
+      if (!currentServerAgreement || !currentServerAgreement.version || !currentServerAgreement.content?.trim()) {
+        setWizardError('Chưa tải được Điều khoản Thỏa thuận Nhà cung cấp hợp lệ từ máy chủ. Vui lòng kiểm tra lại kết nối.');
+        setAgreement(null);
+        setAgreementError('Chưa tải được Điều khoản Thỏa thuận Nhà cung cấp hợp lệ từ máy chủ. Vui lòng kiểm tra lại kết nối.');
+        setLegalConfirmed(false);
+        setAcceptedAgreementVersion(null);
+        setStep(4);
+        return;
+      }
+
+      if (currentServerAgreement.version !== acceptedAgreementVersion) {
+        setAgreement(currentServerAgreement);
+        setLegalConfirmed(false);
+        setAcceptedAgreementVersion(null);
+        setWizardError(`Thỏa thuận Nhà cung cấp đã được cập nhật phiên bản mới (${currentServerAgreement.version}). Vui lòng đọc lại và xác nhận đồng ý.`);
+        setStep(4);
+        return;
+      }
+
+      if (!legalConfirmed || acceptedAgreementVersion !== currentServerAgreement.version) {
+        setWizardError('Bạn phải đọc và tích xác nhận đồng ý với Thỏa thuận Nhà cung cấp (phiên bản hiện hành) trước khi hoàn tất.');
+        setStep(4);
+        return;
+      }
+
       const tagList = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
       const fullDescription = longDescription.trim() || shortDescription.trim();
+
+      // Verify session before resource mutation (1. Create API)
+      if (!checkSession()) return;
 
       // 1. Create API if not already created as draft
       if (!targetApiId) {
@@ -255,9 +295,16 @@ export const CreateApiWizardPage: React.FC = () => {
           baseUrl: trimmedUrl,
           tags: tagList,
         });
+
+        // Verify session after async operation
+        if (!checkSession()) return;
+
         targetApiId = createdApi.id;
         setCreatedDraftApiId(createdApi.id);
       }
+
+      // Verify session before resource mutation (2. Create Version)
+      if (!checkSession()) return;
 
       // 2. Create Initial Version
       const versionStr = version.trim() || '1.0.0';
@@ -271,6 +318,9 @@ export const CreateApiWizardPage: React.FC = () => {
           throw versionErr;
         }
       }
+
+      // Verify session after async operation and before next mutation
+      if (!checkSession()) return;
 
       // 3. Create Default Free Plan
       const quotaNum = parseInt(freeQuota, 10) || 2000;
@@ -288,6 +338,9 @@ export const CreateApiWizardPage: React.FC = () => {
           throw planErr;
         }
       }
+
+      // Verify session after async operation and before next mutation
+      if (!checkSession()) return;
 
       // 4. Save Legal Affirmation & Privacy Contract (US-08)
       const agreementVer = currentServerAgreement.version;
@@ -309,11 +362,17 @@ export const CreateApiWizardPage: React.FC = () => {
         dataProcessingPurpose: processesPersonalData ? dataProcessingPurpose.trim() : undefined,
       });
 
+      // Verify session before final success navigation or success UI updates
+      if (!checkSession()) return;
+
       navigate(`/provider/publishing-workflow?api=${targetApiId}`);
     } catch (err) {
+      if (!checkSession()) return;
       setWizardError(formatProviderErrorMessage(err));
     } finally {
-      setSubmitting(false);
+      if (checkSession()) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -755,8 +814,10 @@ export const CreateApiWizardPage: React.FC = () => {
                 <div role="alert" className="p-3 rounded-lg bg-error-container/20 border border-error/30 text-error text-body-xs flex items-center justify-between">
                   <span>{agreementError}</span>
                   <Button size="sm" variant="secondary" onClick={() => {
+                    const retryUserId = currentUserIdRef.current;
                     setAgreementError(null);
                     getProviderAgreement().then(res => {
+                      if (!isMountedRef.current || currentUserIdRef.current !== retryUserId) return;
                       if (!res || !res.version || !res.content || !res.content.trim()) {
                         setAgreement(null);
                         setAgreementError('Nội dung Thỏa thuận Nhà cung cấp từ máy chủ bị trống hoặc không hợp lệ.');
@@ -772,6 +833,7 @@ export const CreateApiWizardPage: React.FC = () => {
                         setAgreementError(null);
                       }
                     }).catch(err => {
+                      if (!isMountedRef.current || currentUserIdRef.current !== retryUserId) return;
                       setAgreement(null);
                       setAgreementError(formatProviderErrorMessage(err));
                       setLegalConfirmed(false);

@@ -223,4 +223,209 @@ describe('CreateApiWizardPage (Finding F2 fail-closed agreement tests)', () => {
       expect(updatedCheckbox.checked).toBe(false);
     });
   });
+
+  it('blocks createProviderApi when agreement fetch fails during submission', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-1' } as any);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-1' } as any);
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
+    const saveLegalSpy = vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4();
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    // Fail subsequent getProviderAgreement call during submission
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockRejectedValue(new Error('Network failure during verification'));
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Không thể xác thực Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ/i).length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Prohibited mutations must NOT have been called
+    expect(createApiSpy).not.toHaveBeenCalled();
+    expect(createVersionSpy).not.toHaveBeenCalled();
+    expect(createPlanSpy).not.toHaveBeenCalled();
+    expect(saveLegalSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    // Checkbox must be reset and disabled
+    const updatedCheckbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    expect(updatedCheckbox.checked).toBe(false);
+    expect(updatedCheckbox.disabled).toBe(true);
+  });
+
+  it('forces re-consent and aborts resource creation when agreement version updates on server', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-1' } as any);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-1' } as any);
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
+    const saveLegalSpy = vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4();
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    // Server updates agreement from v2.1.0 to v2.2.0
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue({
+      ...validAgreement,
+      id: 'agr-2',
+      version: 'v2.2.0',
+    });
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Thỏa thuận Nhà cung cấp đã được cập nhật phiên bản mới \(v2.2.0\)/i)).toBeDefined();
+    });
+
+    expect(createApiSpy).not.toHaveBeenCalled();
+    expect(createVersionSpy).not.toHaveBeenCalled();
+    expect(createPlanSpy).not.toHaveBeenCalled();
+    expect(saveLegalSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    const updatedCheckbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    expect(updatedCheckbox.checked).toBe(false);
+  });
+
+  it('aborts submission and creates no resources if account changes while agreement verification is pending', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-1' } as any);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-1' } as any);
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
+    const saveLegalSpy = vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4();
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    // Controlled promise for pending agreement check
+    let resolveAgreement!: (val: any) => void;
+    const pendingAgreement = new Promise(resolve => {
+      resolveAgreement = resolve;
+    });
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockReturnValue(pendingAgreement as any);
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    fireEvent.click(finishBtn);
+
+    // While agreement fetch is pending, user changes to user-2
+    await act(async () => {
+      currentUserState = { ...mockUser, id: 'user-2', email: 'user2@example.com' };
+      rerender(
+        <MemoryRouter>
+          <CreateApiWizardPage />
+        </MemoryRouter>
+      );
+    });
+
+    // Now resolve pending agreement fetch
+    await act(async () => {
+      resolveAgreement(validAgreement);
+    });
+
+    // Prohibited mutations must NOT have been called under old or new user
+    expect(createApiSpy).not.toHaveBeenCalled();
+    expect(createVersionSpy).not.toHaveBeenCalled();
+    expect(createPlanSpy).not.toHaveBeenCalled();
+    expect(saveLegalSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('completes the intended workflow on successful retry after temporary verification failure', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-retry-99' } as any);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-1' } as any);
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
+    const saveLegalSpy = vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4();
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    // 1st attempt: fails closed
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockRejectedValueOnce(new Error('Temporary timeout'));
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Không thể xác thực Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ/i).length).toBeGreaterThanOrEqual(1);
+    });
+    expect(createApiSpy).not.toHaveBeenCalled();
+
+    // Click retry in agreement error box
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const retryBtn = screen.getByRole('button', { name: /Thử lại/i });
+    await act(async () => {
+      fireEvent.click(retryBtn);
+    });
+
+    // Agreement reloaded successfully, user re-confirms
+    await waitFor(() => {
+      const cb = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+      expect(cb.disabled).toBe(false);
+    });
+
+    const activeCheckbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(activeCheckbox);
+    expect(activeCheckbox.checked).toBe(true);
+
+    // 2nd attempt: succeeds
+    const finishBtnRetry = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await act(async () => {
+      fireEvent.click(finishBtnRetry);
+    });
+
+    await waitFor(() => {
+      expect(createApiSpy).toHaveBeenCalledTimes(1);
+      expect(createVersionSpy).toHaveBeenCalledTimes(1);
+      expect(createPlanSpy).toHaveBeenCalledTimes(1);
+      expect(saveLegalSpy).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-retry-99');
+    });
+  });
 });
