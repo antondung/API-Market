@@ -185,6 +185,7 @@ export const PublishingWorkflowPage: React.FC = () => {
           setDocumentation(docRes.value);
         } else {
           setDocumentation([]);
+          failedResources.push('tài liệu OpenAPI');
         }
 
         if (failedResources.length > 0) {
@@ -255,7 +256,30 @@ export const PublishingWorkflowPage: React.FC = () => {
     domainVerification.verificationExpiresAt &&
     new Date(domainVerification.verificationExpiresAt).getTime() > Date.now()
   );
-  const hasDocumentation = endpoints.length === 0 || documentation.length > 0;
+
+  // Authoritative Documentation Invariant (backend/src/provider-service.ts:194)
+  // Each endpoint must appear in OpenAPI doc of the exact versionId, method, and path.
+  const documentedEndpointsCount = endpoints.filter(ep => {
+    const doc = documentation.find(d => d.versionId === ep.versionId);
+    if (!doc || !doc.content) return false;
+    let contentObj = doc.content;
+    if (typeof contentObj === 'string') {
+      try {
+        contentObj = JSON.parse(contentObj);
+      } catch {
+        return false;
+      }
+    }
+    const paths = contentObj?.paths;
+    if (!paths || typeof paths !== 'object') return false;
+    const pathItem = paths[ep.path];
+    if (!pathItem || typeof pathItem !== 'object') return false;
+    const methodLower = ep.method.toLowerCase();
+    return pathItem[methodLower] != null;
+  }).length;
+
+  const hasAllEndpointsDocumented = endpoints.length > 0 && documentedEndpointsCount === endpoints.length;
+  const hasDocumentation = hasAllEndpointsDocumented;
 
   const canSubmit = isVerified &&
     hasMetadata &&
@@ -587,8 +611,8 @@ export const PublishingWorkflowPage: React.FC = () => {
           {/* Check 2: Endpoints & Documentation */}
           <div className="py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className={`material-symbols-outlined text-[24px] ${hasEndpoints && hasDocumentation ? 'text-emerald-600' : 'text-amber-500'}`}>
-                {hasEndpoints && hasDocumentation ? 'check_circle' : 'cancel'}
+              <span className={`material-symbols-outlined text-[24px] ${hasEndpoints && hasAllEndpointsDocumented ? 'text-emerald-600' : 'text-amber-500'}`}>
+                {hasEndpoints && hasAllEndpointsDocumented ? 'check_circle' : 'cancel'}
               </span>
               <div>
                 <h4 className="text-body-md font-bold text-on-surface">2. Định tuyến Endpoint & Tài liệu API (US-09, US-10)</h4>
@@ -596,16 +620,22 @@ export const PublishingWorkflowPage: React.FC = () => {
                   {!hasEndpoints
                     ? 'Cần có ít nhất 1 endpoint route để người dùng có thể gọi API.'
                     : documentation.length === 0
-                    ? `Đã cấu hình ${endpoints.length} endpoint nhưng chưa tải lên tài liệu OpenAPI tương ứng.`
-                    : `Đã định cấu hình ${endpoints.length} tuyến đường endpoint khả dụng và có tài liệu OpenAPI đồng bộ.`}
+                    ? `Đã cấu hình ${endpoints.length} endpoint nhưng chưa tải lên tài liệu OpenAPI cho các phiên bản tương ứng.`
+                    : !hasAllEndpointsDocumented
+                    ? `Đã cấu hình ${endpoints.length} endpoint, nhưng chỉ có ${documentedEndpointsCount}/${endpoints.length} endpoint được tài liệu hóa đồng bộ trong OpenAPI (đúng version, method và path). Thiếu ${endpoints.length - documentedEndpointsCount} endpoint.`
+                    : `Đã định cấu hình ${endpoints.length} tuyến đường endpoint và 100% (${documentedEndpointsCount}/${endpoints.length}) đã được tài liệu hóa đồng bộ trong OpenAPI.`}
                 </p>
               </div>
             </div>
-            {!hasEndpoints && (
+            {!hasEndpoints ? (
               <Button size="sm" variant="ghost" icon="launch" onClick={() => navigate(`/provider/endpoints?api=${selectedApiId}`)}>
                 Thêm Endpoint
               </Button>
-            )}
+            ) : !hasAllEndpointsDocumented ? (
+              <Button size="sm" variant="ghost" icon="launch" onClick={() => navigate(`/provider/openapi?api=${selectedApiId}`)}>
+                Đồng bộ OpenAPI
+              </Button>
+            ) : null}
           </div>
 
           {/* Check 3: Pricing Plans */}

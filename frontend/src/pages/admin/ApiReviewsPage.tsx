@@ -39,6 +39,7 @@ export const ApiReviewsPage: React.FC = () => {
   // Session-bound request isolation refs
   const requestIdRef = useRef(0);
   const activeUserRef = useRef(currentUser?.id);
+  const mutationRequestIdRef = useRef(0);
   const dossierAbortControllerRef = useRef<AbortController | null>(null);
   const dossierRequestIdRef = useRef(0);
 
@@ -65,6 +66,8 @@ export const ApiReviewsPage: React.FC = () => {
     if (prevUserId !== currentUser?.id) {
       requestIdRef.current++;
       dossierRequestIdRef.current++;
+      mutationRequestIdRef.current++;
+      setActionLoadingId(null);
       if (dossierAbortControllerRef.current) {
         dossierAbortControllerRef.current.abort();
         dossierAbortControllerRef.current = null;
@@ -130,18 +133,25 @@ export const ApiReviewsPage: React.FC = () => {
 
   const handleTransition = async (api: AdminApiItem, next: AdminApiReviewNext, reason?: string) => {
     if (actionLoadingId) return;
+    const requestUserId = currentUser?.id;
+    const mutationId = ++mutationRequestIdRef.current;
+
     setActionLoadingId(api.id);
     setError(null);
     setActionSuccess(null);
 
     try {
       await reviewAdminApi(api.id, next, reason);
+      if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setActionSuccess(`Chuyển trạng thái API "${api.name}" sang ${next} thành công.`);
       fetchApis(statusFilter, page);
     } catch (err) {
+      if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setError(formatBackendErrorMessage(err));
     } finally {
-      setActionLoadingId(null);
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setActionLoadingId(null);
+      }
     }
   };
 
@@ -162,19 +172,26 @@ export const ApiReviewsPage: React.FC = () => {
       return;
     }
 
+    const requestUserId = currentUser?.id;
+    const mutationId = ++mutationRequestIdRef.current;
+
     setActionLoadingId(selectedApiForReject.id);
     setRejectError(null);
 
     try {
       await reviewAdminApi(selectedApiForReject.id, 'Rejected', trimmed);
+      if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setRejectModalOpen(false);
       setSelectedApiForReject(null);
       setActionSuccess(`Đã từ chối xuất bản API "${selectedApiForReject.name}".`);
       fetchApis(statusFilter, page);
     } catch (err) {
+      if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setRejectError(formatBackendErrorMessage(err));
     } finally {
-      setActionLoadingId(null);
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setActionLoadingId(null);
+      }
     }
   };
 
@@ -413,20 +430,52 @@ export const ApiReviewsPage: React.FC = () => {
               {(() => {
                 const apiHostname = (() => {
                   try {
-                    return dossier.api?.baseUrl ? new URL(dossier.api.baseUrl).hostname : null;
+                    if (!dossier.api?.baseUrl) return null;
+                    return new URL(dossier.api.baseUrl).hostname.toLowerCase();
                   } catch {
                     return null;
                   }
                 })();
-                const isExpired = Boolean(
-                  dossier.domainVerification?.verificationExpiresAt &&
-                  new Date(dossier.domainVerification.verificationExpiresAt).getTime() <= Date.now()
-                );
-                const isHostnameMatched = Boolean(
-                  !apiHostname ||
-                  !dossier.domainVerification?.hostname ||
-                  dossier.domainVerification.hostname === apiHostname
-                );
+                const verifiedHostname = dossier.domainVerification?.hostname
+                  ? dossier.domainVerification.hostname.toLowerCase()
+                  : null;
+                const verifiedAt = dossier.domainVerification?.verifiedAt;
+                const expiresAtRaw = dossier.domainVerification?.verificationExpiresAt;
+                const expiresAtMs = expiresAtRaw ? new Date(expiresAtRaw).getTime() : NaN;
+                const hasValidExpiry = !isNaN(expiresAtMs);
+                const isExpired = hasValidExpiry ? expiresAtMs <= Date.now() : true;
+                const hasMatchingHostname = Boolean(apiHostname && verifiedHostname && apiHostname === verifiedHostname);
+
+                let dnsStatusText: React.ReactNode;
+                if (!verifiedAt) {
+                  dnsStatusText = (
+                    <span className="text-amber-600 font-semibold">Chưa hoàn tất xác minh DNS</span>
+                  );
+                } else if (!hasValidExpiry) {
+                  dnsStatusText = (
+                    <span className="text-error font-semibold">
+                      Thời hạn xác minh không xác định hoặc không hợp lệ - Yêu cầu xác minh lại
+                    </span>
+                  );
+                } else if (isExpired) {
+                  dnsStatusText = (
+                    <span className="text-error font-semibold">
+                      Đã hết hạn xác minh ({new Date(expiresAtMs).toLocaleDateString()}) - Yêu cầu xác minh lại
+                    </span>
+                  );
+                } else if (!verifiedHostname || !apiHostname || !hasMatchingHostname) {
+                  dnsStatusText = (
+                    <span className="text-error font-semibold">
+                      Tên miền đã xác minh ({verifiedHostname || 'Chưa có'}) không khớp với Base URL ({apiHostname || 'URL không hợp lệ'})
+                    </span>
+                  );
+                } else {
+                  dnsStatusText = (
+                    <span className="text-emerald-600 font-semibold">
+                      Đã xác minh hợp lệ (Có hiệu lực đến: {new Date(expiresAtMs).toLocaleDateString()})
+                    </span>
+                  );
+                }
 
                 return (
                   <div className="p-4 rounded-xl bg-surface-container space-y-2">
@@ -436,28 +485,13 @@ export const ApiReviewsPage: React.FC = () => {
                     </h4>
                     <div className="text-xs space-y-1">
                       <div>
-                        Hostname: <code className="font-mono text-primary">{dossier.domainVerification?.hostname || 'Chưa có'}</code>
-                        {apiHostname && apiHostname !== dossier.domainVerification?.hostname && (
+                        Hostname: <code className="font-mono text-primary">{verifiedHostname || 'Chưa có'}</code>
+                        {apiHostname && verifiedHostname && apiHostname !== verifiedHostname && (
                           <span className="text-error ml-1 font-medium">(Base URL Hostname: {apiHostname})</span>
                         )}
                       </div>
                       <div>
-                        Trạng thái DNS:{' '}
-                        {!dossier.domainVerification?.verifiedAt ? (
-                          <span className="text-amber-600 font-semibold">Chưa hoàn tất xác minh DNS</span>
-                        ) : isExpired ? (
-                          <span className="text-error font-semibold">
-                            Đã hết hạn xác minh ({new Date(dossier.domainVerification.verificationExpiresAt || '').toLocaleDateString()}) - Yêu cầu xác minh lại
-                          </span>
-                        ) : !isHostnameMatched ? (
-                          <span className="text-error font-semibold">
-                            Tên miền đã xác minh ({dossier.domainVerification.hostname}) không khớp với Base URL ({apiHostname})
-                          </span>
-                        ) : (
-                          <span className="text-emerald-600 font-semibold">
-                            Đã xác minh hợp lệ (Có hiệu lực đến: {new Date(dossier.domainVerification.verificationExpiresAt || '').toLocaleDateString()})
-                          </span>
-                        )}
+                        Trạng thái DNS: {dnsStatusText}
                       </div>
                     </div>
                   </div>

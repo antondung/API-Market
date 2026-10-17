@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
@@ -84,7 +84,19 @@ export const CreateApiWizardPage: React.FC = () => {
   const [selectedPersonalDataTypes, setSelectedPersonalDataTypes] = useState<PersonalDataType[]>([]);
   const [dataProcessingPurpose, setDataProcessingPurpose] = useState('');
   const [legalConfirmed, setLegalConfirmed] = useState(false);
+  const [acceptedAgreementVersion, setAcceptedAgreementVersion] = useState<string | null>(null);
   const [agreementError, setAgreementError] = useState<string | null>(null);
+  const lastAgreementIdRef = useRef<string | null>(null);
+  const lastUserIdRef = useRef<string | null>(currentUser?.id || null);
+
+  // Reset agreement confirmation if current user changes
+  useEffect(() => {
+    if (lastUserIdRef.current !== currentUser?.id) {
+      lastUserIdRef.current = currentUser?.id || null;
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,11 +113,26 @@ export const CreateApiWizardPage: React.FC = () => {
             setVerification(verSettled.value);
           }
           if (agrSettled.status === 'fulfilled' && agrSettled.value) {
-            setAgreement(agrSettled.value);
-            setAgreementError(null);
+            const agr = agrSettled.value;
+            if (!agr.version || !agr.content || !agr.content.trim()) {
+              setAgreement(null);
+              setAgreementError('Nội dung Thỏa thuận Nhà cung cấp từ máy chủ bị trống hoặc không hợp lệ.');
+              setLegalConfirmed(false);
+              setAcceptedAgreementVersion(null);
+            } else {
+              if (lastAgreementIdRef.current && (lastAgreementIdRef.current !== agr.id || agreement?.version !== agr.version)) {
+                setLegalConfirmed(false);
+                setAcceptedAgreementVersion(null);
+              }
+              lastAgreementIdRef.current = agr.id;
+              setAgreement(agr);
+              setAgreementError(null);
+            }
           } else {
             setAgreement(null);
             setAgreementError('Không thể tải Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ. Vui lòng thử lại kết nối.');
+            setLegalConfirmed(false);
+            setAcceptedAgreementVersion(null);
           }
         }
       })
@@ -117,6 +144,22 @@ export const CreateApiWizardPage: React.FC = () => {
 
     return () => controller.abort();
   }, [currentUser]);
+
+  // Reset legal confirmation if agreement version changes mid-session
+  useEffect(() => {
+    if (agreement && acceptedAgreementVersion && acceptedAgreementVersion !== agreement.version) {
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+    }
+  }, [agreement?.version, acceptedAgreementVersion]);
+
+  const isAgreementValid = Boolean(
+    agreement &&
+    agreement.version &&
+    agreement.content &&
+    agreement.content.trim().length > 0 &&
+    !agreementError
+  );
 
   const isVerified = verification?.status === 'Verified';
 
@@ -164,8 +207,34 @@ export const CreateApiWizardPage: React.FC = () => {
       }
     }
 
-    if (!legalConfirmed) {
-      setWizardError('Bạn phải đồng ý với Thỏa thuận Nhà cung cấp trước khi hoàn tất đăng ký API.');
+    // 4. US-08 / Finding F2: Authoritative check against current server agreement version BEFORE any resource creation
+    let currentServerAgreement: ProviderAgreement | null = null;
+    try {
+      currentServerAgreement = await getProviderAgreement();
+    } catch {
+      currentServerAgreement = agreement;
+    }
+
+    if (!currentServerAgreement || !currentServerAgreement.version || !currentServerAgreement.content?.trim()) {
+      setWizardError('Chưa tải được Điều khoản Thỏa thuận Nhà cung cấp hợp lệ từ máy chủ. Vui lòng kiểm tra lại kết nối.');
+      setAgreement(null);
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+      setStep(4);
+      return;
+    }
+
+    if (currentServerAgreement.version !== acceptedAgreementVersion) {
+      setAgreement(currentServerAgreement);
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+      setWizardError(`Thỏa thuận Nhà cung cấp đã được cập nhật phiên bản mới (${currentServerAgreement.version}). Vui lòng đọc lại và xác nhận đồng ý.`);
+      setStep(4);
+      return;
+    }
+
+    if (!legalConfirmed || acceptedAgreementVersion !== currentServerAgreement.version) {
+      setWizardError('Bạn phải đọc và tích xác nhận đồng ý với Thỏa thuận Nhà cung cấp (phiên bản hiện hành) trước khi hoàn tất.');
       setStep(4);
       return;
     }
@@ -221,12 +290,7 @@ export const CreateApiWizardPage: React.FC = () => {
       }
 
       // 4. Save Legal Affirmation & Privacy Contract (US-08)
-      if (!agreement?.version) {
-        setWizardError('Chưa tải được Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ. Vui lòng thử lại kết nối.');
-        setStep(4);
-        return;
-      }
-      const agreementVer = agreement.version;
+      const agreementVer = currentServerAgreement.version;
       const ownershipDecl = ownershipType === 'OWN'
         ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
         : 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
@@ -693,13 +757,31 @@ export const CreateApiWizardPage: React.FC = () => {
                   <Button size="sm" variant="secondary" onClick={() => {
                     setAgreementError(null);
                     getProviderAgreement().then(res => {
-                      setAgreement(res);
-                    }).catch(err => setAgreementError(formatProviderErrorMessage(err)));
+                      if (!res || !res.version || !res.content || !res.content.trim()) {
+                        setAgreement(null);
+                        setAgreementError('Nội dung Thỏa thuận Nhà cung cấp từ máy chủ bị trống hoặc không hợp lệ.');
+                        setLegalConfirmed(false);
+                        setAcceptedAgreementVersion(null);
+                      } else {
+                        if (lastAgreementIdRef.current && (lastAgreementIdRef.current !== res.id || agreement?.version !== res.version)) {
+                          setLegalConfirmed(false);
+                          setAcceptedAgreementVersion(null);
+                        }
+                        lastAgreementIdRef.current = res.id;
+                        setAgreement(res);
+                        setAgreementError(null);
+                      }
+                    }).catch(err => {
+                      setAgreement(null);
+                      setAgreementError(formatProviderErrorMessage(err));
+                      setLegalConfirmed(false);
+                      setAcceptedAgreementVersion(null);
+                    });
                   }}>
                     Thử lại
                   </Button>
                 </div>
-              ) : agreement?.content ? (
+              ) : agreement?.content && agreement.content.trim() ? (
                 <div className="p-3 rounded-lg bg-surface-container-high border border-outline-variant/20 max-h-36 overflow-y-auto text-body-xs text-on-surface-variant leading-relaxed whitespace-pre-wrap font-sans">
                   {agreement.content}
                 </div>
@@ -712,9 +794,13 @@ export const CreateApiWizardPage: React.FC = () => {
               <label className="flex items-start gap-3 text-body-sm cursor-pointer select-none pt-1">
                 <input
                   type="checkbox"
-                  disabled={!agreement || Boolean(agreementError)}
-                  checked={legalConfirmed}
-                  onChange={(e) => setLegalConfirmed(e.target.checked)}
+                  disabled={!isAgreementValid}
+                  checked={legalConfirmed && acceptedAgreementVersion === agreement?.version}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setLegalConfirmed(checked);
+                    setAcceptedAgreementVersion(checked && agreement?.version ? agreement.version : null);
+                  }}
                   className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer disabled:opacity-50"
                 />
                 <span className="text-on-surface leading-relaxed text-xs sm:text-body-sm">
@@ -731,7 +817,7 @@ export const CreateApiWizardPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="md"
-                disabled={submitting || !legalConfirmed || !agreement || Boolean(agreementError)}
+                disabled={submitting || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
                 onClick={handleFinish}
                 icon="check_circle"
               >

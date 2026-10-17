@@ -250,4 +250,123 @@ describe('PublishingWorkflowPage component tests', () => {
       expect(screen.getByText(/Đã nộp hồ sơ API thành công/i)).toBeDefined();
     });
   });
+
+  describe('Finding F1 & F5 regression tests', () => {
+    it('F1: disables submit and prompts sync when endpoint method or path is not documented in OpenAPI', async () => {
+      vi.spyOn(providerApiModule, 'listProviderApis').mockResolvedValue({
+        items: mockApis,
+        total: 1,
+        page: 1,
+        pageSize: 100,
+      });
+      vi.spyOn(providerApiModule, 'getProviderPublishStatus').mockResolvedValue(mockPublishStatus);
+      vi.spyOn(providerApiModule, 'getProviderVerification').mockResolvedValue(mockVerification);
+      // Endpoint is POST /v1/search
+      vi.spyOn(providerApiModule, 'listProviderEndpoints').mockResolvedValue(mockEndpoints);
+      vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
+      vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
+      vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
+      vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(mockAgreement);
+      // Doc only documents GET /v1/search, NOT post
+      vi.spyOn(providerApiModule, 'listProviderDocumentation').mockResolvedValue([
+        {
+          id: 'doc-1',
+          apiId: 'api-1',
+          versionId: 'ver-1',
+          source: 'OPENAPI_IMPORT',
+          content: { paths: { '/v1/search': { get: {} } } },
+          updatedAt: '2026-10-10T00:00:00Z',
+        },
+      ]);
+
+      render(
+        <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
+          <PublishingWorkflowPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Smart Search API')).toBeDefined();
+      });
+
+      // Endpoint documentation check should fail
+      expect(screen.getByText(/chỉ có 0\/1 endpoint được tài liệu hóa đồng bộ trong OpenAPI/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: /Đồng bộ OpenAPI/i })).toBeDefined();
+
+      const submitBtn = screen.getByRole('button', { name: /Nộp duyệt cho Quản trị viên/i });
+      expect(submitBtn.hasAttribute('disabled')).toBe(true);
+    });
+
+    it('F1: fails documentation check when OpenAPI doc versionId does not match endpoint versionId', async () => {
+      vi.spyOn(providerApiModule, 'listProviderApis').mockResolvedValue({
+        items: mockApis,
+        total: 1,
+        page: 1,
+        pageSize: 100,
+      });
+      vi.spyOn(providerApiModule, 'getProviderPublishStatus').mockResolvedValue(mockPublishStatus);
+      vi.spyOn(providerApiModule, 'getProviderVerification').mockResolvedValue(mockVerification);
+      vi.spyOn(providerApiModule, 'listProviderEndpoints').mockResolvedValue(mockEndpoints); // versionId: 'ver-1'
+      vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
+      vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
+      vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
+      vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(mockAgreement);
+      // Doc belongs to 'ver-2', not 'ver-1'
+      vi.spyOn(providerApiModule, 'listProviderDocumentation').mockResolvedValue([
+        {
+          id: 'doc-1',
+          apiId: 'api-1',
+          versionId: 'ver-2',
+          source: 'OPENAPI_IMPORT',
+          content: { paths: { '/v1/search': { post: {} } } },
+          updatedAt: '2026-10-10T00:00:00Z',
+        },
+      ]);
+
+      render(
+        <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
+          <PublishingWorkflowPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Smart Search API')).toBeDefined();
+      });
+
+      expect(screen.getByText(/chỉ có 0\/1 endpoint được tài liệu hóa đồng bộ trong OpenAPI/i)).toBeDefined();
+      const submitBtn = screen.getByRole('button', { name: /Nộp duyệt cho Quản trị viên/i });
+      expect(submitBtn.hasAttribute('disabled')).toBe(true);
+    });
+
+    it('F5: captures listProviderDocumentation rejection in error banner and displays retry button', async () => {
+      vi.spyOn(providerApiModule, 'listProviderApis').mockResolvedValue({
+        items: mockApis,
+        total: 1,
+        page: 1,
+        pageSize: 100,
+      });
+      vi.spyOn(providerApiModule, 'getProviderPublishStatus').mockResolvedValue(mockPublishStatus);
+      vi.spyOn(providerApiModule, 'getProviderVerification').mockResolvedValue(mockVerification);
+      vi.spyOn(providerApiModule, 'listProviderEndpoints').mockResolvedValue(mockEndpoints);
+      vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue(mockPlans);
+      vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(mockLegal);
+      vi.spyOn(providerApiModule, 'getProviderDomainVerification').mockResolvedValue(mockDomainVerification);
+      vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(mockAgreement);
+      // listProviderDocumentation fails
+      vi.spyOn(providerApiModule, 'listProviderDocumentation').mockRejectedValue(new Error('Network doc failure'));
+
+      render(
+        <MemoryRouter initialEntries={['/provider/workflow?api=api-1']}>
+          <PublishingWorkflowPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Không thể tải đầy đủ thông tin kiểm tra \(tài liệu OpenAPI\)/i)).toBeDefined();
+      });
+
+      const retryBtn = screen.getByRole('button', { name: /Tải lại dữ liệu/i });
+      expect(retryBtn).toBeDefined();
+    });
+  });
 });

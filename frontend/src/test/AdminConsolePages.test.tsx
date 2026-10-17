@@ -226,4 +226,248 @@ describe('Admin Console Pages session isolation tests (Admin A -> Admin B)', () 
       expect(screen.queryByText('prov-1')).toBeNull();
     });
   });
+
+  describe('Finding F3: Admin dossier DNS verification tests', () => {
+    const baseApi: AdminApiItem = {
+      id: 'api-10',
+      providerId: 'prov-10',
+      name: 'Weather Forecast API',
+      description: 'Global weather radar',
+      category: 'Weather',
+      baseUrl: 'https://api.weather.test/v1',
+      tags: ['weather'],
+      status: 'Submitted',
+      submittedAt: '2026-10-10T00:00:00Z',
+      createdAt: '2026-10-10T00:00:00Z',
+      updatedAt: '2026-10-10T00:00:00Z',
+      providerName: 'Weather Corp',
+    };
+
+    const renderWithDossier = async (domainVerification: any) => {
+      vi.spyOn(adminReviewApi, 'listAdminApis').mockResolvedValue({
+        items: [baseApi],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+      vi.spyOn(adminReviewApi, 'getAdminApiDossier').mockResolvedValue({
+        api: baseApi,
+        provider: {
+          verification: {
+            id: 'v-10',
+            providerId: 'prov-10',
+            organizationName: 'Weather Corp',
+            contactEmail: 'contact@weather.test',
+            status: 'Verified',
+            evidenceUrls: [],
+            email: 'contact@weather.test',
+            userName: 'Weather Admin',
+            providerName: 'Weather Corp',
+          },
+          providerName: 'Weather Corp',
+          email: 'contact@weather.test',
+          accountName: 'weather_corp',
+        },
+        versions: [],
+        endpoints: [],
+        plans: [],
+        documentation: [],
+        reviews: [],
+        legal: {
+          id: 'leg-1',
+          apiId: 'api-10',
+          agreementId: 'agr-1',
+          agreementVersion: 'v1.0.0',
+          ownershipDeclaration: 'Owner',
+          distributionRights: 'Rights',
+          processesPersonalData: false,
+          personalDataTypes: [],
+          dataClassification: 'Public',
+          acceptedAt: '2026-10-10T00:00:00Z',
+        },
+        domainVerification,
+      });
+
+      render(<ApiReviewsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Weather Forecast API')).toBeDefined();
+      });
+
+      // Click "Hồ sơ Dossier" to open dossier modal
+      const dossierBtn = screen.getByRole('button', { name: /Hồ sơ Dossier/i });
+      act(() => {
+        dossierBtn.click();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Xác minh quyền kiểm soát Domain/i)).toBeDefined();
+      });
+    };
+
+    it('displays unverified message when verifiedAt is missing', async () => {
+      await renderWithDossier({
+        hostname: 'api.weather.test',
+        verified: false,
+        verifiedAt: null,
+      });
+
+      expect(screen.getByText(/Chưa hoàn tất xác minh DNS/i)).toBeDefined();
+    });
+
+    it('displays invalid/missing expiry error when verificationExpiresAt is missing or invalid', async () => {
+      await renderWithDossier({
+        hostname: 'api.weather.test',
+        verified: true,
+        verifiedAt: '2026-10-10T00:00:00Z',
+        verificationExpiresAt: 'not-a-valid-date',
+      });
+
+      expect(screen.getByText(/Thời hạn xác minh không xác định hoặc không hợp lệ/i)).toBeDefined();
+    });
+
+    it('displays expired status when verification has expired', async () => {
+      await renderWithDossier({
+        hostname: 'api.weather.test',
+        verified: true,
+        verifiedAt: '2026-10-01T00:00:00Z',
+        verificationExpiresAt: '2026-10-05T00:00:00Z', // In the past relative to 2026-10-17
+      });
+
+      expect(screen.getByText(/Đã hết hạn xác minh/i)).toBeDefined();
+    });
+
+    it('displays hostname mismatch error when verified hostname does not match baseUrl hostname', async () => {
+      await renderWithDossier({
+        hostname: 'evil-phishing.test',
+        verified: true,
+        verifiedAt: '2026-10-10T00:00:00Z',
+        verificationExpiresAt: '2099-01-01T00:00:00Z',
+      });
+
+      expect(screen.getByText(/không khớp với Base URL/i)).toBeDefined();
+    });
+
+    it('displays valid verified status when verifiedAt, future expiry, and hostname all match', async () => {
+      await renderWithDossier({
+        hostname: 'api.weather.test',
+        verified: true,
+        verifiedAt: '2026-10-10T00:00:00Z',
+        verificationExpiresAt: '2099-01-01T00:00:00Z',
+      });
+
+      expect(screen.getByText(/Đã xác minh hợp lệ/i)).toBeDefined();
+    });
+  });
+
+  describe('Finding F4: Admin async mutation session isolation tests', () => {
+    it('ApiReviewsPage: drops pending mutation resolution when Admin user switches mid-flight', async () => {
+      const apisForA: AdminApiItem[] = [
+        {
+          id: 'api-1',
+          providerId: 'prov-a',
+          name: 'Alpha Payments API',
+          description: 'Payment gateway',
+          category: 'Fintech',
+          baseUrl: 'https://pay.alpha.test',
+          tags: ['fintech'],
+          status: 'Submitted',
+          submittedAt: '2026-10-10T00:00:00Z',
+          createdAt: '2026-10-10T00:00:00Z',
+          updatedAt: '2026-10-10T00:00:00Z',
+          providerName: 'Alpha Corp',
+        },
+      ];
+
+      vi.spyOn(adminReviewApi, 'listAdminApis').mockImplementation(async () => {
+        return { items: apisForA, total: 1, page: 1, pageSize: 20 };
+      });
+
+      let resolveMutationPromise: (value: any) => void = () => {};
+      const mutationPromise = new Promise(resolve => {
+        resolveMutationPromise = resolve;
+      });
+
+      vi.spyOn(adminReviewApi, 'reviewAdminApi').mockImplementation(() => mutationPromise as any);
+
+      const { rerender } = render(<ApiReviewsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alpha Payments API')).toBeDefined();
+      });
+
+      // Admin A clicks Bắt đầu thẩm định
+      const startBtn = screen.getByRole('button', { name: /Bắt đầu thẩm định/i });
+      act(() => {
+        startBtn.click();
+      });
+
+      // Now Admin switches from Admin A to Admin B before mutationPromise resolves
+      await act(async () => {
+        currentUserState = adminB;
+        rerender(<ApiReviewsPage />);
+      });
+
+      // Now resolve the promise from Admin A's mutation
+      await act(async () => {
+        resolveMutationPromise({ ...apisForA[0], status: 'Under Review' });
+      });
+
+      // Alert from Admin A should NOT be rendered for Admin B
+      expect(screen.queryByText(/Chuyển trạng thái API.*thành công/i)).toBeNull();
+    });
+
+    it('ProviderVerificationsPage: drops pending mutation resolution when Admin user switches mid-flight', async () => {
+      const verifsForA = [
+        {
+          id: 'v-1',
+          providerId: 'prov-1',
+          organizationName: 'Alpha Security Inc',
+          contactEmail: 'alpha@sec.test',
+          status: 'Pending' as const,
+          evidenceUrls: ['https://sec.test/cert.pdf'],
+          email: 'admin@sec.test',
+          userName: 'Alpha Sec',
+          providerName: 'Alpha Security Inc',
+        },
+      ];
+
+      vi.spyOn(adminReviewApi, 'listAdminVerifications').mockImplementation(async () => {
+        return { items: verifsForA, total: 1, page: 1, pageSize: 20 };
+      });
+
+      let resolveVerifPromise: (value: any) => void = () => {};
+      const verifPromise = new Promise(resolve => {
+        resolveVerifPromise = resolve;
+      });
+
+      vi.spyOn(adminReviewApi, 'reviewAdminVerification').mockImplementation(() => verifPromise as any);
+
+      const { rerender } = render(<ProviderVerificationsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alpha Security Inc')).toBeDefined();
+      });
+
+      // Admin A clicks Phê duyệt
+      const approveBtn = screen.getByRole('button', { name: /check\s*Phê duyệt/i });
+      act(() => {
+        approveBtn.click();
+      });
+
+      // Switch to Admin B
+      await act(async () => {
+        currentUserState = adminB;
+        rerender(<ProviderVerificationsPage />);
+      });
+
+      // Now resolve the promise
+      await act(async () => {
+        resolveVerifPromise({ ...verifsForA[0], status: 'Verified' });
+      });
+
+      // Alert from Admin A should NOT be displayed for Admin B
+      expect(screen.queryByText(/Đã phê duyệt xác minh thành công cho Alpha Security Inc/i)).toBeNull();
+    });
+  });
 });

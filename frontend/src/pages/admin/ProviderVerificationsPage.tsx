@@ -26,6 +26,7 @@ export const ProviderVerificationsPage: React.FC = () => {
 
   // Session-bound request isolation refs
   const requestIdRef = useRef(0);
+  const mutationRequestIdRef = useRef(0);
   const activeUserRef = useRef(currentUser?.id);
 
   // Review states
@@ -42,6 +43,8 @@ export const ProviderVerificationsPage: React.FC = () => {
     activeUserRef.current = currentUser?.id;
     if (prevUserId !== currentUser?.id) {
       requestIdRef.current++;
+      mutationRequestIdRef.current++;
+      setActionLoadingId(null);
       setVerifications([]);
       setTotal(0);
       setError(null);
@@ -99,18 +102,27 @@ export const ProviderVerificationsPage: React.FC = () => {
 
   const handleApprove = async (v: AdminProviderVerification) => {
     if (actionLoadingId) return;
+    const mutationId = ++mutationRequestIdRef.current;
+    const requestUserId = currentUser?.id;
+
     setActionLoadingId(v.providerId);
     setError(null);
     setActionSuccess(null);
 
     try {
       await reviewAdminVerification(v.providerId, 'Verified');
-      setActionSuccess(`Đã phê duyệt xác minh thành công cho ${v.organizationName || v.providerName}.`);
-      fetchVerifications(statusFilter, page);
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setActionSuccess(`Đã phê duyệt xác minh thành công cho ${v.organizationName || v.providerName}.`);
+        fetchVerifications(statusFilter, page);
+      }
     } catch (err) {
-      setError(formatBackendErrorMessage(err));
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setError(formatBackendErrorMessage(err));
+      }
     } finally {
-      setActionLoadingId(null);
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setActionLoadingId(null);
+      }
     }
   };
 
@@ -132,19 +144,28 @@ export const ProviderVerificationsPage: React.FC = () => {
       return;
     }
 
+    const mutationId = ++mutationRequestIdRef.current;
+    const requestUserId = currentUser?.id;
+
     setActionLoadingId(selectedProviderId);
     setRejectError(null);
 
     try {
       await reviewAdminVerification(selectedProviderId, 'Rejected', trimmedReason);
-      setRejectModalOpen(false);
-      setSelectedProviderId(null);
-      setActionSuccess(`Đã từ chối hồ sơ xác minh của ${selectedOrgName}.`);
-      fetchVerifications(statusFilter, page);
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setRejectModalOpen(false);
+        setSelectedProviderId(null);
+        setActionSuccess(`Đã từ chối hồ sơ xác minh của ${selectedOrgName}.`);
+        fetchVerifications(statusFilter, page);
+      }
     } catch (err) {
-      setRejectError(formatBackendErrorMessage(err));
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setRejectError(formatBackendErrorMessage(err));
+      }
     } finally {
-      setActionLoadingId(null);
+      if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
+        setActionLoadingId(null);
+      }
     }
   };
 
