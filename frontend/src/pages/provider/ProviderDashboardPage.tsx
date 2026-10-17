@@ -60,18 +60,24 @@ export const ProviderDashboardPage: React.FC = () => {
           <Button
             variant="secondary"
             icon="auto_stories"
-            onClick={() => navigate('/provider/import-openapi')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Import OpenAPI')}
           </Button>
           <Button
             variant="primary"
             icon="add_circle"
-            onClick={() => navigate('/provider/create-api')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Create API Product')}
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-body-sm text-on-surface">
+        Các KPI và trạng thái Provider bên dưới là dữ liệu minh họa, chưa kết nối API nghiệp vụ Sprint 2.
       </div>
 
       {/* Compliance / Verification Banner */}
