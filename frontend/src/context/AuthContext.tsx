@@ -1,215 +1,185 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { User, UserRole } from '../types';
-import { INITIAL_USERS } from '../data/mockData';
-
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import type { User } from '../types';
 import {
-  checkBackendHealth,
-  login as apiLogin,
-  register as apiRegister,
-  logout as apiLogout,
-  getMe,
-  checkRoleAccess,
+  ApiError,
   backendRoleToFrontend,
-  getSavedTokens,
+  checkBackendHealth,
+  checkRoleAccess,
+  clearTokens,
   formatBackendErrorMessage,
-  type BackendUser
+  getMe,
+  getSavedTokens,
+  login as apiLogin,
+  logout as apiLogout,
+  register as apiRegister,
+  type BackendUser,
 } from '../services/authApi';
 
+interface AuthResult { success: boolean; error?: string; user?: User }
+
 export interface AuthContextType {
-  currentUser: User;
-  user: User;
+  currentUser: User | null;
+  user: User | null;
   isAuthenticated: boolean;
+  sessionReady: boolean;
+  sessionError: string | null;
   backendOnline: boolean;
-  isBackendMode: boolean;
-  setIsBackendMode: (val: boolean) => void;
   checkBackendConnection: () => Promise<boolean>;
-  setCurrentUser: (user: User) => void;
-  login: (emailOrRole: string, role?: UserRole) => { success: boolean; error?: string; user?: User };
-  loginWithBackend: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
+  retrySession: () => Promise<void>;
+  loginWithBackend: (email: string, password: string) => Promise<AuthResult>;
   registerWithBackend: (params: { email: string; password: string; role: 'Consumer' | 'Provider'; name?: string }) => Promise<{ success: boolean; error?: string; user?: BackendUser }>;
-  logout: () => void;
-  verifyRoleAccess: (role: 'consumer' | 'provider' | 'admin') => Promise<{ success: boolean; data?: any; error?: string }>;
+  logout: () => Promise<{ warning?: string }>;
+  verifyRoleAccess: (role: 'consumer' | 'provider' | 'admin') => Promise<{ success: boolean; data?: { role: string }; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const toFrontendUser = (user: BackendUser): User => ({
+  id: user.id,
+  email: user.email,
+  name: user.name || user.email.split('@')[0],
+  role: backendRoleToFrontend(user.role),
+  status: 'Active',
+  createdAt: '',
+  lastLoginAt: '',
+  twoFactorEnabled: false,
+  quotaUsedPercent: 0,
+});
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [backendOnline, setBackendOnline] = useState<boolean>(false);
-  const [isBackendMode, setIsBackendMode] = useState<boolean>(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [backendOnline, setBackendOnline] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const operationRef = useRef(0);
 
-  const [currentUser, setCurrentUser] = useState<User>(() => {
-    const saved = localStorage.getItem('apihub_current_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
-    }
-    return INITIAL_USERS[2]; // Guest visitor: default to Consumer (USER) role
-  });
-
-  const checkBackendConnection = async (): Promise<boolean> => {
+  const checkBackendConnection = useCallback(async () => {
     try {
-      const res = await checkBackendHealth();
-      const online = res.status === 'ok';
+      const result = await checkBackendHealth();
+      const online = result.status === 'ok';
       setBackendOnline(online);
       return online;
     } catch {
       setBackendOnline(false);
       return false;
     }
-  };
+  }, []);
 
-  // Check backend health & attempt restoring session on initial load
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const online = await checkBackendConnection();
-      if (!mounted) return;
+  const restoreSession = useCallback(async () => {
+    const operation = ++operationRef.current;
+    setSessionReady(false);
+    setSessionError(null);
+    if (!getSavedTokens()) {
+      setCurrentUser(null);
+      setSessionReady(true);
+      void checkBackendConnection();
+      return;
+    }
 
-      if (online && getSavedTokens()) {
-        try {
-          const me = await getMe();
-          if (!mounted) return;
-          const mappedRole = backendRoleToFrontend(me.role);
-          const mappedUser: User = {
-            id: me.id,
-            email: me.email,
-            name: me.name || me.email.split('@')[0],
-            role: mappedRole,
-            company: 'API Market Community',
-            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-            status: 'Active',
-            twoFactorEnabled: false,
-            quotaUsedPercent: 0,
-            createdAt: new Date().toISOString(),
-            lastLoginAt: new Date().toISOString()
-          };
-          setCurrentUser(mappedUser);
-          setIsAuthenticated(true);
-        } catch {
-          // session expired, fallback silently
-        }
+    try {
+      const me = await getMe();
+      if (operation !== operationRef.current) return;
+      setCurrentUser(toFrontendUser(me));
+      setBackendOnline(true);
+    } catch (error) {
+      if (operation !== operationRef.current) return;
+      if (error instanceof ApiError && error.status === 401) {
+        clearTokens();
+        setCurrentUser(null);
+      } else {
+        setSessionError(formatBackendErrorMessage(error) || 'Không thể xác minh phiên đăng nhập.');
+        setBackendOnline(false);
       }
-    })();
+    } finally {
+      if (operation === operationRef.current) setSessionReady(true);
+    }
+  }, [checkBackendConnection]);
 
-    const interval = setInterval(() => {
-      checkBackendConnection();
-    }, 15000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
+  const handleInvalidatedSession = useCallback(() => {
+    ++operationRef.current;
+    setCurrentUser(null);
+    setSessionError(null);
+    setSessionReady(true);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('apihub_current_user', JSON.stringify(currentUser));
-  }, [currentUser]);
+    localStorage.removeItem('apihub_current_user');
+    window.addEventListener('apihub:session-invalidated', handleInvalidatedSession);
+    queueMicrotask(() => void restoreSession());
+    const interval = window.setInterval(() => void checkBackendConnection(), 30_000);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('apihub:session-invalidated', handleInvalidatedSession);
+    };
+  }, [checkBackendConnection, handleInvalidatedSession, restoreSession]);
 
-  const loginWithBackend = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
+  const loginWithBackend = async (email: string, password: string): Promise<AuthResult> => {
+    const operation = ++operationRef.current;
+    setCurrentUser(null);
+    setSessionError(null);
     try {
       const tokens = await apiLogin({ email, password });
-      const mappedRole = backendRoleToFrontend(tokens.user.role);
-      const userObj: User = {
-        id: tokens.user.id,
-        email: tokens.user.email,
-        name: tokens.user.name,
-        role: mappedRole,
-        company: 'API Market Hub',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-        status: 'Active',
-        twoFactorEnabled: false,
-        quotaUsedPercent: 0,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString()
-      };
-      setCurrentUser(userObj);
+      if (operation !== operationRef.current) return { success: false, error: 'Yêu cầu đăng nhập đã bị thay thế.' };
+      const user = toFrontendUser(tokens.user);
+      setCurrentUser(user);
+      setSessionReady(true);
       setBackendOnline(true);
-      setIsAuthenticated(true);
-      return { success: true, user: userObj };
-    } catch (err) {
-      return { success: false, error: formatBackendErrorMessage(err) };
+      return { success: true, user };
+    } catch (error) {
+      return { success: false, error: formatBackendErrorMessage(error) };
     }
   };
 
-  const registerWithBackend = async (params: {
-    email: string;
-    password: string;
-    role: 'Consumer' | 'Provider';
-    name?: string;
-  }): Promise<{ success: boolean; error?: string; user?: BackendUser }> => {
+  const registerWithBackend = async (params: { email: string; password: string; role: 'Consumer' | 'Provider'; name?: string }) => {
     try {
       const user = await apiRegister(params);
       setBackendOnline(true);
       return { success: true, user };
-    } catch (err) {
-      return { success: false, error: formatBackendErrorMessage(err) };
+    } catch (error) {
+      return { success: false, error: formatBackendErrorMessage(error) };
     }
   };
 
-  const verifyRoleAccess = async (role: 'consumer' | 'provider' | 'admin'): Promise<{ success: boolean; data?: any; error?: string }> => {
+  const logout = async (): Promise<{ warning?: string }> => {
+    ++operationRef.current;
+    setCurrentUser(null);
+    setSessionError(null);
+    setSessionReady(true);
+    localStorage.removeItem('apihub_current_user');
     try {
-      const data = await checkRoleAccess(role);
-      return { success: true, data };
-    } catch (err) {
-      return { success: false, error: formatBackendErrorMessage(err) };
+      const result = await apiLogout();
+      if (!result.serverRevoked && result.warning) {
+        return { warning: `Đã đăng xuất trên thiết bị này, nhưng máy chủ có thể chưa thu hồi phiên: ${result.warning}` };
+      }
+      return {};
+    } catch (error) {
+      return { warning: `Đã đăng xuất trên thiết bị này, nhưng máy chủ có thể chưa thu hồi phiên: ${formatBackendErrorMessage(error)}` };
     }
   };
 
-  const login = (emailOrRole: string, _role?: UserRole): { success: boolean; error?: string; user?: User } => {
-    let currentUsersList = INITIAL_USERS;
-    const savedUsers = localStorage.getItem('apihub_users');
-    if (savedUsers) {
-      try {
-        currentUsersList = JSON.parse(savedUsers);
-      } catch {
-        // fallback
-      }
+  const verifyRoleAccess = async (role: 'consumer' | 'provider' | 'admin') => {
+    try {
+      return { success: true, data: await checkRoleAccess(role) };
+    } catch (error) {
+      return { success: false, error: formatBackendErrorMessage(error) };
     }
-
-    const matched = currentUsersList.find(u => u.email.toLowerCase() === emailOrRole.toLowerCase().trim());
-    if (matched) {
-      if (matched.status === 'Locked') {
-        return { success: false, error: 'Tài khoản của bạn đã bị khóa bởi Quản trị viên (Account Locked). Vui lòng liên hệ Admin để mở khóa.' };
-      }
-      setCurrentUser(matched);
-      setIsAuthenticated(true);
-      return { success: true, user: matched };
-    }
-
-    return {
-      success: false,
-      error: 'Không tìm thấy tài khoản tương ứng với email đã nhập. Vui lòng kiểm tra lại hoặc tạo tài khoản mới.'
-    };
-  };
-
-  const logout = () => {
-    apiLogout();
-    setCurrentUser(INITIAL_USERS[2]);
-    setIsAuthenticated(false);
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        user: currentUser,
-        isAuthenticated,
-        backendOnline,
-        isBackendMode,
-        setIsBackendMode,
-        checkBackendConnection,
-        setCurrentUser,
-        login,
-        loginWithBackend,
-        registerWithBackend,
-        logout,
-        verifyRoleAccess
-      }}
-    >
+    <AuthContext.Provider value={{
+      currentUser,
+      user: currentUser,
+      isAuthenticated: Boolean(currentUser),
+      sessionReady,
+      sessionError,
+      backendOnline,
+      checkBackendConnection,
+      retrySession: restoreSession,
+      loginWithBackend,
+      registerWithBackend,
+      logout,
+      verifyRoleAccess,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -217,8 +187,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

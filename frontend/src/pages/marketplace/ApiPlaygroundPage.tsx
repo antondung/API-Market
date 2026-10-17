@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { MethodBadge, Badge } from '../../components/ui/Badge';
@@ -37,13 +37,12 @@ export const ApiPlaygroundPage: React.FC = () => {
     headers: Record<string, string>;
   } | null>(null);
 
-  const handleEndpointChange = (path: string) => {
-    setSelectedEndpointPath(path);
-    const nextEndpoint = api.endpoints.find(e => e.path === path);
-    if (nextEndpoint) {
-      setRequestBody(nextEndpoint.sampleRequest || '{\n  "prompt": "Hello world"\n}');
+  // Update request body when endpoint changes
+  useEffect(() => {
+    if (selectedEndpoint) {
+      setRequestBody(selectedEndpoint.sampleRequest || '{\n  "prompt": "Hello world"\n}');
     }
-  };
+  }, [selectedEndpointPath]);
 
   const handleSendRequest = async () => {
     setIsLoading(true);
@@ -122,7 +121,7 @@ export const ApiPlaygroundPage: React.FC = () => {
                 <MethodBadge method={selectedEndpoint?.method || 'POST'} />
                 <select
                   value={selectedEndpointPath}
-                  onChange={(e) => handleEndpointChange(e.target.value)}
+                  onChange={(e) => setSelectedEndpointPath(e.target.value)}
                   className="bg-transparent flex-1 text-on-surface font-code-md text-body-sm outline-none cursor-pointer"
                 >
                   {api.endpoints.map(ep => (

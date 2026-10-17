@@ -1,4 +1,4 @@
-import { t, type Language } from './index';
+import { t, useLanguage, type Language, LANGUAGE_KEY } from './index';
 
 // Track original text of modified nodes so we can revert to English seamlessly
 const originalTextMap = new WeakMap<Node, string>();

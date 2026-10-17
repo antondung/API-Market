@@ -1,0 +1,37 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Invalid Schema Types API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/test": {
+      "get": {
+        "summary": "Endpoint with invalid schema types",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "non_existent_primitive_type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "invalid_object_type"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

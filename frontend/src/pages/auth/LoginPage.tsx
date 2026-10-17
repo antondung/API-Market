@@ -1,136 +1,86 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
+import type { UserRole } from '../../types';
+
+const homeForRole = (role: UserRole) => role === 'ADMIN' ? '/admin' : role === 'API_PROVIDER' ? '/provider' : '/dashboard';
+const canAccess = (role: UserRole, path: string) => {
+  if (path.startsWith('/admin')) return role === 'ADMIN';
+  if (path.startsWith('/provider')) return role === 'API_PROVIDER';
+  if (path.startsWith('/dashboard')) return role === 'USER' || role === 'API_PROVIDER';
+  return path.startsWith('/') && !path.startsWith('//');
+};
 
 export const LoginPage: React.FC = () => {
-  const { login, loginWithBackend, backendOnline, isBackendMode, setIsBackendMode } = useAuth();
+  const { loginWithBackend, backendOnline, checkBackendConnection } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
-
+  const location = useLocation();
+  const logoutWarning = (location.state as { logoutWarning?: unknown } | null)?.logoutWarning;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (isLoading) return;
     setErrorMessage(null);
     setIsLoading(true);
-
-    try {
-      if (isBackendMode && backendOnline) {
-        // Authenticate directly against Sprint 1 Backend
-        const res = await loginWithBackend(email, password);
-        if (!res.success) {
-          setErrorMessage(res.error || 'Đăng nhập backend không thành công');
-          setIsLoading(false);
-          return;
-        }
-        setIsLoading(false);
-        const targetRole = res.user?.role;
-        if (targetRole === 'ADMIN') navigate('/admin');
-        else if (targetRole === 'API_PROVIDER') navigate('/provider');
-        else navigate('/dashboard');
-        return;
-      }
-
-      // Fallback: Local authentication against registered users
-      const res = login(email);
-      if (!res.success) {
-        setErrorMessage(res.error || 'Tài khoản không tồn tại hoặc mật khẩu không chính xác.');
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(false);
-      const targetRole = res.user?.role;
-      if (targetRole === 'ADMIN') navigate('/admin');
-      else if (targetRole === 'API_PROVIDER') navigate('/provider');
-      else navigate('/dashboard');
-    } catch (err: any) {
-      setIsLoading(false);
-      setErrorMessage(err.message || 'Đã có lỗi xảy ra khi xác thực');
+    const result = await loginWithBackend(email.trim().toLowerCase(), password);
+    setIsLoading(false);
+    if (!result.success || !result.user) {
+      setErrorMessage(result.error || 'Đăng nhập không thành công.');
+      return;
     }
+    const requested = (location.state as { from?: unknown } | null)?.from;
+    const destination = typeof requested === 'string' && canAccess(result.user.role, requested) ? requested : homeForRole(result.user.role);
+    navigate(destination, { replace: true });
+  };
+
+  const retryConnection = async () => {
+    setChecking(true);
+    const online = await checkBackendConnection();
+    setChecking(false);
+    if (!online) setErrorMessage('Vẫn chưa thể kết nối đến máy chủ. Vui lòng kiểm tra backend hoặc cấu hình API.');
+    else setErrorMessage(null);
   };
 
   return (
-    <div className="pt-24 pb-20 px-6 max-w-md mx-auto">
-      <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-8 shadow-sm">
-        {errorMessage && (
-          <div className="mb-6 p-4 rounded-xl bg-error-container/20 border border-error/30 text-error flex items-start gap-3">
-            <span className="material-symbols-outlined text-[20px] shrink-0 mt-0.5">error</span>
-            <div className="text-body-sm">
-              <p className="font-semibold">{t('Đăng nhập không thành công')}</p>
-              <p className="mt-0.5 text-[13px]">{errorMessage}</p>
-            </div>
-          </div>
-        )}
+    <div className="pt-24 pb-20 px-4 sm:px-6 max-w-md mx-auto">
+      <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 sm:p-8 shadow-sm">
         <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-primary text-on-primary mx-auto flex items-center justify-center mb-3 shadow-sm">
-            <span className="material-symbols-outlined text-[26px]">hub</span>
-          </div>
+          <div className="w-12 h-12 rounded-xl bg-primary text-on-primary mx-auto flex items-center justify-center mb-3"><span className="material-symbols-outlined">hub</span></div>
           <h1 className="text-headline-lg font-bold text-on-surface">{t('Sign in to API HUB')}</h1>
-          <p className="text-body-sm text-on-surface-variant mt-1">
-            {t('Access your developer subscriptions, credentials, or provider suite.')}
-          </p>
+          <p className="text-body-sm text-on-surface-variant mt-1">Vai trò và quyền truy cập được xác định bởi máy chủ.</p>
         </div>
 
-        {/* Backend Sprint 1 Status Pill */}
-        <div className="mb-6 p-3 rounded-xl border border-outline-variant/30 bg-surface-container flex items-center justify-between text-[12px]">
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${backendOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-            <span className="font-medium text-on-surface">
-              {backendOnline ? t('Backend Sprint 1: Online (Port 3000)') : t('Backend: Disconnected (Mock Mode)')}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsBackendMode(!isBackendMode)}
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
-              isBackendMode ? 'bg-primary text-on-primary' : 'bg-surface-variant text-on-surface-variant'
-            }`}
-          >
-            {isBackendMode ? t('Live API') : t('Demo Mode')}
-          </button>
+        <div className="mb-6 p-3 rounded-xl border border-outline-variant/30 bg-surface-container flex items-center justify-between gap-3 text-[12px]">
+          <span className="flex items-center gap-2 font-medium text-on-surface">
+            <span className={`w-2.5 h-2.5 rounded-full ${backendOnline ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            {backendOnline ? 'Máy chủ đang kết nối' : 'Chưa kết nối được máy chủ'}
+          </span>
+          {!backendOnline && <button type="button" onClick={() => void retryConnection()} disabled={checking} className="text-primary font-semibold hover:underline disabled:opacity-50">{checking ? 'Đang thử...' : 'Thử lại'}</button>}
         </div>
+
+        {errorMessage && <div role="alert" className="mb-6 p-4 rounded-xl bg-error-container/20 border border-error/30 text-error text-body-sm">{errorMessage}</div>}
+        {typeof logoutWarning === 'string' && <div role="status" className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-body-sm text-on-surface">{logoutWarning}</div>}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="text-body-sm font-semibold text-on-surface block mb-1">{t('Email Address')}</label>
-            <input
-              type="email"
-              required
-              placeholder="name@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
-            />
+            <label htmlFor="login-email" className="text-body-sm font-semibold text-on-surface block mb-1">{t('Email Address')}</label>
+            <input id="login-email" type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
-
           <div>
-            <label className="text-body-sm font-semibold text-on-surface block mb-1">{t('Password')}</label>
-            <input
-              type="password"
-              required
-              placeholder="••••••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
-            />
+            <label htmlFor="login-password" className="text-body-sm font-semibold text-on-surface block mb-1">{t('Password')}</label>
+            <input id="login-password" type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
-
-          <Button type="submit" variant="primary" size="lg" className="w-full mt-2" disabled={isLoading}>
-            {isLoading ? 'Đang xác thực...' : t('Sign In & Redirect')}
-          </Button>
+          <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isLoading}>{isLoading ? 'Đang xác thực...' : t('Sign In')}</Button>
         </form>
-
-        <div className="text-center text-body-sm text-on-surface-variant mt-6">
-          {t("Don't have an account?")}{' '}
-          <Link to="/register" className="text-primary font-semibold hover:underline">
-            {t('Register now')}
-          </Link>
-        </div>
+        <div className="text-center text-body-sm text-on-surface-variant mt-6">{t("Don't have an account?")} <Link to="/register" className="text-primary font-semibold hover:underline">{t('Register now')}</Link></div>
       </div>
     </div>
   );

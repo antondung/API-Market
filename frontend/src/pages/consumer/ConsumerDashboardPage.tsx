@@ -8,6 +8,8 @@ import { useLanguage } from '../../i18n';
 
 export const ConsumerDashboardPage: React.FC = () => {
   const { currentUser } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { apis, subscriptions, apiKeys, requestLogs, budget } = useApp();
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -21,11 +23,6 @@ export const ConsumerDashboardPage: React.FC = () => {
     ? Math.max(0, Math.round(((totalQuotaLimit - totalQuotaUsed) / totalQuotaLimit) * 100))
     : 100;
 
-  const [daysUntilReset] = React.useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
-  });
-
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Top Banner */}
@@ -36,10 +33,10 @@ export const ConsumerDashboardPage: React.FC = () => {
               {t('Consumer Workspace')}
             </span>
             <span className="text-body-sm text-on-surface-variant font-code-md">
-              ID: {currentUser.id}
+              ID: {user.id}
             </span>
           </div>
-          <h1 className="text-headline-lg font-bold text-on-surface">{t('Welcome back,')} {currentUser.name}</h1>
+          <h1 className="text-headline-lg font-bold text-on-surface">{t('Welcome back,')} {user.name}</h1>
           <p className="text-body-md text-on-surface-variant">
             {t('Monitor active subscriptions, credential consumption, and real-time Gateway telemetry.')}
           </p>
@@ -56,11 +53,16 @@ export const ConsumerDashboardPage: React.FC = () => {
           <Button
             variant="primary"
             icon="key"
-            onClick={() => navigate('/dashboard/api-keys')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Generate Key')}
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-body-sm text-on-surface">
+        Các KPI bên dưới là dữ liệu minh họa, chưa phải dữ liệu live từ backend. Những thao tác ngoài Sprint 1 chưa được hỗ trợ.
       </div>
 
       {/* KPI Bento Grid */}
@@ -141,7 +143,7 @@ export const ConsumerDashboardPage: React.FC = () => {
               {t('Usage Details')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
             <span className="text-[11px] font-code-sm text-on-surface-variant">
-              {t('Resets in')} {daysUntilReset}d
+              {t('Resets in')} {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate()}d
             </span>
           </div>
         </div>

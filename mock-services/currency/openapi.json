@@ -1,0 +1,15 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Currency Rates API", "version": "v1", "description": "Mock API tỷ giá phục vụ demo Sprint 2." },
+  "servers": [{ "url": "http://localhost:4012" }],
+  "paths": {
+    "/v1/rates": {
+      "get": {
+        "summary": "Lấy tỷ giá theo đồng tiền cơ sở",
+        "parameters": [{ "name": "base", "in": "query", "required": false, "schema": { "type": "string", "default": "VND" } }],
+        "responses": { "200": { "description": "Tỷ giá", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Rates" } } } }, "400": { "description": "Mã tiền tệ không hỗ trợ" } }
+      }
+    }
+  },
+  "components": { "schemas": { "Rates": { "type": "object", "required": ["base", "asOf", "rates"], "properties": { "base": { "type": "string" }, "asOf": { "type": "string", "format": "date-time" }, "rates": { "type": "object", "additionalProperties": { "type": "number" } } } } } }
+}
