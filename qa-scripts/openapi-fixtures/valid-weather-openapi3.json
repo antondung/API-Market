@@ -1,0 +1,211 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Comprehensive Weather Pro API",
+    "version": "1.0.0",
+    "description": "Dịch vụ cung cấp thông tin dự báo thời tiết thời gian thực và cảnh báo thiên tai.",
+    "termsOfService": "https://example.com/terms",
+    "contact": {
+      "name": "API Market Weather Team",
+      "email": "weather-api@market.local"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.market.local/weather/v1",
+      "description": "Production Server"
+    },
+    {
+      "url": "http://localhost:4011",
+      "description": "Local Sandbox Mock"
+    }
+  ],
+  "tags": [
+    { "name": "Current", "description": "Thời tiết hiện tại" },
+    { "name": "Forecast", "description": "Dự báo thời tiết" },
+    { "name": "Alerts", "description": "Cảnh báo khẩn cấp" }
+  ],
+  "security": [
+    { "ApiKeyAuth": [] }
+  ],
+  "paths": {
+    "/v1/weather/current": {
+      "get": {
+        "tags": ["Current"],
+        "summary": "Lấy thời tiết hiện tại",
+        "description": "Trả về nhiệt độ, độ ẩm và tình trạng mây theo tên thành phố.",
+        "operationId": "getCurrentWeather",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "query",
+            "required": true,
+            "description": "Tên thành phố cần tra cứu",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "units",
+            "in": "query",
+            "required": false,
+            "description": "Đơn vị đo nhiệt độ (celsius hoặc fahrenheit)",
+            "schema": { "type": "string", "enum": ["metric", "imperial"], "default": "metric" }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "description": "Mã truy vết yêu cầu",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tra cứu thành công",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WeatherCurrent" }
+              }
+            }
+          },
+          "400": {
+            "description": "Tham số không hợp lệ",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "404": {
+            "description": "Không tìm thấy thành phố"
+          }
+        }
+      }
+    },
+    "/v1/weather/forecast": {
+      "get": {
+        "tags": ["Forecast"],
+        "summary": "Lấy dự báo thời tiết nhiều ngày",
+        "description": "Dự báo thời tiết chi tiết từ 1 đến 7 ngày tới.",
+        "operationId": "getForecast",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 3 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dự báo thời tiết thành công",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WeatherForecast" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/weather/alerts": {
+      "post": {
+        "tags": ["Alerts"],
+        "summary": "Đăng ký nhận cảnh báo thiên tai",
+        "description": "Thiết lập cảnh báo thời tiết cực đoan theo vùng.",
+        "operationId": "subscribeWeatherAlert",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WeatherAlertInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Đăng ký thành công",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alertId": { "type": "string" },
+                    "status": { "type": "string", "example": "active" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-KEY"
+      }
+    },
+    "schemas": {
+      "WeatherCurrent": {
+        "type": "object",
+        "required": ["city", "temperatureC", "condition", "humidity"],
+        "properties": {
+          "city": { "type": "string", "example": "Hanoi" },
+          "temperatureC": { "type": "number", "example": 28.5 },
+          "condition": { "type": "string", "example": "Sunny" },
+          "humidity": { "type": "integer", "example": 65 }
+        }
+      },
+      "WeatherForecast": {
+        "type": "object",
+        "required": ["city", "forecastDays"],
+        "properties": {
+          "city": { "type": "string" },
+          "forecastDays": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": { "type": "string", "format": "date" },
+                "tempMin": { "type": "number" },
+                "tempMax": { "type": "number" },
+                "condition": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "WeatherAlertInput": {
+        "type": "object",
+        "required": ["area", "severity", "callbackUrl"],
+        "properties": {
+          "area": { "type": "string", "example": "Northern Vietnam" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "callbackUrl": { "type": "string", "format": "uri" }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}
+

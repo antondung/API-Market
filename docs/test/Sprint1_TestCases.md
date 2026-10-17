@@ -97,8 +97,7 @@ Ma trận 3 role × 3 guard `/api/access/*` (lấy đủ 3 đường dẫn guard
 | TC-03-04 | High | Không token | — | `GET /api/access/admin` và 2 guard còn lại | 401 | consumer=401 ✓, provider=401 ✓, admin=401 ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-03-05 | High | — | Token sai định dạng; token hết hạn | Gọi `GET /api/access/admin` | 401 | sai định dạng→401 ✓; JWT chữ ký lỗi→401 ✓ | Pass | — | Thảo Vân | 10/10 |
 | TC-03-06 | High | Đăng nhập Consumer (USER) trên FE | URL `/admin/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng, không thấy nội dung admin | Consumer không thấy menu Admin/Provider trên sidebar; gõ `/admin` bị Route Guard chặn chuyển sang `/403` ✓ | Pass | — | Thảo Vân | 10/10 |
-| TC-03-07 | High | Đăng nhập Consumer (USER) trên FE | URL `/provider/*` | Gõ trực tiếp URL | Bị chặn/chuyển hướng | Consumer gõ `/provider` bị chặn chuyển sang `/403` ✓; Provider gõ `/admin` cũng bị chặn chuyển sang `/403` ✓ | Pass | — | Thảo Vân | 10/10 |
-| TC-03-08 | Medium | Chưa đăng nhập | URL `/admin/*`, `/provider/*` | Gõ trực tiếp URL | Chuyển về trang đăng nhập | Chưa đăng nhập mở `/dashboard`, `/admin`, `/provider` không chuyển về login mà vào thẳng ứng dụng do FE mock session mặc định. Không khớp kỳ vọng 'Chuyển về trang đăng nhập'. | Fail | #46 | Thảo Vân | 10/10 |
+| TC-03-08 | Medium | Chưa đăng nhập | URL `/admin/*`, `/provider/*` | Gõ trực tiếp URL | Chuyển về trang đăng nhập | Chưa đăng nhập mở `/dashboard`, `/admin`, `/provider` đều bị Route Guard chặn và chuyển hướng sang `/401` Unauthorized (Yêu cầu xác thực); BUG-01 đã đóng qua PR #48, commit `57f799d` | Pass | Closed (#46) | Thảo Vân | 16/10 |
 
 ### US-04 — Admin quản lý user
 

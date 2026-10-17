@@ -1,0 +1,851 @@
+{
+  "summary": {
+    "total": 60,
+    "passed": 60,
+    "failed": 0,
+    "passRate": "100.0%",
+    "executedAt": "2026-10-16T16:01:33.047Z",
+    "environment": {
+      "baseUrl": "http://127.0.0.1:3000",
+      "database": "PostgreSQL 17 (Docker)",
+      "fixturesUsed": [
+        "valid-weather-openapi3.json",
+        "invalid-syntax.json",
+        "missing-required-fields.yaml",
+        "invalid-schema-types.json",
+        "xss-payload-openapi.json",
+        "oversized-over-1mb.json"
+      ]
+    }
+  },
+  "testResults": [
+    {
+      "testCaseId": "TC-06-01",
+      "userStory": "US-06",
+      "name": "Provider kiểm tra trạng thái xác minh ban đầu",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.638Z",
+      "details": {
+        "status": 200,
+        "data": {
+          "data": null
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-06-02",
+      "userStory": "US-06",
+      "name": "Provider nộp hồ sơ xác minh KYC (trạng thái Pending)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.648Z",
+      "details": {
+        "status": 201,
+        "data": {
+          "data": {
+            "id": "11",
+            "providerId": "12",
+            "organizationName": "QA Fintech Global Corp",
+            "contactEmail": "contact@qafintech.com",
+            "evidenceUrls": [
+              "https://example.com/docs/business-license.pdf"
+            ],
+            "status": "Pending",
+            "rejectReason": null,
+            "submittedAt": "2026-10-16T16:01:31.642Z",
+            "reviewedAt": null,
+            "reviewedBy": null,
+            "updatedAt": "2026-10-16T16:01:31.642Z"
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-06-03",
+      "userStory": "US-06",
+      "name": "Provider tra cứu trạng thái sau nộp (Pending)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.655Z",
+      "details": {
+        "status": 200,
+        "data": {
+          "data": {
+            "id": "11",
+            "providerId": "12",
+            "organizationName": "QA Fintech Global Corp",
+            "contactEmail": "contact@qafintech.com",
+            "evidenceUrls": [
+              "https://example.com/docs/business-license.pdf"
+            ],
+            "status": "Pending",
+            "rejectReason": null,
+            "submittedAt": "2026-10-16T16:01:31.642Z",
+            "reviewedAt": null,
+            "reviewedBy": null,
+            "updatedAt": "2026-10-16T16:01:31.642Z"
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-06-04",
+      "userStory": "US-06",
+      "name": "Chặn nộp lặp hồ sơ xác minh khi đang Pending (409 Conflict)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.662Z",
+      "details": {
+        "status": 409,
+        "code": "VERIFICATION_EXISTS"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-07-01",
+      "userStory": "US-07",
+      "name": "Admin xem danh sách hàng chờ xác minh Provider",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.669Z",
+      "details": {
+        "status": 200,
+        "count": 1
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-07-02",
+      "userStory": "US-07",
+      "name": "Admin xem chi tiết hồ sơ xác minh Provider",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.674Z",
+      "details": {
+        "status": 200,
+        "org": "QA Fintech Global Corp"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-07-03",
+      "userStory": "US-07",
+      "name": "Admin từ chối hồ sơ thiếu lý do (400 Bad Request)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.681Z",
+      "details": {
+        "status": 400,
+        "error": {
+          "code": "REASON_REQUIRED",
+          "message": "Rejection reason is required",
+          "requestId": "5761d98b-4f8a-42c2-a2f2-d01d66ab3dca"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-07-04",
+      "userStory": "US-07",
+      "name": "Admin từ chối hồ sơ kèm lý do hợp lệ",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.691Z",
+      "details": {
+        "status": 200,
+        "statusResult": "Rejected"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-06-05",
+      "userStory": "US-06",
+      "name": "Provider nộp lại hồ sơ sau khi bị từ chối (Resubmit)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.699Z",
+      "details": {
+        "status": 201,
+        "data": {
+          "data": {
+            "id": "12",
+            "providerId": "12",
+            "organizationName": "QA Fintech Global Corp Updated",
+            "contactEmail": "contact@qafintech.com",
+            "evidenceUrls": [
+              "https://example.com/docs/notarized-license.pdf"
+            ],
+            "status": "Pending",
+            "rejectReason": null,
+            "submittedAt": "2026-10-16T16:01:31.693Z",
+            "reviewedAt": null,
+            "reviewedBy": null,
+            "updatedAt": "2026-10-16T16:01:31.693Z"
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-07-05",
+      "userStory": "US-07",
+      "name": "Admin phê duyệt hồ sơ xác minh Provider (Verified)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.707Z",
+      "details": {
+        "status": 200,
+        "data": {
+          "data": {
+            "id": "12",
+            "providerId": "12",
+            "organizationName": "QA Fintech Global Corp Updated",
+            "contactEmail": "contact@qafintech.com",
+            "evidenceUrls": [
+              "https://example.com/docs/notarized-license.pdf"
+            ],
+            "status": "Verified",
+            "rejectReason": null,
+            "submittedAt": "2026-10-16T16:01:31.693Z",
+            "reviewedAt": "2026-10-16T16:01:31.701Z",
+            "reviewedBy": "1",
+            "updatedAt": "2026-10-16T16:01:31.693Z"
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-07-06",
+      "userStory": "US-07",
+      "name": "Chặn Admin duyệt lại hồ sơ đã được xử lý (409 Conflict)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.713Z",
+      "details": {
+        "status": 409,
+        "code": "VERIFICATION_ALREADY_REVIEWED"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-SEC-01",
+      "userStory": "RBAC",
+      "name": "Guest không có token truy cập Provider API (401 Unauthorized)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.749Z",
+      "details": {
+        "status": 401
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-SEC-02",
+      "userStory": "RBAC",
+      "name": "Guest không có token truy cập Admin API (401 Unauthorized)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.752Z",
+      "details": {
+        "status": 401
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-SEC-03",
+      "userStory": "RBAC",
+      "name": "Consumer gọi API Provider (403 Forbidden)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.759Z",
+      "details": {
+        "status": 403
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-SEC-04",
+      "userStory": "RBAC",
+      "name": "Consumer gọi API Admin (403 Forbidden)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.764Z",
+      "details": {
+        "status": 403
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-SEC-05",
+      "userStory": "RBAC",
+      "name": "Provider gọi API Admin Review (403 Forbidden)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.768Z",
+      "details": {
+        "status": 403
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-SEC-06",
+      "userStory": "RBAC",
+      "name": "Provider chưa xác minh (Unverified) cố tạo API (403 Forbidden)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.774Z",
+      "details": {
+        "status": 403,
+        "error": {
+          "code": "PROVIDER_NOT_VERIFIED",
+          "message": "Verified Provider required",
+          "requestId": "dbe2de84-faae-4848-9a69-7577b518da30"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-01",
+      "userStory": "US-09",
+      "name": "Tạo mới API ở trạng thái Draft thành công",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.786Z",
+      "details": {
+        "status": 201,
+        "apiId": "7",
+        "state": "Draft"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-02",
+      "userStory": "US-09",
+      "name": "Lấy thông tin chi tiết API theo ID",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.793Z",
+      "details": {
+        "status": 200,
+        "name": "QA Weather Core API"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-03",
+      "userStory": "US-09",
+      "name": "Cập nhật thông tin API ở trạng thái Draft",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.802Z",
+      "details": {
+        "status": 200,
+        "updatedName": "QA Weather Core API v1.1"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-04",
+      "userStory": "US-09",
+      "name": "Chặn Provider khác xem hoặc chỉnh sửa API không sở hữu (404/403)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.809Z",
+      "details": {
+        "status": 404
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-05",
+      "userStory": "US-09",
+      "name": "Tạo Version mới cho API",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.817Z",
+      "details": {
+        "status": 201,
+        "versionId": "11"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-06",
+      "userStory": "US-09",
+      "name": "Thêm Endpoint thủ công vào Version",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.829Z",
+      "details": {
+        "status": 201,
+        "endpointId": "22"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-09-07",
+      "userStory": "US-09",
+      "name": "Xóa Endpoint trong trạng thái Draft",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.837Z",
+      "details": {
+        "status": 204
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-01",
+      "userStory": "US-10",
+      "name": "Import file JSON lỗi cú pháp (invalid-syntax.json -> 400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.888Z",
+      "details": {
+        "status": 400,
+        "code": "OPENAPI_IMPORT_INVALID"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-02",
+      "userStory": "US-10",
+      "name": "Import file YAML thiếu paths/info (missing-required-fields.yaml -> 400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:31.938Z",
+      "details": {
+        "status": 400,
+        "code": "OPENAPI_IMPORT_INVALID"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-03",
+      "userStory": "US-10",
+      "name": "Import file có kiểu dữ liệu schema không hợp lệ (invalid-schema-types.json -> 400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.039Z",
+      "details": {
+        "status": 400,
+        "code": "OPENAPI_IMPORT_INVALID"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-04",
+      "userStory": "US-10",
+      "name": "Import file vượt quá giới hạn 1MB (oversized-over-1mb.json -> 413/400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.091Z",
+      "details": {
+        "status": 413,
+        "error": {
+          "code": "IMPORT_UPLOAD_INVALID",
+          "message": "Maximum file size is 1 MiB",
+          "requestId": "548e2f8e-9203-4dd9-a70a-e32b06d181bc"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-05",
+      "userStory": "US-10",
+      "name": "Import OpenAPI 3.0 hợp lệ đầy đủ sinh 7 khối tài liệu (valid-weather-openapi3.json -> 200)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.158Z",
+      "details": {
+        "status": 200,
+        "endpointCount": 3
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-06",
+      "userStory": "US-10",
+      "name": "Truy vấn tài liệu chuẩn hóa 7 khối sau khi import",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.166Z",
+      "details": {
+        "status": 200,
+        "hasPaths": true,
+        "hasComponents": true
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-10-07",
+      "userStory": "US-10",
+      "name": "Import file chứa payload XSS (xss-payload-openapi.json -> lưu trữ an toàn)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.296Z",
+      "details": {
+        "status": 200,
+        "count": 1
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-11-01",
+      "userStory": "US-11",
+      "name": "Chặn tạo gói Free có giá > 0 (400 Validation Error)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.311Z",
+      "details": {
+        "status": 400,
+        "error": {
+          "code": "VALIDATION_ERROR",
+          "message": "Invalid request",
+          "requestId": "3e58da18-ae90-4463-b4ec-1db3a8072c1c",
+          "details": [
+            {
+              "field": "priceMonthly",
+              "message": "Free plan price must be zero"
+            }
+          ]
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-11-02",
+      "userStory": "US-11",
+      "name": "Tạo gói Free hợp lệ (giá = 0, quota = 500)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.321Z",
+      "details": {
+        "status": 201,
+        "planId": "13"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-11-03",
+      "userStory": "US-11",
+      "name": "Tạo gói trả phí Pro (499.000 VND)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.330Z",
+      "details": {
+        "status": 201,
+        "planId": "14"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-11-04",
+      "userStory": "US-11",
+      "name": "Cập nhật cấu hình gói giá Pro (599.000 VND)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.340Z",
+      "details": {
+        "status": 200,
+        "newPrice": 599000
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-11-05",
+      "userStory": "US-11",
+      "name": "Liệt kê danh sách các gói giá của API (Free & Pro)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.347Z",
+      "details": {
+        "status": 200,
+        "count": 2
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-01",
+      "userStory": "US-08",
+      "name": "Lấy thông tin Thỏa thuận Nền tảng (Platform Agreement)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.352Z",
+      "details": {
+        "status": 200,
+        "version": "2026-10"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-02",
+      "userStory": "US-08",
+      "name": "Chặn khai báo pháp lý với phiên bản thỏa thuận không hợp lệ (409/400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.358Z",
+      "details": {
+        "status": 409,
+        "error": {
+          "code": "AGREEMENT_CHANGED",
+          "message": "Accept the current agreement version",
+          "requestId": "a471cb25-389c-48c6-8cc6-d0efd5043496"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-03",
+      "userStory": "US-08",
+      "name": "Khai báo pháp lý và phân loại dữ liệu cá nhân hợp lệ",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.368Z",
+      "details": {
+        "status": 200,
+        "legal": {
+          "id": "5",
+          "apiId": "7",
+          "agreementId": "1",
+          "ownershipDeclaration": "Tôi sở hữu bản quyền toàn bộ mã nguồn API này",
+          "distributionRights": "Có quyền phân phối thương mại không giới hạn",
+          "dataClassification": "Internal",
+          "acceptedAt": "2026-10-16T16:01:32.360Z",
+          "createdAt": "2026-10-16T16:01:32.360Z",
+          "updatedAt": "2026-10-16T16:01:32.360Z",
+          "processesPersonalData": true,
+          "personalDataTypes": [
+            "Email",
+            "Geolocation"
+          ],
+          "dataProcessingPurpose": "Phục vụ xử lý dữ liệu và cảnh báo thời tiết",
+          "agreementVersion": "2026-10"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-04",
+      "userStory": "US-08",
+      "name": "Truy vấn thông tin khai báo pháp lý của API",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.374Z",
+      "details": {
+        "status": 200,
+        "classification": "Internal"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-05",
+      "userStory": "US-08",
+      "name": "Tạo DNS TXT verification challenge cho tên miền API",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.382Z",
+      "details": {
+        "status": 201,
+        "recordName": "_apihub-verification.weather.api-market-partner.com"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-06",
+      "userStory": "US-08",
+      "name": "Kiểm tra trạng thái tên miền khi chưa xác thực DNS (verified = false)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.390Z",
+      "details": {
+        "status": 200,
+        "verified": false
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-08-07",
+      "userStory": "US-08",
+      "name": "Kiểm tra thất bại khi gọi verify domain chưa cấu hình DNS TXT",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.714Z",
+      "details": {
+        "status": 400,
+        "code": "DOMAIN_PROOF_MISSING"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-12-01",
+      "userStory": "US-12",
+      "name": "Chặn nộp duyệt API khi tên miền chưa được xác minh (400 DOMAIN_NOT_VERIFIED)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.734Z",
+      "details": {
+        "status": 400,
+        "code": "DOMAIN_NOT_VERIFIED"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-12-02",
+      "userStory": "US-12",
+      "name": "Nộp duyệt API thành công khi đã đủ điều kiện Checklist (Submitted)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.789Z",
+      "details": {
+        "status": 200,
+        "statusResult": "Submitted"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-12-03",
+      "userStory": "US-12",
+      "name": "Đóng băng bản ghi: Chặn sửa metadata khi API ở trạng thái Submitted (409/400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.797Z",
+      "details": {
+        "status": 409,
+        "code": "INVALID_STATE"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-12-04",
+      "userStory": "US-12",
+      "name": "Đóng băng bản ghi: Chặn tạo Version mới khi API ở trạng thái Submitted",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.803Z",
+      "details": {
+        "status": 409,
+        "code": "INVALID_STATE"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-12-05",
+      "userStory": "US-12",
+      "name": "Đóng băng bản ghi: Chặn Import OpenAPI khi API ở trạng thái Submitted",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.912Z",
+      "details": {
+        "status": 409,
+        "code": "INVALID_STATE"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-01",
+      "userStory": "US-13",
+      "name": "Admin xem Dossier hồ sơ nộp duyệt (có cảnh báo dữ liệu cá nhân)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.937Z",
+      "details": {
+        "status": 200,
+        "personalData": true
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-02",
+      "userStory": "US-13",
+      "name": "Chặn nhảy cóc trạng thái: Chặn Publish trực tiếp từ Submitted (409/400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.945Z",
+      "details": {
+        "status": 409,
+        "code": "INVALID_TRANSITION"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-03",
+      "userStory": "US-13",
+      "name": "Admin bắt đầu thẩm định API (Submitted -> Under Review)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.957Z",
+      "details": {
+        "status": 200,
+        "statusResult": "Under Review"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-04",
+      "userStory": "US-13",
+      "name": "Admin từ chối duyệt API kèm lý do chi tiết",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.966Z",
+      "details": {
+        "status": 200,
+        "statusResult": "Rejected"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-05",
+      "userStory": "US-13",
+      "name": "Provider mở lại API sau khi bị từ chối (Rejected -> Draft)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:32.976Z",
+      "details": {
+        "status": 200,
+        "statusResult": "Draft"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-06",
+      "userStory": "US-13",
+      "name": "Máy trạng thái hoàn chỉnh: Under Review -> Approved -> Published",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.014Z",
+      "details": {
+        "approveStatus": "Approved",
+        "publishStatus": "Published"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-13-07",
+      "userStory": "US-13",
+      "name": "Provider tra cứu trạng thái xuất bản sàn thương mại",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.021Z",
+      "details": {
+        "status": 200,
+        "data": {
+          "id": "7",
+          "status": "Published",
+          "submittedAt": "2026-10-16T16:01:32.979Z",
+          "approvedAt": "2026-10-16T16:01:33.001Z",
+          "publishedAt": "2026-10-16T16:01:33.008Z"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-14-01",
+      "userStory": "US-14",
+      "name": "Admin lấy danh mục các hành động Audit Log chuẩn hóa",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.025Z",
+      "details": {
+        "status": 200,
+        "actionCount": 14
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-14-02",
+      "userStory": "US-14",
+      "name": "Admin truy vấn danh sách Audit Log có phân trang",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.031Z",
+      "details": {
+        "status": 200,
+        "count": 10
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-14-03",
+      "userStory": "US-14",
+      "name": "Admin lọc Audit Log theo targetType=api và targetId",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.036Z",
+      "details": {
+        "status": 200,
+        "matchingLogs": 14
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-14-04",
+      "userStory": "US-14",
+      "name": "Kiểm tra bảo mật: Không rò rỉ token DNS, mật khẩu trong Audit Log",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.042Z",
+      "details": {
+        "hasLeakedTokens": false
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-14-05",
+      "userStory": "US-14",
+      "name": "Chặn Provider và Consumer truy vấn Audit Log (403 Forbidden)",
+      "status": "PASSED",
+      "timestamp": "2026-10-16T16:01:33.047Z",
+      "details": {
+        "status": 403
+      },
+      "notes": ""
+    }
+  ]
+}
