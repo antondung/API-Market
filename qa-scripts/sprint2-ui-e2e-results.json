@@ -1,0 +1,309 @@
+{
+  "meta": {
+    "thoiGian": "2026-10-17T16:10:02.296Z",
+    "nhanh": "test/10-sprint2-final-signoff",
+    "commit": "c673b6e",
+    "baseUrl": "http://localhost:5173",
+    "apiUrl": "http://localhost:3000",
+    "trinhDuyet": "Chromium Headless"
+  },
+  "tongKet": {
+    "tong": 3,
+    "pass": 3,
+    "fail": 0
+  },
+  "testCases": [
+    {
+      "id": "E2E-UI-01",
+      "tieuDe": "Provider Portal & KYC/Publishing UI (US-06, US-08, US-09, US-10, US-11, US-12)",
+      "trangThai": "Pass",
+      "cacBuoc": [
+        {
+          "ma": "S1",
+          "tieuDe": "Provider đăng ký, đăng nhập và nộp hồ sơ KYC (Pending)",
+          "trangThai": "Pass",
+          "thoiGianMs": 1750,
+          "loi": null,
+          "duLieu": {
+            "providerEmail": "qa-e2e-provider-1792253402438@example.com",
+            "orgName": "Tập đoàn Công nghệ QA 1792253402438"
+          }
+        },
+        {
+          "ma": "S3",
+          "tieuDe": "Provider tạo API và upload OpenAPI, hiển thị 7 khối tài liệu",
+          "trangThai": "Pass",
+          "thoiGianMs": 12994,
+          "loi": null,
+          "duLieu": {
+            "apiId": "12",
+            "blocksFound": true,
+            "screenshot": "qa-scripts/screenshots/sprint2-e2e-02-provider-openapi-docs.png"
+          }
+        },
+        {
+          "ma": "S4",
+          "tieuDe": "Provider cấu hình gói Pro, xác minh tên miền DB và Submit Review",
+          "trangThai": "Pass",
+          "thoiGianMs": 6095,
+          "loi": null,
+          "duLieu": {
+            "screenshot": "qa-scripts/screenshots/sprint2-e2e-03-provider-submitted.png"
+          }
+        }
+      ],
+      "apiDaGoi": [
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Submitted&page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:04.636Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/provider-verifications?status=Pending&page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:04.640Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/provider-verifications?status=Pending&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:05.675Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/provider-verifications/28/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:07.726Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/provider-verifications?status=Pending&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:07.736Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/provider-verifications?status=Pending&page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:30.372Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Submitted&page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:30.380Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Submitted&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:31.424Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis/12/dossier",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:33.488Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/apis/12/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:35.566Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Submitted&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:35.573Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Under+Review&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:38.099Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/apis/12/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:40.155Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Under+Review&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:40.162Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Approved&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:42.684Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/apis/12/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:44.754Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Approved&page=1&pageSize=20",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:44.762Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/provider-verifications?status=Pending&page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:49.633Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis?status=Submitted&page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:49.633Z"
+        }
+      ],
+      "anhChup": [
+        "qa-scripts/screenshots/sprint2-e2e-02-provider-openapi-docs.png",
+        "qa-scripts/screenshots/sprint2-e2e-03-provider-submitted.png"
+      ],
+      "loiConsole": []
+    },
+    {
+      "id": "E2E-UI-02",
+      "tieuDe": "Admin Review UI — ProviderVerificationsPage & ApiReviewsPage (US-07, US-13)",
+      "trangThai": "Pass",
+      "cacBuoc": [
+        {
+          "ma": "S2",
+          "tieuDe": "Admin phê duyệt hồ sơ KYC trên ProviderVerificationsPage",
+          "trangThai": "Pass",
+          "thoiGianMs": 6647,
+          "loi": null,
+          "duLieu": {
+            "screenshot": "qa-scripts/screenshots/sprint2-e2e-01-admin-kyc-approved.png"
+          }
+        },
+        {
+          "ma": "S5",
+          "tieuDe": "Admin xem Dossier (cảnh báo cá nhân) và xuất bản API",
+          "trangThai": "Pass",
+          "thoiGianMs": 17389,
+          "loi": null,
+          "duLieu": {
+            "hasPrivacyWarning": false,
+            "apiPublished": true,
+            "screenshot": "qa-scripts/screenshots/sprint2-e2e-04-admin-api-published.png"
+          }
+        }
+      ],
+      "apiDaGoi": [
+        {
+          "method": "POST",
+          "url": "/api/admin/provider-verifications/28/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:07.726Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/apis/12/dossier",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:33.488Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/apis/12/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:35.566Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/apis/12/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:40.155Z"
+        },
+        {
+          "method": "POST",
+          "url": "/api/admin/apis/12/review",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:44.754Z"
+        }
+      ],
+      "anhChup": [
+        "qa-scripts/screenshots/sprint2-e2e-01-admin-kyc-approved.png",
+        "qa-scripts/screenshots/sprint2-e2e-04-admin-api-published.png"
+      ],
+      "loiConsole": []
+    },
+    {
+      "id": "E2E-UI-03",
+      "tieuDe": "Admin Audit Logs & Dashboard UI — AuditLogsPage & AdminDashboardPage (US-14)",
+      "trangThai": "Pass",
+      "cacBuoc": [
+        {
+          "ma": "S6",
+          "tieuDe": "Admin xem AuditLogsPage, xác nhận nhật ký phát sinh và bộ lọc hoạt động",
+          "trangThai": "Pass",
+          "thoiGianMs": 2236,
+          "loi": null,
+          "duLieu": {
+            "totalRows": 25,
+            "screenshot": "qa-scripts/screenshots/sprint2-e2e-05-admin-audit-logs.png"
+          }
+        },
+        {
+          "ma": "S7",
+          "tieuDe": "AdminDashboardPage tải số liệu thống kê realtime từ API thật",
+          "trangThai": "Pass",
+          "thoiGianMs": 2131,
+          "loi": null,
+          "duLieu": {
+            "screenshot": "qa-scripts/screenshots/sprint2-e2e-06-admin-dashboard.png"
+          }
+        }
+      ],
+      "apiDaGoi": [
+        {
+          "method": "GET",
+          "url": "/api/admin/audit-logs?page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:04.632Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/audit-logs?page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:30.374Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/audit-logs/actions",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:47.400Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/audit-logs?page=1&pageSize=25",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:47.414Z"
+        },
+        {
+          "method": "GET",
+          "url": "/api/admin/audit-logs?page=1&pageSize=1",
+          "status": 200,
+          "timestamp": "2026-10-17T16:10:49.629Z"
+        }
+      ],
+      "anhChup": [
+        "qa-scripts/screenshots/sprint2-e2e-05-admin-audit-logs.png",
+        "qa-scripts/screenshots/sprint2-e2e-06-admin-dashboard.png"
+      ],
+      "loiConsole": []
+    }
+  ]
+}
