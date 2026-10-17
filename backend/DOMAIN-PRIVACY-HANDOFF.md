@@ -1,5 +1,7 @@
 # Bổ sung theo checklist Tùng Dương — 16/10/2026
 
+**Cập nhật nghiệm thu 17/10:** Backend PR #49, frontend PR #52 và QA PR #54 đã merge; Tech Lead đã đóng issue #7/#8/#10. Các đoạn bên dưới mô tả bàn giao ngày 16/10, gồm trạng thái frontend còn mock tại thời điểm đó; frontend hiện đã nối API thật. Trạng thái kiểm chứng hiện hành và các ngoại lệ staging/toolchain xem [SPRINT-2-HANDOFF.md](SPRINT-2-HANDOFF.md).
+
 Đã hoàn thiện phần backend còn thiếu trong ảnh phân công: khai báo dữ liệu cá nhân, xác minh tên miền và tích hợp luồng duyệt từ code Dũng. Chỉ bổ sung backend và contract; frontend do Hải Dương nối API, không sửa UI/mock của thành viên khác.
 
 ## Đối chiếu 9 mục
