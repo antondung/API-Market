@@ -162,6 +162,76 @@ services:
     networks:
       - api-market
 
+  # =========================================
+  # API demo cho Provider (EN-07)
+  #
+  # Ba API thật để Provider đăng ký và để Gateway chuyển tiếp trong Sprint 4.
+  # OpenAPI spec tương ứng nằm trong mock-services/<tên>/openapi.json.
+  #
+  # Nằm sau profile "demo" nên `docker compose up` không dựng mặc định.
+  # Bật khi cần demo:
+  #   docker compose --profile demo up -d
+  #
+  # Địa chỉ từ trong mạng compose:  http://weather:4011/v1/weather
+  # Địa chỉ từ máy host:            http://localhost:4011/v1/weather
+  # =========================================
+  weather:
+    build:
+      context: .
+      dockerfile: mock-services/Dockerfile
+    container_name: api-market-weather
+    restart: unless-stopped
+    command: ["weather"]
+    profiles: ["demo"]
+    ports:
+      - "${WEATHER_PORT:-4011}:4011"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4011/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - api-market
+
+  currency:
+    build:
+      context: .
+      dockerfile: mock-services/Dockerfile
+    container_name: api-market-currency
+    restart: unless-stopped
+    command: ["currency"]
+    profiles: ["demo"]
+    ports:
+      - "${CURRENCY_PORT:-4012}:4012"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4012/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - api-market
+
+  catalog:
+    build:
+      context: .
+      dockerfile: mock-services/Dockerfile
+    container_name: api-market-catalog
+    restart: unless-stopped
+    command: ["catalog"]
+    profiles: ["demo"]
+    ports:
+      - "${CATALOG_PORT:-4013}:4013"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4013/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - api-market
+
 volumes:
   postgres-data:
     name: api-market-postgres-data

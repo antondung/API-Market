@@ -15,7 +15,11 @@
     "start": "node --env-file-if-exists=.env dist/src/server.js",
     "setup": "node scripts/setup-local.mjs",
     "db:migrate": "node --env-file-if-exists=.env --import tsx backend/src/database-cli.ts",
-    "db:seed": "node --env-file-if-exists=.env --import tsx backend/src/database-cli.ts --seed"
+    "db:seed": "node --env-file-if-exists=.env --import tsx backend/src/database-cli.ts --seed",
+    "demo:apis": "node mock-services/server.mjs all",
+    "demo:weather": "node mock-services/server.mjs weather",
+    "demo:currency": "node mock-services/server.mjs currency",
+    "demo:catalog": "node mock-services/server.mjs catalog"
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^13.0.0",
