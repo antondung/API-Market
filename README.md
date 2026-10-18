@@ -32,6 +32,7 @@ Phạm vi MVP dùng thanh toán sandbox; không xử lý tiền thật. API Key 
 | [Docker](docs/04-docker.md) | Một lệnh dựng cả hệ thống FE–BE–DB–Redis, migration/seed, xử lý sự cố |
 | [Quy trình quản lý bug](docs/05-quy-trinh-quan-ly-bug.md) | Vòng đời bug, 4 mức severity, template bug report |
 | [Kiểm thử Sprint 1](docs/test/Sprint1_TestReport.md) | Test Plan, Test Cases, Test Report, Acceptance Criteria |
+| [Kiểm thử Sprint 2](docs/test/Sprint2_TestReport.md) | Acceptance Criteria US-06 → US-14, 63 Test Case, Test Report, E2E UI có ảnh chụp |
 | [Tài liệu frontend](docs/frontend-guide.md) | Kiến trúc, auth, hợp đồng API, mô hình dữ liệu, i18n, design system |
 | [Backend](backend/README.md) | Chạy backend, cấu hình môi trường, API Auth, test PostgreSQL |
 | [Frontend](frontend/README.md) | Chạy frontend, cấu trúc code, tích hợp backend |
@@ -53,12 +54,29 @@ Mục lục đầy đủ: [docs/README.md](docs/README.md)
 | Sprint | Thời gian | Deadline nội bộ | Mục tiêu |
 |---|---|---|---|
 | 1 — Nền tảng & Tài khoản | 05/10/2026–11/10/2026 | **10/10/2026** | Tài khoản, RBAC, dashboard theo vai trò, Admin quản lý người dùng, khung FE–BE–DB và CI. |
-| 2 — Provider đăng và xuất bản API | 12/10/2026–20/10/2026 | **19/10/2026** | Xác minh Provider, OpenAPI, tài liệu, pricing, pháp lý, duyệt và publish API. |
+| 2 — Provider đăng và xuất bản API | 12/10/2026–20/10/2026 | **19/10/2026** | Xác minh Provider, OpenAPI, tài liệu, pricing, pháp lý, duyệt và publish API. **Hoàn tất, nghiệm thu 18/10/2026.** |
 | 3 — Consumer tìm, thử và lấy API Key | 21/10/2026–29/10/2026 | **28/10/2026** | Marketplace, API Detail, Playground, Try Before Subscribe, API Key và moderation. |
 | 4 — Subscribe, Gateway kiểm soát & Usage | 30/10/2026–09/11/2026 | **08/11/2026** | Subscription, payment sandbox, Gateway, quota/rate limit, usage và feature freeze. |
 | 5 — Hoàn thiện, bảo mật & sẵn sàng demo | 10/11/2026–15/11/2026 | **14/11/2026** | Cost Guard, Analytics, bảo mật, tải, production, UAT và tài liệu demo. |
 
 Deadline nội bộ đặt trước ngày kết thúc sprint 1 ngày. Ngày cuối sprint dành cho review, sửa lỗi, kiểm thử hồi quy và demo.
+
+### Kết quả Sprint 2
+
+Sprint 2 hoàn tất và nghiệm thu ngày 18/10/2026. Trạng thái trên `develop` tại commit `7ee3f09`:
+
+| Hạng mục | Kết quả |
+|---|---|
+| Tiêu chí chấp nhận | 42 AC cho US-06 → US-14 |
+| Backend unit/integration | 74/74 đạt |
+| Frontend | 115/115 đạt, typecheck đạt |
+| API E2E (Sprint 2) | 59/60 đạt — TC-08-07 theo dõi tại [#60](https://github.com/antondung/API-Market/issues/60) |
+| Playwright E2E UI | 3/3 đạt, 6 ảnh chụp màn hình |
+| CI | Xanh toàn bộ |
+
+Xem chi tiết tại [docs/test/Sprint2_TestReport.md](docs/test/Sprint2_TestReport.md).
+
+Các hạng mục chuyển sang sprint sau: CD staging (EN-08, chưa có môi trường staging), phân loại mã lỗi DNS khi verify domain ([#60](https://github.com/antondung/API-Market/issues/60)).
 
 ## Phân công và bàn giao
 
