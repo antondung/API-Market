@@ -3,14 +3,26 @@ import { isIP } from 'node:net';
 import { ApiError } from './auth.js';
 
 export type TxtLookup = (name: string) => Promise<string[][]>;
+
+// Accepts "8.8.8.8" or "127.0.0.1:5353" so a local fixture resolver can be used in tests.
+export const parseDnsServers = (value: string | undefined) => (value ?? '')
+  .split(',').map(entry => entry.trim()).filter(Boolean);
+
+export const invalidDnsServers = (servers: string[]) => servers.filter(server => {
+  const match = /^(?:\[([^\]]+)\]|([^:]+))(?::(\d{1,5}))?$/.exec(server);
+  if (!match) return true;
+  const port = match[3] === undefined ? 53 : Number(match[3]);
+  return !isIP(match[1] ?? match[2] ?? '') || port < 1 || port > 65535;
+});
+
 export const createTxtLookup = (servers?: string[]): TxtLookup => async name => {
   const resolver = new Resolver({ timeout: 2000, tries: 2 });
-  if (servers) resolver.setServers(servers);
+  if (servers?.length) resolver.setServers(servers);
   const timer = setTimeout(() => resolver.cancel(), 5000);
   try { return await resolver.resolveTxt(name); }
   finally { clearTimeout(timer); }
 };
-export const resolveDomainTxt = createTxtLookup();
+export const resolveDomainTxt = createTxtLookup(parseDnsServers(process.env.DNS_SERVERS));
 export function domainHostname(baseUrl: string) {
   const url = new URL(baseUrl);
   const hostname = url.hostname.toLowerCase().replace(/\.$/, '');

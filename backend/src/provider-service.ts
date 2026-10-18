@@ -9,6 +9,15 @@ import { AuditService } from './audit-service.js';
 
 const hashDomainToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
+// NXDOMAIN/empty answer means the provider has not published the TXT record yet.
+const PROOF_MISSING_CODES = ['ENODATA', 'ENOTFOUND', 'ENOTIMP'];
+export const classifyDomainLookupError = (error: unknown) => {
+  const code = (error as { code?: string } | null)?.code ?? '';
+  return PROOF_MISSING_CODES.includes(code)
+    ? new ApiError(400, 'DOMAIN_PROOF_MISSING', 'DNS TXT proof not found')
+    : new ApiError(503, 'DNS_UNAVAILABLE', 'DNS verification unavailable; retry later');
+};
+
 export const idPattern = /^[1-9][0-9]{0,9}$/;
 function id(value: string) {
   if (!idPattern.test(value) || Number(value) > 2147483647) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
@@ -237,10 +246,7 @@ export class ProviderService {
     });
     let records: string[][];
     try { records = await this.lookupTxt(domainRecordName(snapshot.hostname)); }
-    catch (error) {
-      if (['ENODATA', 'ENOTFOUND'].includes((error as { code?: string }).code ?? '')) throw new ApiError(400, 'DOMAIN_PROOF_MISSING', 'DNS TXT proof not found');
-      throw new ApiError(503, 'DNS_UNAVAILABLE', 'DNS verification unavailable; retry later');
-    }
+    catch (error) { throw classifyDomainLookupError(error); }
     if (!records.some(parts => hashDomainToken(parts.join('')) === snapshot.token_hash)) throw new ApiError(400, 'DOMAIN_PROOF_MISMATCH', 'DNS TXT value does not match the challenge');
     return this.transaction(actor, async (c, p) => {
       const record = await this.owned(c, p, api, true);

@@ -87,3 +87,5 @@ PR #30 và #32 đã merge; Sprint 1 đã nghiệm thu. Dữ liệu SQLite local 
 Backend PostgreSQL hiện phục vụ nhóm `/api/provider` và Swagger chung tại `/docs/`. Chạy `npm run db:migrate` trước khi startup để áp dụng schema 003 của Danh. `db:seed` explicit ở development áp dụng thêm seed 004; không dùng production.
 
 Hướng dẫn endpoint, upload OpenAPI, kết quả kiểm thử và phụ thuộc tích hợp: [SPRINT-2-HANDOFF.md](SPRINT-2-HANDOFF.md). Bổ sung privacy, DNS TXT verification, migration 005 và tích hợp Admin từ code Dũng: [DOMAIN-PRIVACY-HANDOFF.md](DOMAIN-PRIVACY-HANDOFF.md). Chạy migrate 005 trước startup; legal cũ cần khai báo rõ processesPersonalData và domain proof còn hạn trước submit. CORS hỗ trợ GET/POST/PUT/PATCH/DELETE/OPTIONS. Với AUTH_STORE=memory chỉ phục vụ Auth/Admin user hiện có; Provider/Admin review cần PostgreSQL thật.
+
+`DNS_SERVERS` (tùy chọn) nhận danh sách resolver phân cách bằng dấu phẩy, dạng `IP` hoặc `IP:port`, ví dụ `DNS_SERVERS=8.8.8.8,1.1.1.1`. Để trống thì dùng resolver hệ thống. Cấu hình sai (không phải IP, port ngoài 1–65535) làm server dừng ngay khi khởi động. Dùng khi máy chạy không có resolver dùng được, hoặc để trỏ sang DNS nội bộ.
