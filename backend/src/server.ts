@@ -2,6 +2,7 @@ import { createApp, localFrontendOrigins } from './app.js';
 import { AuthService } from './auth.js';
 import { MemoryAuthStore } from './store.js';
 import { PostgresAuthStore } from './postgres-store.js';
+import { invalidDnsServers, parseDnsServers } from './provider-dns.js';
 import { ProviderService } from './provider-service.js';
 import { AdminReviewService } from './admin-review-service.js';
 import { AuditService } from './audit-service.js';
@@ -12,6 +13,9 @@ if (mode === 'memory' && process.env.NODE_ENV === 'production') throw new Error(
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('replace-')) throw new Error('A random JWT_SECRET is required. Run npm run setup for local development.');
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
+const dnsServers = parseDnsServers(process.env.DNS_SERVERS);
+const badDnsServers = invalidDnsServers(dnsServers);
+if (badDnsServers.length) throw new Error(`DNS_SERVERS must be a comma-separated list of IP or IP:port values: ${badDnsServers.join(', ')}`);
 const secret = process.env.JWT_SECRET;
 const store = mode === 'postgres' ? new PostgresAuthStore(process.env.DATABASE_URL ?? '') : new MemoryAuthStore();
 if (store instanceof PostgresAuthStore) await store.ready();

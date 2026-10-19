@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { providerSchemas, requireProviderOwner, requireVerified, requireDraft, submitApi, transitionApi } from '../src/provider-domain.js';
 import { importOpenApi, ImportError } from '../src/provider-openapi-import.js';
 import { providerContract } from '../src/provider-contract.js';
+import { classifyDomainLookupError } from '../src/provider-service.js';
+import { invalidDnsServers, parseDnsServers } from '../src/provider-dns.js';
 
 const spec = () => ({ openapi: '3.0.3', info: { title: 'Fixture only', version: '1.0' }, paths: { '/items/{id}': {
   parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
@@ -79,4 +81,27 @@ test('proposal contains Provider contracts and no Admin handlers', () => {
   assert.ok(providerContract.paths['/api/provider/apis/{id}/import-openapi']);
   assert.ok(Object.keys(providerContract.paths).every(path => path.startsWith('/api/provider/')));
   assert.deepEqual(JSON.parse(readFileSync('backend/provider-sprint2.openapi.json', 'utf8')), JSON.parse(JSON.stringify(providerContract)));
+});
+
+test('domain lookup errors: absent proof is 400, resolver failure stays 503, unknown codes fail closed', () => {
+  for (const code of ['ENODATA', 'ENOTFOUND']) {
+    const error = classifyDomainLookupError(Object.assign(new Error('dns'), { code }));
+    assert.equal(error.status, 400); assert.equal(error.code, 'DOMAIN_PROOF_MISSING');
+  }
+  // ENOTIMP means the resolver cannot answer, not that the provider is missing a record.
+  for (const code of ['ENOTIMP', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEOUT', 'ETIMEDOUT', 'EREFUSED', 'ESERVFAIL', 'ECANCELLED', 'EPERM', 'SOMETHING_NEW', '']) {
+    const error = classifyDomainLookupError(Object.assign(new Error('dns'), { code }));
+    assert.equal(error.status, 503); assert.equal(error.code, 'DNS_UNAVAILABLE');
+  }
+  assert.equal(classifyDomainLookupError(null).status, 503);
+  assert.equal(classifyDomainLookupError('EACCES').status, 503);
+});
+
+test('DNS_SERVERS parsing accepts IP and IP:port lists and rejects anything else', () => {
+  assert.deepEqual(parseDnsServers(undefined), []);
+  assert.deepEqual(parseDnsServers(' 8.8.8.8 , 1.1.1.1:53 ,, '), ['8.8.8.8', '1.1.1.1:53']);
+  assert.deepEqual(parseDnsServers('2001:4860:4860::8888'), ['2001:4860:4860::8888']);
+  assert.deepEqual(invalidDnsServers(['8.8.8.8', '1.1.1.1:53', '[::1]:5353', '127.0.0.1:15353', '2001:4860:4860::8888', '::1']), []);
+  assert.deepEqual(invalidDnsServers(['dns.google', '8.8.8.8:0', '8.8.8.8:70000', '1.2.3', '8.8.8.8:abc']),
+    ['dns.google', '8.8.8.8:0', '8.8.8.8:70000', '1.2.3', '8.8.8.8:abc']);
 });
