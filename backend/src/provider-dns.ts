@@ -9,9 +9,11 @@ export const parseDnsServers = (value: string | undefined) => (value ?? '')
   .split(',').map(entry => entry.trim()).filter(Boolean);
 
 export const invalidDnsServers = (servers: string[]) => servers.filter(server => {
-  const match = /^(?:\[([^\]]+)\]|([^:]+))(?::(\d{1,5}))?$/.exec(server);
+  // A bare IPv6 address contains ':' but is still a valid resolver address.
+  if (isIP(server)) return false;
+  const match = /^(?:\[([^\]]+)\]|([^:]+)):(\d{1,5})$/.exec(server);
   if (!match) return true;
-  const port = match[3] === undefined ? 53 : Number(match[3]);
+  const port = Number(match[3]);
   return !isIP(match[1] ?? match[2] ?? '') || port < 1 || port > 65535;
 });
 

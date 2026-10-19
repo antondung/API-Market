@@ -84,11 +84,12 @@ test('proposal contains Provider contracts and no Admin handlers', () => {
 });
 
 test('domain lookup errors: absent proof is 400, resolver failure stays 503, unknown codes fail closed', () => {
-  for (const code of ['ENODATA', 'ENOTFOUND', 'ENOTIMP']) {
+  for (const code of ['ENODATA', 'ENOTFOUND']) {
     const error = classifyDomainLookupError(Object.assign(new Error('dns'), { code }));
     assert.equal(error.status, 400); assert.equal(error.code, 'DOMAIN_PROOF_MISSING');
   }
-  for (const code of ['ECONNREFUSED', 'ECONNRESET', 'ETIMEOUT', 'ETIMEDOUT', 'EREFUSED', 'ESERVFAIL', 'ECANCELLED', 'EPERM', 'SOMETHING_NEW', '']) {
+  // ENOTIMP means the resolver cannot answer, not that the provider is missing a record.
+  for (const code of ['ENOTIMP', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEOUT', 'ETIMEDOUT', 'EREFUSED', 'ESERVFAIL', 'ECANCELLED', 'EPERM', 'SOMETHING_NEW', '']) {
     const error = classifyDomainLookupError(Object.assign(new Error('dns'), { code }));
     assert.equal(error.status, 503); assert.equal(error.code, 'DNS_UNAVAILABLE');
   }
@@ -100,7 +101,7 @@ test('DNS_SERVERS parsing accepts IP and IP:port lists and rejects anything else
   assert.deepEqual(parseDnsServers(undefined), []);
   assert.deepEqual(parseDnsServers(' 8.8.8.8 , 1.1.1.1:53 ,, '), ['8.8.8.8', '1.1.1.1:53']);
   assert.deepEqual(parseDnsServers('2001:4860:4860::8888'), ['2001:4860:4860::8888']);
-  assert.deepEqual(invalidDnsServers(['8.8.8.8', '1.1.1.1:53', '[::1]:5353', '127.0.0.1:15353']), []);
+  assert.deepEqual(invalidDnsServers(['8.8.8.8', '1.1.1.1:53', '[::1]:5353', '127.0.0.1:15353', '2001:4860:4860::8888', '::1']), []);
   assert.deepEqual(invalidDnsServers(['dns.google', '8.8.8.8:0', '8.8.8.8:70000', '1.2.3', '8.8.8.8:abc']),
     ['dns.google', '8.8.8.8:0', '8.8.8.8:70000', '1.2.3', '8.8.8.8:abc']);
 });

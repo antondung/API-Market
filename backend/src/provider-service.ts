@@ -9,8 +9,9 @@ import { AuditService } from './audit-service.js';
 
 const hashDomainToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-// NXDOMAIN/empty answer means the provider has not published the TXT record yet.
-const PROOF_MISSING_CODES = ['ENODATA', 'ENOTFOUND', 'ENOTIMP'];
+// NXDOMAIN/empty answer means the provider has not published the TXT record yet. ENOTIMP
+// means the resolver cannot answer at all, so it must stay in the 503 group.
+const PROOF_MISSING_CODES = ['ENODATA', 'ENOTFOUND'];
 export const classifyDomainLookupError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code ?? '';
   return PROOF_MISSING_CODES.includes(code)

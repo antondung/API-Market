@@ -277,7 +277,7 @@ jobs:
   ket-qua:
     name: Kiem tra nen tang
     if: always()
-    needs: [phat-hien, nen-tang, node, frontend, python, java-maven, java-gradle, dotnet, go, rust, php, ruby, cpp]
+    needs: [phat-hien, nen-tang, node, frontend, api-e2e, python, java-maven, java-gradle, dotnet, go, rust, php, ruby, cpp]
     runs-on: ubuntu-latest
     steps:
       - name: Tong hop ket qua

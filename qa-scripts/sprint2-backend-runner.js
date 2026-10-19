@@ -19,6 +19,9 @@ const NXDOMAIN_FIXTURE_IP = (process.env.NXDOMAIN_FIXTURE_IP || '').trim();
 const NXDOMAIN_FIXTURE_PORT = Number(process.env.NXDOMAIN_FIXTURE_PORT || 15353);
 let dnsFixture = null;
 
+// The suite is a fixed list; a short run must fail rather than report a green subset.
+const EXPECTED_TESTS = 60;
+
 function nxdomainReply(query) {
   const header = Buffer.from(query.subarray(0, 12));
   header.writeUInt16BE(0x8183, 2);
@@ -896,6 +899,15 @@ async function main() {
 
   if (dnsFixture) { try { dnsFixture.close(); } catch {} }
   await pool.end();
+
+  if (results.length !== EXPECTED_TESTS) {
+    console.error(`Expected ${EXPECTED_TESTS} test cases but recorded ${results.length}.`);
+    failCount++;
+  }
+  if (failCount > 0) {
+    console.error(`Sprint 2 API E2E failed: ${failCount} failing or missing test case(s).`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch(err => {
