@@ -9,6 +9,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Pool } from 'pg';
+import { createSocket } from 'node:dgram';
+
+// TC-08-07 asserts "no TXT record yet" -> 400 DOMAIN_PROOF_MISSING. On hosts without a
+// working system resolver Node reports ECONNREFUSED, and the backend correctly answers
+// 503 DNS_UNAVAILABLE instead. NXDOMAIN_FIXTURE_IP (e.g. 127.0.0.1) starts a local DNS
+// stub answering NXDOMAIN, so the case exercises proof absence rather than resolver health.
+const NXDOMAIN_FIXTURE_IP = (process.env.NXDOMAIN_FIXTURE_IP || '').trim();
+const NXDOMAIN_FIXTURE_PORT = Number(process.env.NXDOMAIN_FIXTURE_PORT || 15353);
+let dnsFixture = null;
+
+// The suite is a fixed list; a short run must fail rather than report a green subset.
+const EXPECTED_TESTS = 60;
+
+function nxdomainReply(query) {
+  const header = Buffer.from(query.subarray(0, 12));
+  header.writeUInt16BE(0x8183, 2);
+  header.writeUInt16BE(0, 6);
+  header.writeUInt16BE(0, 8);
+  header.writeUInt16BE(0, 10);
+  return Buffer.concat([header, query.subarray(12)]);
+}
+
+function startNxdomainFixture() {
+  return new Promise((resolve, reject) => {
+    const socket = createSocket('udp4');
+    socket.once('error', reject);
+    socket.on('message', (message, remote) => {
+      if (message.length < 12) return;
+      socket.send(nxdomainReply(message), remote.port, remote.address);
+    });
+    socket.bind(NXDOMAIN_FIXTURE_PORT, NXDOMAIN_FIXTURE_IP, () => resolve(socket));
+  });
+}
 
 const BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3000';
 const DB_URL = process.env.DATABASE_URL || 'postgresql://postgres:MatKhauCuaToi123!@127.0.0.1:5432/api_market_dev';
@@ -95,6 +128,10 @@ async function main() {
     process.exit(1);
   }
   log('Backend server is healthy and responding.\n');
+  if (NXDOMAIN_FIXTURE_IP) {
+    dnsFixture = await startNxdomainFixture();
+    log('DNS NXDOMAIN fixture listening on 15353.');
+  }
 
   // Fetch agreement version from DB or API
   const agreementRes = await apiRequest('GET', '/api/provider/agreement');
@@ -860,11 +897,22 @@ async function main() {
   fs.writeFileSync(outputPath, JSON.stringify(outputData, null, 2), 'utf8');
   console.log(`Báo cáo kết quả chi tiết đã được xuất ra: ${outputPath}`);
 
+  if (dnsFixture) { try { dnsFixture.close(); } catch {} }
   await pool.end();
+
+  if (results.length !== EXPECTED_TESTS) {
+    console.error(`Expected ${EXPECTED_TESTS} test cases but recorded ${results.length}.`);
+    failCount++;
+  }
+  if (failCount > 0) {
+    console.error(`Sprint 2 API E2E failed: ${failCount} failing or missing test case(s).`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch(err => {
   console.error('Fatal execution error:', err);
+  if (dnsFixture) { try { dnsFixture.close(); } catch {} }
   pool.end();
   process.exit(1);
 });
