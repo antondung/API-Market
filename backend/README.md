@@ -88,4 +88,6 @@ Backend PostgreSQL hiện phục vụ nhóm `/api/provider` và Swagger chung t�
 
 Hướng dẫn endpoint, upload OpenAPI, kết quả kiểm thử và phụ thuộc tích hợp: [SPRINT-2-HANDOFF.md](SPRINT-2-HANDOFF.md). Bổ sung privacy, DNS TXT verification, migration 005 và tích hợp Admin từ code Dũng: [DOMAIN-PRIVACY-HANDOFF.md](DOMAIN-PRIVACY-HANDOFF.md). Chạy migrate 005 trước startup; legal cũ cần khai báo rõ processesPersonalData và domain proof còn hạn trước submit. CORS hỗ trợ GET/POST/PUT/PATCH/DELETE/OPTIONS. Với AUTH_STORE=memory chỉ phục vụ Auth/Admin user hiện có; Provider/Admin review cần PostgreSQL thật.
 
+Migration `006_fix_rejection_reason_null.sql` thay hai CHECK constraint của 003 để lý do từ chối không còn nhận `NULL`. `LENGTH(BTRIM(NULL))` trả `NULL` và PostgreSQL coi kết quả `NULL` là đạt, nên trước đây bản ghi `Rejected` có thể lưu mà không có lý do; chuỗi rỗng và khoảng trắng đã bị chặn sẵn. Migration 003 giữ nguyên vì đã áp dụng ở database hiện có.
+
 `DNS_SERVERS` (tùy chọn) nhận danh sách resolver phân cách bằng dấu phẩy, dạng `IP` hoặc `IP:port`, ví dụ `DNS_SERVERS=8.8.8.8,1.1.1.1`. Để trống thì dùng resolver hệ thống. Cấu hình sai (không phải IP, port ngoài 1–65535) làm server dừng ngay khi khởi động. Dùng khi máy chạy không có resolver dùng được, hoặc để trỏ sang DNS nội bộ.
