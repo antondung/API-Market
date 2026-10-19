@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { ApiError } from '../../services/authApi';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CustomSelect } from '../../components/ui/CustomSelect';
@@ -11,7 +12,6 @@ import {
   updateProviderApi,
   listProviderVersions,
   createProviderVersion,
-  updateProviderVersion,
   listProviderPlans,
   createProviderPlan,
   updateProviderPlan,
@@ -61,6 +61,7 @@ export const CreateApiWizardPage: React.FC = () => {
 
   // Draft recovery state
   const [createdDraftApiId, setCreatedDraftApiId] = useState<string | null>(null);
+  const [ambiguousDraftCreation, setAmbiguousDraftCreation] = useState(false);
 
   // Verification & Agreement status
   const [verification, setVerification] = useState<ProviderVerification | null>(null);
@@ -103,6 +104,7 @@ export const CreateApiWizardPage: React.FC = () => {
   if (currentUser?.id !== prevUserId) {
     setPrevUserId(currentUser?.id || null);
     setCreatedDraftApiId(null);
+    setAmbiguousDraftCreation(false);
     setAgreement(null);
     setLegalConfirmed(false);
     setAcceptedAgreementVersion(null);
@@ -202,6 +204,13 @@ export const CreateApiWizardPage: React.FC = () => {
       return;
     }
 
+    if (ambiguousDraftCreation && !createdDraftApiId) {
+      setWizardError(
+        'Yêu cầu tạo API trước đó gặp sự cố mạng không xác định. Vui lòng vào "Kho API của tôi" kiểm tra xem bản nháp đã được tạo hay chưa trước khi tạo mới.'
+      );
+      return;
+    }
+
     const checkSession = (): boolean => {
       return isMountedRef.current && currentUserIdRef.current === pinnedUserId;
     };
@@ -298,28 +307,52 @@ export const CreateApiWizardPage: React.FC = () => {
 
       if (!isExistingDraft) {
         // 1. Initial Draft Creation
-        const createdApi = await createProviderApi({
-          name: trimmedName,
-          description: expectedDescription,
-          category,
-          baseUrl: trimmedUrl,
-          tags: tagList,
-        });
+        let createdApi: any;
+        try {
+          createdApi = await createProviderApi({
+            name: trimmedName,
+            description: expectedDescription,
+            category,
+            baseUrl: trimmedUrl,
+            tags: tagList,
+          });
+        } catch (apiErr: any) {
+          if (!checkSession()) return;
+          const isDefinitiveError =
+            apiErr instanceof ApiError &&
+            apiErr.status >= 400 &&
+            apiErr.status < 500 &&
+            apiErr.status !== 408;
+
+          if (isDefinitiveError) {
+            throw apiErr;
+          }
+
+          // Ambiguous network/server error: draft might have been committed on backend.
+          // Block unsafe automatic re-POST retry to prevent orphan resources or duplicates.
+          setAmbiguousDraftCreation(true);
+          setWizardError(
+            'Yêu cầu tạo API gặp sự cố kết nối mạng hoặc máy chủ phản hồi chậm. Bản nháp có thể đã được lưu. Để bảo đảm toàn vẹn dữ liệu và tránh tạo bản ghi trùng lặp, vui lòng kiểm tra danh sách tại "Kho API của tôi" trước khi thử lại.'
+          );
+          setSubmitting(false);
+          return;
+        }
 
         if (!checkSession()) return;
 
         targetApiId = createdApi.id;
         setCreatedDraftApiId(createdApi.id);
+        setAmbiguousDraftCreation(false);
 
         // 2. Initial Version Creation
         const versionStr = version.trim() || '1.0.0';
         try {
-          await createProviderVersion(targetApiId, {
+          await createProviderVersion(targetApiId!, {
             version: versionStr,
             changelog: 'Phiên bản khởi tạo ban đầu',
           });
         } catch (versionErr: any) {
-          const recheckVersions = await listProviderVersions(targetApiId).catch(() => []);
+          const recheckVersions = await listProviderVersions(targetApiId!).catch(() => []);
           const verifiedVersion = recheckVersions.find(v => v.version === versionStr);
           if (!verifiedVersion) {
             throw versionErr;
@@ -332,7 +365,7 @@ export const CreateApiWizardPage: React.FC = () => {
         const quotaNum = parseInt(freeQuota, 10) || 2000;
         const rpsNum = parseInt(freeRps, 10) || 10;
         try {
-          await createProviderPlan(targetApiId, {
+          await createProviderPlan(targetApiId!, {
             name: 'Free',
             priceMonthly: 0,
             currency: 'USD',
@@ -340,12 +373,14 @@ export const CreateApiWizardPage: React.FC = () => {
             rateLimit: rpsNum,
           });
         } catch (planErr: any) {
-          const recheckPlans = await listProviderPlans(targetApiId).catch(() => []);
+          const recheckPlans = await listProviderPlans(targetApiId!).catch(() => []);
           const verifiedPlan = recheckPlans.find(
-            p => p.name.toLowerCase() === 'free' || p.priceMonthly === 0
+            p => p.name.trim().toLowerCase() === 'free'
           );
           if (
             !verifiedPlan ||
+            verifiedPlan.priceMonthly !== 0 ||
+            verifiedPlan.currency.toUpperCase() !== 'USD' ||
             verifiedPlan.quota !== quotaNum ||
             verifiedPlan.rateLimit !== rpsNum
           ) {
@@ -384,44 +419,40 @@ export const CreateApiWizardPage: React.FC = () => {
           if (!checkSession()) return;
         }
 
-        // Reconcile Version
+        // Reconcile Version:
+        // Never update or rename existing versions blindly, as that deletes OpenAPI docs
+        // and endpoints on the backend. Prefer creating a new Version to preserve existing data.
         const versionStr = version.trim() || '1.0.0';
         const existingVersions = await listProviderVersions(targetApiId!);
         if (!checkSession()) return;
 
         const exactVersion = existingVersions.find(v => v.version === versionStr);
         if (!exactVersion) {
-          if (existingVersions.length === 1) {
-            await updateProviderVersion(targetApiId!, existingVersions[0].id, {
+          try {
+            await createProviderVersion(targetApiId!, {
               version: versionStr,
               changelog: 'Phiên bản khởi tạo ban đầu',
             });
-          } else {
-            try {
-              await createProviderVersion(targetApiId!, {
-                version: versionStr,
-                changelog: 'Phiên bản khởi tạo ban đầu',
-              });
-            } catch (versionErr: any) {
-              const recheckVersions = await listProviderVersions(targetApiId!);
-              const verifiedVersion = recheckVersions.find(v => v.version === versionStr);
-              if (!verifiedVersion) {
-                throw versionErr;
-              }
+          } catch (versionErr: any) {
+            const recheckVersions = await listProviderVersions(targetApiId!);
+            const verifiedVersion = recheckVersions.find(v => v.version === versionStr);
+            if (!verifiedVersion) {
+              throw versionErr;
             }
           }
         }
 
         if (!checkSession()) return;
 
-        // Reconcile Free Plan
+        // Reconcile Free Plan:
+        // Identify using canonical plan name 'Free'. Never treat Basic/Pro with price=0 as Free.
         const quotaNum = parseInt(freeQuota, 10) || 2000;
         const rpsNum = parseInt(freeRps, 10) || 10;
         const existingPlans = await listProviderPlans(targetApiId!);
         if (!checkSession()) return;
 
         const freePlan = existingPlans.find(
-          p => p.name.toLowerCase() === 'free' || p.priceMonthly === 0
+          p => p.name.trim().toLowerCase() === 'free'
         );
 
         if (!freePlan) {
@@ -436,10 +467,12 @@ export const CreateApiWizardPage: React.FC = () => {
           } catch (planErr: any) {
             const recheckPlans = await listProviderPlans(targetApiId!);
             const verifiedPlan = recheckPlans.find(
-              p => p.name.toLowerCase() === 'free' || p.priceMonthly === 0
+              p => p.name.trim().toLowerCase() === 'free'
             );
             if (
               !verifiedPlan ||
+              verifiedPlan.priceMonthly !== 0 ||
+              verifiedPlan.currency.toUpperCase() !== 'USD' ||
               verifiedPlan.quota !== quotaNum ||
               verifiedPlan.rateLimit !== rpsNum
             ) {
@@ -455,13 +488,28 @@ export const CreateApiWizardPage: React.FC = () => {
             freePlan.rateLimit !== rpsNum;
 
           if (planNeedsUpdate) {
-            await updateProviderPlan(targetApiId!, freePlan.id, {
-              name: 'Free',
-              priceMonthly: 0,
-              currency: 'USD',
-              quota: quotaNum,
-              rateLimit: rpsNum,
-            });
+            try {
+              await updateProviderPlan(targetApiId!, freePlan.id, {
+                name: 'Free',
+                priceMonthly: 0,
+                currency: 'USD',
+                quota: quotaNum,
+                rateLimit: rpsNum,
+              });
+            } catch (updateErr: any) {
+              const recheckPlans = await listProviderPlans(targetApiId!);
+              const verifiedPlan = recheckPlans.find(p => p.id === freePlan.id);
+              if (
+                !verifiedPlan ||
+                verifiedPlan.name !== 'Free' ||
+                verifiedPlan.priceMonthly !== 0 ||
+                verifiedPlan.currency.toUpperCase() !== 'USD' ||
+                verifiedPlan.quota !== quotaNum ||
+                verifiedPlan.rateLimit !== rpsNum
+              ) {
+                throw updateErr;
+              }
+            }
           }
         }
       }
@@ -520,6 +568,14 @@ export const CreateApiWizardPage: React.FC = () => {
       {wizardError && (
         <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span>{wizardError}</span>
+          {ambiguousDraftCreation && (
+            <Link
+              to="/provider/apis"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface text-error font-medium text-xs border border-error/40 hover:bg-error-container/40 shrink-0"
+            >
+              Kiểm tra Kho API của tôi →
+            </Link>
+          )}
           {createdDraftApiId && (
             <span className="text-xs text-on-surface font-mono bg-surface-container px-2.5 py-1 rounded-md border border-outline-variant/30">
               Bản nháp #{createdDraftApiId} đã được lưu an toàn. Nhấn lại Hoàn tất để tiếp tục.
@@ -1005,7 +1061,7 @@ export const CreateApiWizardPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="md"
-                disabled={submitting || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
+                disabled={submitting || ambiguousDraftCreation || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
                 onClick={handleFinish}
                 icon="check_circle"
               >

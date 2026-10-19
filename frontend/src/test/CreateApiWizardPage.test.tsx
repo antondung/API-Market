@@ -4,6 +4,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { CreateApiWizardPage } from '../pages/provider/CreateApiWizardPage';
 import * as providerApiModule from '../services/providerApi';
+import { ApiError } from '../services/authApi';
 import * as AuthContextModule from '../context/AuthContext';
 import type { User } from '../types';
 import type { ProviderAgreement, ProviderVerification } from '../services/providerTypes';
@@ -861,10 +862,11 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
       status: 'Draft',
     } as any);
 
-    // Initial version in backend was 1.0.0
+    // Initial version in backend was 1.0.0 with OpenAPI documentation
     vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
-      { id: 'ver-existing-6', version: '1.0.0', changelog: 'Ban dau' } as any,
+      { id: 'ver-existing-6', version: '1.0.0', changelog: 'Ban dau', openapiDocument: '{"openapi":"3.0.0"}' } as any,
     ]);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-new-6', version: '1.1.0' } as any);
     const updateVersionSpy = vi.spyOn(providerApiModule, 'updateProviderVersion').mockResolvedValue({ id: 'ver-existing-6' } as any);
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
       { id: 'plan-tc-06', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 2000, rateLimit: 10 } as any,
@@ -911,10 +913,12 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
     });
 
     await waitFor(() => {
-      expect(updateVersionSpy).toHaveBeenCalledWith('api-tc-06', 'ver-existing-6', {
+      // Non-destructive: must create new version rather than destructively updating existing version
+      expect(createVersionSpy).toHaveBeenCalledWith('api-tc-06', {
         version: '1.1.0',
         changelog: 'Phiên bản khởi tạo ban đầu',
       });
+      expect(updateVersionSpy).not.toHaveBeenCalled();
       expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-tc-06');
     });
   });
@@ -1389,6 +1393,619 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
 
     // Downstream mutations and navigation must be aborted by unmount check
     expect(saveLegalSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // ----------------------------------------------------
+  // Phase 2: Non-Destructive Version Reconciliation Tests
+  // ----------------------------------------------------
+  it('TC-FE-RETRY-VER-01: Existing version with OpenAPI docs and endpoints is preserved without calling updateProviderVersion', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-ver-01' } as any);
+    const updateVersionSpy = vi.spyOn(providerApiModule, 'updateProviderVersion');
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-ver-01' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-ver-01' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal service down'))
+      .mockResolvedValueOnce({ id: 'legal-ver-01' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-ver-01',
+      name: 'TC-VER-01 API',
+      description: 'API description',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+
+    // Existing version 1.0.0 has rich OpenAPI docs and endpoints
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      {
+        id: 'ver-ver-01',
+        version: '1.0.0',
+        changelog: 'Ban dau',
+        openapiDocument: '{"openapi":"3.0.0","info":{"title":"Existing API"}}',
+      } as any,
+    ]);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-ver-01', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 2000, rateLimit: 10 } as any,
+    ]);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-VER-01 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal service down/i)).toBeDefined());
+
+    // Retry submission without changing version
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      // Must not call destructive updateProviderVersion
+      expect(updateVersionSpy).not.toHaveBeenCalled();
+      // On retry, createProviderVersion was NOT called again (only called once during initial creation)
+      expect(createVersionSpy).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-ver-01');
+    });
+  });
+
+  it('TC-FE-RETRY-VER-02: Version conflict (409) during concurrent creation reconciles cleanly if version exists', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-ver-02' } as any);
+    const updateVersionSpy = vi.spyOn(providerApiModule, 'updateProviderVersion');
+
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockRejectedValue(
+      new ApiError(409, 'VERSION_CONFLICT', 'Version already exists')
+    );
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-ver-02', version: '1.0.0', changelog: 'Created concurrently' } as any,
+    ]);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([]);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-ver-02' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-ver-02' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-VER-02 API');
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(updateVersionSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-ver-02');
+    });
+  });
+
+  it('TC-FE-RETRY-VER-03: Requested version already exists on retry: neither createProviderVersion nor updateProviderVersion is called', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-ver-03' } as any);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-ver-03' } as any);
+    const updateVersionSpy = vi.spyOn(providerApiModule, 'updateProviderVersion');
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-ver-03' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal service down'))
+      .mockResolvedValueOnce({ id: 'legal-ver-03' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-ver-03',
+      name: 'TC-VER-03 API',
+      description: 'API description',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-ver-03', version: '1.0.0', changelog: 'Existing 1.0.0' } as any,
+    ]);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-ver-03', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 2000, rateLimit: 10 } as any,
+    ]);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-VER-03 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal service down/i)).toBeDefined());
+
+    // Attempt 2 (Retry): exactVersion 1.0.0 already exists
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      // createProviderVersion called 1 time during attempt 1, 0 times during retry
+      expect(createVersionSpy).toHaveBeenCalledTimes(1);
+      expect(updateVersionSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-ver-03');
+    });
+  });
+
+  it('TC-FE-RETRY-VER-04: Version creation succeeds on backend but network response is dropped; recheck finds version and succeeds', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-ver-04' } as any);
+    const updateVersionSpy = vi.spyOn(providerApiModule, 'updateProviderVersion');
+
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockRejectedValue(
+      new Error('ECONNRESET: Connection dropped after commit')
+    );
+    // Recheck in catch(versionErr) returns the committed version
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-ver-04', version: '1.0.0', changelog: 'Created in backend' } as any,
+    ]);
+
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([]);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-ver-04' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-ver-04' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-VER-04 API');
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(updateVersionSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-ver-04');
+    });
+  });
+
+  it('TC-FE-RETRY-VER-05: Unsafe updateProviderVersion must never execute when version string is modified', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-ver-05' } as any);
+    const updateVersionSpy = vi.spyOn(providerApiModule, 'updateProviderVersion');
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-new' } as any);
+
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal error'))
+      .mockResolvedValueOnce({ id: 'legal-ver-05' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-ver-05',
+      name: 'TC-VER-05 API',
+      description: 'Dịch vụ API thương mại',
+      category: 'Machine Learning & AI',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+
+    // Initial version in backend is 1.0.0
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-ver-05', version: '1.0.0', changelog: 'Ban dau', openapiDocument: 'spec' } as any,
+    ]);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-ver-05', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 2000, rateLimit: 10 } as any,
+    ]);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-VER-05 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal error/i)).toBeDefined());
+
+    // Back to Step 1 and change version to 2.0.0
+    fireEvent.click(screen.getByRole('button', { name: /← (Back|Quay lại)/i }));
+    await waitFor(() => screen.getByRole('button', { name: /Tiếp tục sang Pháp lý & Tuân thủ/i }));
+    fireEvent.click(screen.getByRole('button', { name: /← (Back|Quay lại)/i }));
+    await waitFor(() => screen.getByRole('button', { name: /Tiếp tục sang Gói Cước/i }));
+    fireEvent.click(screen.getByRole('button', { name: /← (Back|Quay lại)/i }));
+    await waitFor(() => screen.getByPlaceholderText('1.0.0'));
+
+    fireEvent.change(screen.getByPlaceholderText('1.0.0'), { target: { value: '2.0.0' } });
+
+    // Advance back to Step 4
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục sang Định tuyến Upstream/i }));
+    await waitFor(() => screen.getByRole('button', { name: /Tiếp tục sang Gói Cước/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục sang Gói Cước/i }));
+    await waitFor(() => screen.getByRole('button', { name: /Tiếp tục sang Pháp lý & Tuân thủ/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục sang Pháp lý & Tuân thủ/i }));
+    await waitFor(() => screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i }));
+    });
+
+    await waitFor(() => {
+      // Must NOT update existing version (which would destroy OpenAPI doc and endpoints)
+      expect(updateVersionSpy).not.toHaveBeenCalled();
+      // Must create a new version 2.0.0
+      expect(createVersionSpy).toHaveBeenCalledWith('api-ver-05', {
+        version: '2.0.0',
+        changelog: 'Phiên bản khởi tạo ban đầu',
+      });
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-ver-05');
+    });
+  });
+
+  // ----------------------------------------------------
+  // Phase 3: Canonical Free Plan Matching & Reconciliation Tests
+  // ----------------------------------------------------
+  it('TC-FE-RETRY-PLAN-01: Free Plan matched by canonical name "Free" case-insensitively, updates quota/rateLimit', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-plan-01' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-plan-01' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-existing-free' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal error'))
+      .mockResolvedValueOnce({ id: 'legal-plan-01' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-plan-01',
+      name: 'TC-PLAN-01 API',
+      description: 'Dịch vụ API thương mại',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-plan-01', version: '1.0.0' } as any,
+    ]);
+
+    // On retry, existing free plan has '  Free  ' name (with whitespace and mixed case), with quota: 1000
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-existing-free', name: '  Free  ', priceMonthly: 0, currency: 'USD', quota: 1000, rateLimit: 5 } as any,
+    ]);
+    const updatePlanSpy = vi.spyOn(providerApiModule, 'updateProviderPlan').mockResolvedValue({ id: 'plan-existing-free' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-PLAN-01 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal error/i)).toBeDefined());
+
+    // Attempt 2 (Retry): Reconciles existing Free plan
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(updatePlanSpy).toHaveBeenCalledWith('api-plan-01', 'plan-existing-free', expect.objectContaining({
+        quota: 2000,
+        rateLimit: 10,
+      }));
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-plan-01');
+    });
+  });
+
+  it('TC-FE-RETRY-PLAN-02: Basic Plan has priceMonthly = 0 but Free Plan is absent: creates Free Plan, does NOT overwrite Basic Plan', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-plan-02' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-plan-02' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'new-free-plan' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal error'))
+      .mockResolvedValueOnce({ id: 'legal-plan-02' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-plan-02',
+      name: 'TC-PLAN-02 API',
+      description: 'Dịch vụ API thương mại',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-plan-02', version: '1.0.0' } as any,
+    ]);
+
+    // Existing plans has a promotional Basic tier with priceMonthly = 0, but no Free plan
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-basic-promo', name: 'Basic', priceMonthly: 0, currency: 'USD', quota: 10000, rateLimit: 100 } as any,
+    ]);
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'new-free-plan' } as any);
+    const updatePlanSpy = vi.spyOn(providerApiModule, 'updateProviderPlan');
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-PLAN-02 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal error/i)).toBeDefined());
+
+    // Attempt 2 (Retry)
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      // Must create a new Free plan, not update Basic plan
+      expect(createPlanSpy).toHaveBeenCalledWith('api-plan-02', expect.objectContaining({
+        name: 'Free',
+        priceMonthly: 0,
+      }));
+      expect(updatePlanSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-plan-02');
+    });
+  });
+
+  it('TC-FE-RETRY-PLAN-03: Both Basic and Free plans exist with priceMonthly = 0: updates only Free plan, preserves Basic plan', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-plan-03' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-plan-03' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-free' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal error'))
+      .mockResolvedValueOnce({ id: 'legal-plan-03' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-plan-03',
+      name: 'TC-PLAN-03 API',
+      description: 'Dịch vụ API thương mại',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-plan-03', version: '1.0.0' } as any,
+    ]);
+
+    // Both Basic ($0) and Free ($0) exist
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-basic-0', name: 'Basic', priceMonthly: 0, currency: 'USD', quota: 50000, rateLimit: 200 } as any,
+      { id: 'plan-free', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 1000, rateLimit: 5 } as any,
+    ]);
+    const updatePlanSpy = vi.spyOn(providerApiModule, 'updateProviderPlan').mockResolvedValue({ id: 'plan-free' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-PLAN-03 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal error/i)).toBeDefined());
+
+    // Attempt 2 (Retry):
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      // Must update plan-free
+      expect(updatePlanSpy).toHaveBeenCalledWith('api-plan-03', 'plan-free', expect.objectContaining({
+        quota: 2000,
+        rateLimit: 10,
+      }));
+      // Must NEVER update plan-basic-0
+      expect(updatePlanSpy).not.toHaveBeenCalledWith('api-plan-03', 'plan-basic-0', expect.anything());
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-plan-03');
+    });
+  });
+
+  it('TC-FE-RETRY-PLAN-04: Update Free Plan returns HTTP 409 conflict: recheck verifies plan exists and proceeds', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-plan-04' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-plan-04' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-free-04' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal error'))
+      .mockResolvedValueOnce({ id: 'legal-plan-04' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-plan-04',
+      name: 'TC-PLAN-04 API',
+      description: 'Dịch vụ API thương mại',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-plan-04', version: '1.0.0' } as any,
+    ]);
+
+    // Initial plan has quota 1000. Recheck has updated quota 2000.
+    vi.spyOn(providerApiModule, 'listProviderPlans')
+      .mockResolvedValueOnce([
+        { id: 'plan-free-04', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 1000, rateLimit: 5 } as any,
+      ])
+      .mockResolvedValueOnce([
+        { id: 'plan-free-04', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 2000, rateLimit: 10 } as any,
+      ]);
+
+    vi.spyOn(providerApiModule, 'updateProviderPlan').mockRejectedValue(
+      new ApiError(409, 'PLAN_CONFLICT', 'Plan update conflict')
+    );
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-PLAN-04 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal error/i)).toBeDefined());
+
+    // Attempt 2 (Retry)
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-plan-04');
+    });
+  });
+
+  it('TC-FE-RETRY-PLAN-05: Create Free Plan response lost after backend commit: recheck discovers plan and proceeds', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-plan-05' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-plan-05' } as any);
+
+    // Initial list in catch(planErr) discovers plan was committed
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-free-05', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 2000, rateLimit: 10 } as any,
+    ]);
+
+    // Creation throws connection drop
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockRejectedValue(
+      new Error('ETIMEDOUT: Connection dropped after commit')
+    );
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-plan-05' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-PLAN-05 API');
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-plan-05');
+    });
+  });
+
+  it('TC-FE-RETRY-PLAN-06: Unrelated pricing plans (Pro, Enterprise) are never modified during reconciliation', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-plan-06' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-plan-06' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-free-06' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal')
+      .mockRejectedValueOnce(new Error('Legal error'))
+      .mockResolvedValueOnce({ id: 'legal-plan-06' } as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-plan-06',
+      name: 'TC-PLAN-06 API',
+      description: 'Dịch vụ API thương mại',
+      category: 'General',
+      baseUrl: '',
+      tags: [],
+      status: 'Draft',
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([
+      { id: 'ver-plan-06', version: '1.0.0' } as any,
+    ]);
+
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-pro', name: 'Pro', priceMonthly: 49, currency: 'USD', quota: 100000, rateLimit: 500 } as any,
+      { id: 'plan-enterprise', name: 'Enterprise', priceMonthly: 199, currency: 'USD', quota: 1000000, rateLimit: 2000 } as any,
+      { id: 'plan-free-06', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 1000, rateLimit: 5 } as any,
+    ]);
+    const updatePlanSpy = vi.spyOn(providerApiModule, 'updateProviderPlan').mockResolvedValue({ id: 'plan-free-06' } as any);
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('TC-PLAN-06 API');
+    await acceptAgreementAndSubmit();
+    await waitFor(() => expect(screen.getByText(/Legal error/i)).toBeDefined());
+
+    // Attempt 2 (Retry)
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      // Must not update Pro or Enterprise plans
+      expect(updatePlanSpy).not.toHaveBeenCalledWith('api-plan-06', 'plan-pro', expect.anything());
+      expect(updatePlanSpy).not.toHaveBeenCalledWith('api-plan-06', 'plan-enterprise', expect.anything());
+      expect(updatePlanSpy).toHaveBeenCalledWith('api-plan-06', 'plan-free-06', expect.anything());
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-plan-06');
+    });
+  });
+
+  // ----------------------------------------------------
+  // Phase 4: Ambiguous Draft Creation & Network Failure Hardening
+  // ----------------------------------------------------
+  it('TC-FE-RETRY-DRAFT-01: Definitive 400/422 validation errors fail normally without triggering ambiguous draft banner', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockRejectedValue(
+      new ApiError(422, 'VALIDATION_ERROR', 'Tên API không hợp lệ hoặc chứa ký tự bị cấm')
+    );
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion');
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('Invalid API Name');
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Tên API không hợp lệ/i)).toBeDefined();
+      // Must NOT display ambiguous draft banner
+      expect(screen.queryByText(/Bản nháp có thể đã được lưu/i)).toBeNull();
+      expect(screen.queryByRole('link', { name: /Kho API của tôi/i })).toBeNull();
+      // No child resources created
+      expect(createVersionSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  it('TC-FE-RETRY-DRAFT-02: Ambiguous network timeout on initial API creation blocks blind re-POST and displays recovery link to My APIs', async () => {
+    vi.spyOn(providerApiModule, 'createProviderApi').mockRejectedValue(
+      new ApiError(408, 'REQUEST_TIMEOUT', 'Gateway timeout waiting for upstream response')
+    );
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion');
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan');
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('Timeout API');
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      // Must show ambiguous draft warning banner
+      expect(screen.getByText(/Yêu cầu tạo API gặp sự cố kết nối mạng hoặc máy chủ phản hồi chậm/i)).toBeDefined();
+      expect(screen.getByText(/Bản nháp có thể đã được lưu/i)).toBeDefined();
+      const recoveryLink = screen.getByRole('link', { name: /Kho API của tôi/i });
+      expect(recoveryLink.getAttribute('href')).toBe('/provider/apis');
+
+      // Crucial: No child version or plan creation was attempted (prevents orphans)
+      expect(createVersionSpy).not.toHaveBeenCalled();
+      expect(createPlanSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  it('TC-FE-RETRY-DRAFT-03: Ambiguous draft creation disables blind re-submit and does not create orphan versions or plans', async () => {
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockRejectedValue(
+      new Error('Failed to fetch (Network offline)')
+    );
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('Offline API');
+    await acceptAgreementAndSubmit();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Yêu cầu tạo API gặp sự cố kết nối mạng hoặc máy chủ phản hồi chậm/i)).toBeDefined();
+    });
+
+    // Verify only 1 createProviderApi call was made
+    expect(createApiSpy).toHaveBeenCalledTimes(1);
+
+    // Verify submit button is disabled while in ambiguous state
+    const submitBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    expect(submitBtn.hasAttribute('disabled')).toBe(true);
+
+    // Clicking does not trigger any further network POSTs
+    fireEvent.click(submitBtn);
+    expect(createApiSpy).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
