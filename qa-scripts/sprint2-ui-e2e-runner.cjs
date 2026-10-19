@@ -1099,7 +1099,7 @@ async function runSuite() {
         throw new Error('Yêu cầu xác thực thỏa thuận authoritative phía máy chủ (GET /api/provider/agreement) không được kích hoạt!');
       }
 
-      // Kiểm chứng toàn vẹn trong PostgreSQL: ZERO MUTATIONS across apis, api_versions, api_plans, api_legal_agreements
+      // Kiểm chứng toàn vẹn trong PostgreSQL: ZERO MUTATIONS across apis, api_versions, api_plans, api_legal_declarations
       const checkApis = await pool.query('SELECT count(*) FROM apis WHERE name = $1', [fcApiName]);
       if (Number(checkApis.rows[0].count) !== 0) {
         throw new Error('Vi phạm fail-closed: Bản ghi apis đã bị tạo dù thỏa thuận máy chủ xác thực lỗi!');
@@ -1115,9 +1115,9 @@ async function runSuite() {
         throw new Error('Vi phạm fail-closed: Bản ghi api_versions đã bị tạo!');
       }
 
-      const checkLegal = await pool.query('SELECT count(*) FROM api_legal_agreements l JOIN apis a ON a.id = l.api_id WHERE a.name = $1', [fcApiName]);
+      const checkLegal = await pool.query('SELECT count(*) FROM api_legal_declarations l JOIN apis a ON a.id = l.api_id WHERE a.name = $1', [fcApiName]);
       if (Number(checkLegal.rows[0].count) !== 0) {
-        throw new Error('Vi phạm fail-closed: Bản ghi api_legal_agreements đã bị tạo!');
+        throw new Error('Vi phạm fail-closed: Bản ghi api_legal_declarations đã bị tạo!');
       }
       log('✅ Kiểm chứng fail-closed thành công: 0 biến động dữ liệu trong DB khi xác thực thỏa thuận thất bại.');
 
@@ -1163,7 +1163,7 @@ async function runSuite() {
             status: 201,
             contentType: 'application/json',
             body: JSON.stringify({
-              id: 'synthetic-in-flight-api-id',
+              id: 998877,
               name: leakApiName,
               status: 'Draft'
             })
@@ -1204,12 +1204,12 @@ async function runSuite() {
 
       // Kiểm tra giao diện Admin không rò rỉ ID hoặc thông tin Provider trước
       const adminBodyText = await page.locator('body').innerText();
-      if (adminBodyText.includes('synthetic-in-flight-api-id') || adminBodyText.includes(createdProviderEmail)) {
+      if (adminBodyText.includes(leakApiName) || adminBodyText.includes(createdProviderEmail)) {
         throw new Error('Phát hiện rò rỉ ID hoặc dữ liệu Provider trong phiên làm việc của Admin!');
       }
 
       // Kiểm chứng trong PostgreSQL: Phản hồi trễ của tài khoản cũ không tiếp tục kích hoạt tạo version/plan
-      const leakCheck = await pool.query("SELECT count(*) FROM api_versions WHERE api_id = 'synthetic-in-flight-api-id'");
+      const leakCheck = await pool.query('SELECT count(*) FROM api_versions WHERE api_id = 998877');
       if (Number(leakCheck.rows[0].count) !== 0) {
         throw new Error('Vi phạm phân lập: In-flight response của phiên trước vẫn tiếp tục tạo version!');
       }
