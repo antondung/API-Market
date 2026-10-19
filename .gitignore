@@ -10,8 +10,11 @@ build/
 .vite/
 
 # Environment files
+.env
 .env.local
 .env.*.local
+!.env.example
+!.env.docker.example
 
 # Editor
 .vscode/

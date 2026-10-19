@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 import { startAutoTranslator } from './i18n/autoTranslator';
@@ -9,6 +9,7 @@ import { getCurrentLanguage } from './i18n';
 import { PublicNavbar } from './components/layout/PublicNavbar';
 import { PublicFooter } from './components/layout/PublicFooter';
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 // Marketplace & Discovery Pages
 import { MarketplacePage } from './pages/marketplace/MarketplacePage';
@@ -57,8 +58,6 @@ import { SubscriptionMonitoringPage } from './pages/admin/SubscriptionMonitoring
 import { AuditLogsPage } from './pages/admin/AuditLogsPage';
 import { GatewayOperationsPage } from './pages/admin/GatewayOperationsPage';
 
-import type { UserRole } from './types';
-
 // Layout Wrappers
 const PublicLayout: React.FC = () => (
   <div className="min-h-screen flex flex-col bg-surface text-on-surface font-body">
@@ -70,20 +69,10 @@ const PublicLayout: React.FC = () => (
   </div>
 );
 
-// Route Guards
-const ProtectedRoute: React.FC<{ allowedRoles?: UserRole[] }> = ({ allowedRoles }) => {
-  const { user, isAuthenticated } = useAuth();
-  const location = useLocation();
-
-  if (!isAuthenticated) {
-    return <Navigate to="/401" state={{ from: location.pathname }} replace />;
-  }
-
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/403" state={{ from: location.pathname, requiredRoles: allowedRoles }} replace />;
-  }
-
-  return <Outlet />;
+const ScopedAppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser } = useAuth();
+  const scope = currentUser?.id ?? 'anonymous';
+  return <AppProvider key={scope} storageScope={scope}>{children}</AppProvider>;
 };
 
 export function App() {
@@ -95,7 +84,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppProvider>
+        <ScopedAppProvider>
           <Routes>
             {/* PUBLIC & MARKETPLACE ROUTES */}
             <Route element={<PublicLayout />}>
@@ -119,8 +108,8 @@ export function App() {
               <Route path="/403" element={<Forbidden403Page />} />
             </Route>
 
-            {/* CONSUMER WORKSPACE ROUTES (Protected: USER, API_PROVIDER, ADMIN) */}
-            <Route element={<ProtectedRoute allowedRoles={['USER', 'API_PROVIDER', 'ADMIN']} />}>
+            {/* Provider có quyền sử dụng Consumer workspace; Admin chỉ dùng Admin workspace. */}
+            <Route element={<ProtectedRoute allowedRoles={['USER', 'API_PROVIDER']} />}>
               <Route
                 element={
                   <WorkspaceLayout workspace="consumer">
@@ -141,8 +130,7 @@ export function App() {
               </Route>
             </Route>
 
-            {/* PROVIDER WORKSPACE ROUTES (Protected: API_PROVIDER, ADMIN) */}
-            <Route element={<ProtectedRoute allowedRoles={['API_PROVIDER', 'ADMIN']} />}>
+            <Route element={<ProtectedRoute allowedRoles={['API_PROVIDER']} />}>
               <Route
                 element={
                   <WorkspaceLayout workspace="provider">
@@ -188,7 +176,7 @@ export function App() {
             {/* CATCH ALL */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </AppProvider>
+        </ScopedAppProvider>
       </AuthProvider>
     </BrowserRouter>
   );

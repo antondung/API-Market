@@ -1,29 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
 
 export const ProfileSettingsPage: React.FC = () => {
-  const { currentUser, setCurrentUser } = useAuth();
+  const { currentUser } = useAuth();
   const { t } = useLanguage();
 
-  const [name, setName] = useState(currentUser.name);
-  const [company, setCompany] = useState(currentUser.company || '');
-  const [twoFactor, setTwoFactor] = useState(currentUser.twoFactorEnabled);
-  const [successMsg, setSuccessMsg] = useState(false);
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCurrentUser({
-      ...currentUser,
-      name,
-      company,
-      twoFactorEnabled: twoFactor
-    });
-    setSuccessMsg(true);
-    setTimeout(() => setSuccessMsg(false), 2000);
-  };
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -37,25 +23,26 @@ export const ProfileSettingsPage: React.FC = () => {
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 lg:p-8 shadow-sm">
         <div className="flex items-center gap-5 mb-8 pb-6 border-b border-outline-variant/20">
           <div className="w-16 h-16 rounded-2xl bg-primary text-on-primary flex items-center justify-center font-bold text-2xl shadow-sm">
-            {currentUser.name.charAt(0)}
+            {user.name.charAt(0)}
           </div>
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-headline-sm font-bold text-on-surface">{currentUser.name}</h2>
-              <Badge variant="primary">{currentUser.role}</Badge>
+              <h2 className="text-headline-sm font-bold text-on-surface">{user.name}</h2>
+              <Badge variant="primary">{user.role}</Badge>
             </div>
-            <p className="text-body-sm text-on-surface-variant font-code-sm">{currentUser.email}</p>
+            <p className="text-body-sm text-on-surface-variant font-code-sm">{user.email}</p>
           </div>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-6">
+        <div className="mb-5 rounded-xl border border-outline-variant/30 bg-surface-container p-4 text-body-sm text-on-surface-variant">Backend Sprint 1 chưa có API cập nhật hồ sơ hoặc 2FA. Các trường dưới đây chỉ hiển thị và không thể lưu.</div>
+        <form className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div>
               <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Full Name')}</label>
               <input
                 type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={user.name}
+                disabled
                 className="w-full p-3 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-md outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
@@ -63,8 +50,8 @@ export const ProfileSettingsPage: React.FC = () => {
               <label className="text-body-sm font-semibold text-on-surface block mb-1.5">{t('Organization / Company')}</label>
               <input
                 type="text"
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
+                value="Chưa có dữ liệu"
+                disabled
                 className="w-full p-3 rounded-xl border border-outline-variant bg-surface-container text-on-surface text-body-md outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
@@ -79,8 +66,8 @@ export const ProfileSettingsPage: React.FC = () => {
             <label className="flex items-start gap-3 p-4 rounded-xl bg-surface-container border border-outline-variant/30 cursor-pointer">
               <input
                 type="checkbox"
-                checked={twoFactor}
-                onChange={(e) => setTwoFactor(e.target.checked)}
+                checked={false}
+                disabled
                 className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer"
               />
               <div>
@@ -93,10 +80,8 @@ export const ProfileSettingsPage: React.FC = () => {
           </div>
 
           <div className="pt-4 border-t border-outline-variant/20 flex items-center justify-between">
-            <span className="text-body-sm text-emerald-600 font-medium">
-              {successMsg && t('Profile settings updated successfully!')}
-            </span>
-            <Button type="submit" variant="primary" size="md">
+            <span className="text-body-sm text-on-surface-variant">Chưa được hỗ trợ trong Sprint 1</span>
+            <Button type="button" variant="primary" size="md" disabled>
               {t('Save Changes')}
             </Button>
           </div>

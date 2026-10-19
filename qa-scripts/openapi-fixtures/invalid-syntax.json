@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Syntax Error API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/invalid": {
+      "get": {
+        "summary": "Unclosed quote and corrupted structure
+        "responses": {
+          200: { "description": "OK" }
+        }
+      }
+    }
+  }
+

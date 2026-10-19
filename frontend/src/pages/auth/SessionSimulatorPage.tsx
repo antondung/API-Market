@@ -5,31 +5,73 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CodeBlock } from '../../components/ui/CodeBlock';
 import {
-  login as apiLogin,
-  getMe,
-  refresh as apiRefresh,
-  logout as apiLogout,
-  checkRoleAccess,
+  apiRequest,
   checkBackendHealth,
-  getSavedTokens,
   formatBackendErrorMessage,
-  type SavedTokens
+  type BackendTokens,
+  type BackendUser
 } from '../../services/authApi';
+
+interface IsolatedSimulatedTokens {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+  user: BackendUser;
+}
+
+function redactToken(token?: string): string {
+  if (!token) return '';
+  if (token.length <= 16) return '***[REDACTED]***';
+  return `${token.slice(0, 10)}...[REDACTED]`;
+}
+
+function sanitizeForDisplay(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (Array.isArray(payload)) return payload.map(sanitizeForDisplay);
+
+  const copy: Record<string, unknown> = { ...(payload as Record<string, unknown>) };
+  if (typeof copy.accessToken === 'string') copy.accessToken = redactToken(copy.accessToken);
+  if (typeof copy.refreshToken === 'string') copy.refreshToken = redactToken(copy.refreshToken);
+  if (copy.data && typeof copy.data === 'object') {
+    copy.data = sanitizeForDisplay(copy.data);
+  }
+  return copy;
+}
 
 export const SessionSimulatorPage: React.FC = () => {
   const { currentUser, backendOnline } = useAuth();
   const { t } = useLanguage();
 
+  // An toàn khi truy cập trực tiếp bằng URL mà chưa đăng nhập
+  const user = currentUser ?? {
+    id: 'simulated-guest',
+    email: 'guest@apihub.dev',
+    role: 'USER' as const,
+    name: 'Guest / Chưa đăng nhập',
+    status: 'Active' as const,
+    createdAt: '',
+    lastLoginAt: '',
+    twoFactorEnabled: false,
+    quotaUsedPercent: 0,
+  };
+
+  const [testEmail, setTestEmail] = useState('');
+  const [testPassword, setTestPassword] = useState('');
+
   const [accessTokenTtl, setAccessTokenTtl] = useState(840);
   const [refreshTokenRotatedCount, setRefreshTokenRotatedCount] = useState(2);
   const [liveTestRunning, setLiveTestRunning] = useState<string | null>(null);
   const [liveApiResponse, setLiveApiResponse] = useState<any>(null);
-  const [liveTokens, setLiveTokens] = useState<SavedTokens | null>(() => getSavedTokens());
+  const [simulatedIssuedAt] = useState(() => Math.floor(Date.now() / 1000));
+
+  // Token của simulator được cô lập hoàn toàn trong memory, không ghi đè sessionStorage phiên thật
+  const [simulatedTokens, setSimulatedTokens] = useState<IsolatedSimulatedTokens | null>(null);
 
   const [simulatedLogs, setSimulatedLogs] = useState<string[]>([
-    'Session initialized: Issued Access Token (15m TTL) + Rotating Refresh Token (7d TTL)',
-    'Verified signature with RS256 public key',
-    'Redis token rotation lock acquired'
+    'Session initialized: Issued Access Token (15m TTL) + Rotating Refresh Token (7d TTL, SHA-256 DB Hash)',
+    'Verified signature with HS256 secret key (Express 5 backend)',
+    'Backend store rotation concurrency check passed'
   ]);
 
   const handleRunHealthCheck = async () => {
@@ -53,13 +95,21 @@ export const SessionSimulatorPage: React.FC = () => {
   };
 
   const handleRunLiveLogin = async () => {
+    if (!testEmail || !testPassword) {
+      setLiveApiResponse({ error: 'Vui lòng nhập Email và Mật khẩu kiểm thử để thực hiện đăng nhập cô lập.' });
+      return;
+    }
     setLiveTestRunning('login');
     try {
-      const tokens = await apiLogin({ email: 'test.consumer@apihub.dev', password: 'Password123!@#' });
-      setLiveTokens(tokens);
-      setLiveApiResponse(tokens);
+      // Gọi trực tiếp apiRequest để không lưu vào sessionStorage sản xuất và không đổi phiên người dùng thật
+      const response = await apiRequest<{ data: BackendTokens }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: testEmail.trim().toLowerCase(), password: testPassword }),
+      });
+      setSimulatedTokens(response.data);
+      setLiveApiResponse(sanitizeForDisplay(response.data));
       setSimulatedLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] POST /api/auth/login -> 200 OK: Issued JWT for ${tokens.user.email} (${tokens.user.role})`,
+        `[${new Date().toLocaleTimeString()}] POST /api/auth/login -> 200 OK: Cấp JWT cô lập cho ${response.data.user.email} (${response.data.user.role})`,
         ...prev
       ]);
     } catch (err) {
@@ -74,12 +124,15 @@ export const SessionSimulatorPage: React.FC = () => {
   };
 
   const handleRunLiveGetMe = async () => {
+    if (!simulatedTokens?.accessToken) return;
     setLiveTestRunning('me');
     try {
-      const me = await getMe();
-      setLiveApiResponse(me);
+      const response = await apiRequest<{ data: BackendUser }>('/api/auth/me', {
+        headers: { Authorization: `Bearer ${simulatedTokens.accessToken}` },
+      });
+      setLiveApiResponse(response.data);
       setSimulatedLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] GET /api/auth/me -> 200 OK: Validated identity for ${me.email}`,
+        `[${new Date().toLocaleTimeString()}] GET /api/auth/me -> 200 OK: Xác thực danh tính ${response.data.email}`,
         ...prev
       ]);
     } catch (err) {
@@ -94,14 +147,19 @@ export const SessionSimulatorPage: React.FC = () => {
   };
 
   const handleRunLiveRefresh = async () => {
+    if (!simulatedTokens?.refreshToken) return;
     setLiveTestRunning('refresh');
     try {
-      const tokens = await apiRefresh();
-      setLiveTokens(tokens);
-      setLiveApiResponse(tokens);
+      const response = await apiRequest<{ data: BackendTokens }>('/api/auth/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken: simulatedTokens.refreshToken }),
+      });
+      setSimulatedTokens(response.data);
+      setLiveApiResponse(sanitizeForDisplay(response.data));
       setRefreshTokenRotatedCount(prev => prev + 1);
+      setAccessTokenTtl(900);
       setSimulatedLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] POST /api/auth/refresh -> 200 OK: Rotated refresh token, new token issued`,
+        `[${new Date().toLocaleTimeString()}] POST /api/auth/refresh -> 200 OK: Đã quay vòng refresh token, cấp cặp token mới`,
         ...prev
       ]);
     } catch (err) {
@@ -116,12 +174,15 @@ export const SessionSimulatorPage: React.FC = () => {
   };
 
   const handleRunRoleGuard = async (role: 'consumer' | 'provider' | 'admin') => {
+    if (!simulatedTokens?.accessToken) return;
     setLiveTestRunning(`guard-${role}`);
     try {
-      const res = await checkRoleAccess(role);
+      const res = await apiRequest<{ data: { role: string } }>(`/api/access/${role}`, {
+        headers: { Authorization: `Bearer ${simulatedTokens.accessToken}` },
+      });
       setLiveApiResponse(res);
       setSimulatedLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] GET /api/access/${role} -> 200 OK: Access GRANTED for role ${role}`,
+        `[${new Date().toLocaleTimeString()}] GET /api/access/${role} -> 200 OK: Quyền truy cập HỢP LỆ cho vai trò ${role}`,
         ...prev
       ]);
     } catch (err) {
@@ -136,13 +197,17 @@ export const SessionSimulatorPage: React.FC = () => {
   };
 
   const handleRunLiveLogout = async () => {
+    if (!simulatedTokens?.accessToken) return;
     setLiveTestRunning('logout');
     try {
-      await apiLogout();
-      setLiveTokens(null);
-      setLiveApiResponse({ status: 204, message: 'Session revoked successfully in backend.' });
+      await apiRequest<void>('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${simulatedTokens.accessToken}` },
+      });
+      setSimulatedTokens(null);
+      setLiveApiResponse({ status: 204, message: 'Phiên kiểm thử đã được thu hồi trên máy chủ.' });
       setSimulatedLogs(prev => [
-        `[${new Date().toLocaleTimeString()}] POST /api/auth/logout -> 204 No Content: Session revoked on backend`,
+        `[${new Date().toLocaleTimeString()}] POST /api/auth/logout -> 204 No Content: Đã thu hồi phiên kiểm thử trên backend`,
         ...prev
       ]);
     } catch (err) {
@@ -156,7 +221,7 @@ export const SessionSimulatorPage: React.FC = () => {
     setAccessTokenTtl(900);
     setRefreshTokenRotatedCount(prev => prev + 1);
     setSimulatedLogs(prev => [
-      `[${new Date().toLocaleTimeString()}] Refresh Token Rotation Triggered: Old token invalidated, issued new pair (US-02)`,
+      `[${new Date().toLocaleTimeString()}] Mô phỏng Refresh Token Rotation: Hủy token cũ, cấp cặp token mới (US-02)`,
       ...prev
     ]);
   };
@@ -164,23 +229,20 @@ export const SessionSimulatorPage: React.FC = () => {
   const handleSimulateExpire = () => {
     setAccessTokenTtl(0);
     setSimulatedLogs(prev => [
-      `[${new Date().toLocaleTimeString()}] Access Token Expired (HTTP 401 Unauthorized triggered on next API call)`,
+      `[${new Date().toLocaleTimeString()}] Access Token hết hạn (HTTP 401 Unauthorized sẽ kích hoạt ở lần gọi tiếp theo)`,
       ...prev
     ]);
   };
 
-  const sampleJwtPayload = React.useMemo(() => {
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    return {
-      sub: currentUser.id,
-      email: currentUser.email,
-      role: currentUser.role,
-      iss: "https://auth.apihub.io",
-      aud: "https://gateway.apihub.io",
-      iat: nowSeconds - (900 - accessTokenTtl),
-      exp: nowSeconds + accessTokenTtl
-    };
-  }, [currentUser.id, currentUser.email, currentUser.role, accessTokenTtl]);
+  const sampleJwtPayload = {
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+    iss: 'https://auth.apihub.dev',
+    aud: 'https://gateway.apihub.dev',
+    iat: simulatedIssuedAt - (900 - accessTokenTtl),
+    exp: simulatedIssuedAt + accessTokenTtl,
+  };
 
   return (
     <div className="pt-20 pb-20 px-6 max-w-4xl mx-auto space-y-8">
@@ -200,9 +262,10 @@ export const SessionSimulatorPage: React.FC = () => {
               <Badge variant={backendOnline ? 'success' : 'neutral'}>
                 {backendOnline ? 'CONNECTED (127.0.0.1:3000)' : 'DISCONNECTED'}
               </Badge>
+              <Badge variant="primary">Isolated Test Env</Badge>
             </div>
             <p className="text-body-sm text-on-surface-variant mt-0.5">
-              {t('Thực hiện các lệnh gọi HTTP trực tiếp đến backend theo tài liệu OpenAPI từ PR #30 / develop.')}
+              Các lệnh gọi kiểm thử sử dụng bộ nhớ độc lập (in-memory) và không ghi đè phiên đăng nhập chính của trình duyệt.
             </p>
           </div>
           <Button variant="outline" size="sm" icon="refresh" onClick={handleRunHealthCheck} disabled={Boolean(liveTestRunning)}>
@@ -210,12 +273,36 @@ export const SessionSimulatorPage: React.FC = () => {
           </Button>
         </div>
 
+        {/* Input credentials for testing */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-surface-container rounded-xl">
+          <div>
+            <label className="text-body-xs font-semibold text-on-surface-variant block mb-1">Email kiểm thử</label>
+            <input
+              type="email"
+              value={testEmail}
+              onChange={e => setTestEmail(e.target.value)}
+              placeholder="vd: test.consumer@apihub.dev"
+              className="w-full px-3 py-2 text-body-sm rounded-lg border border-outline-variant bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="text-body-xs font-semibold text-on-surface-variant block mb-1">Mật khẩu kiểm thử</label>
+            <input
+              type="password"
+              value={testPassword}
+              onChange={e => setTestPassword(e.target.value)}
+              placeholder="Mật khẩu tài khoản kiểm thử"
+              className="w-full px-3 py-2 text-body-sm rounded-lg border border-outline-variant bg-surface text-on-surface outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <Button
             size="sm"
             variant="primary"
             onClick={handleRunLiveLogin}
-            disabled={Boolean(liveTestRunning)}
+            disabled={Boolean(liveTestRunning) || !testEmail || !testPassword}
           >
             {liveTestRunning === 'login' ? 'Calling...' : 'POST /api/auth/login'}
           </Button>
@@ -224,7 +311,7 @@ export const SessionSimulatorPage: React.FC = () => {
             size="sm"
             variant="outline"
             onClick={handleRunLiveGetMe}
-            disabled={Boolean(liveTestRunning) || !liveTokens}
+            disabled={Boolean(liveTestRunning) || !simulatedTokens}
           >
             {liveTestRunning === 'me' ? 'Calling...' : 'GET /api/auth/me'}
           </Button>
@@ -233,7 +320,7 @@ export const SessionSimulatorPage: React.FC = () => {
             size="sm"
             variant="outline"
             onClick={handleRunLiveRefresh}
-            disabled={Boolean(liveTestRunning) || !liveTokens}
+            disabled={Boolean(liveTestRunning) || !simulatedTokens}
           >
             {liveTestRunning === 'refresh' ? 'Calling...' : 'POST /api/auth/refresh'}
           </Button>
@@ -242,7 +329,7 @@ export const SessionSimulatorPage: React.FC = () => {
             size="sm"
             variant="danger"
             onClick={handleRunLiveLogout}
-            disabled={Boolean(liveTestRunning) || !liveTokens}
+            disabled={Boolean(liveTestRunning) || !simulatedTokens}
           >
             {liveTestRunning === 'logout' ? 'Calling...' : 'POST /api/auth/logout'}
           </Button>
@@ -257,7 +344,7 @@ export const SessionSimulatorPage: React.FC = () => {
               size="sm"
               variant="outline"
               onClick={() => handleRunRoleGuard('consumer')}
-              disabled={Boolean(liveTestRunning) || !liveTokens}
+              disabled={Boolean(liveTestRunning) || !simulatedTokens}
             >
               GET /api/access/consumer
             </Button>
@@ -265,7 +352,7 @@ export const SessionSimulatorPage: React.FC = () => {
               size="sm"
               variant="outline"
               onClick={() => handleRunRoleGuard('provider')}
-              disabled={Boolean(liveTestRunning) || !liveTokens}
+              disabled={Boolean(liveTestRunning) || !simulatedTokens}
             >
               GET /api/access/provider
             </Button>
@@ -273,7 +360,7 @@ export const SessionSimulatorPage: React.FC = () => {
               size="sm"
               variant="outline"
               onClick={() => handleRunRoleGuard('admin')}
-              disabled={Boolean(liveTestRunning) || !liveTokens}
+              disabled={Boolean(liveTestRunning) || !simulatedTokens}
             >
               GET /api/access/admin
             </Button>
@@ -284,12 +371,12 @@ export const SessionSimulatorPage: React.FC = () => {
           <div className="pt-3">
             <h4 className="text-body-sm font-bold text-on-surface mb-1.5 flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-primary">data_object</span>
-              {t('Phản hồi Backend Mới Nhất')}
+              {t('Phản hồi Backend Mới Nhất (Đã che token nhạy cảm)')}
             </h4>
             <CodeBlock
               code={JSON.stringify(liveApiResponse, null, 2)}
               language="json"
-              title="Live Backend HTTP Response"
+              title="Live Backend HTTP Response (Sanitized)"
             />
           </div>
         )}
@@ -322,7 +409,8 @@ export const SessionSimulatorPage: React.FC = () => {
 
           <div className="p-3 bg-surface-container rounded-xl text-body-sm text-on-surface-variant space-y-1">
             <div>{t('Rotations Completed:')} <strong className="text-on-surface">{refreshTokenRotatedCount} {t('lần')}</strong></div>
-            <div>{t('Storage Target:')} <strong className="text-on-surface">HttpOnly Cookie + SHA-256 DB Hash</strong></div>
+            <div>{t('Storage Target:')} <strong className="text-on-surface">Client Storage (Bearer Auth) + SHA-256 DB Hash (Server)</strong></div>
+            <div>{t('Signature Algorithm:')} <strong className="text-on-surface">HS256 (HMAC-SHA256)</strong></div>
           </div>
 
           <div className="flex gap-2.5 pt-2">
@@ -341,7 +429,7 @@ export const SessionSimulatorPage: React.FC = () => {
           <CodeBlock
             code={JSON.stringify(sampleJwtPayload, null, 2)}
             language="json"
-            title="RS256 JWT Payload"
+            title="HS256 JWT Payload (Simulated)"
           />
         </div>
       </div>

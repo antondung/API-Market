@@ -9,12 +9,14 @@ import { useLanguage } from '../../i18n';
 export const ProviderDashboardPage: React.FC = () => {
   const { apis, verifications, requestLogs, subscriptions } = useApp();
   const { currentUser } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const providerVerification = verifications.find(v => v.providerId === currentUser.id);
+  const providerVerification = verifications.find(v => v.providerId === user.id);
   const isVerified = providerVerification?.status === 'Verified';
-  const myApis = apis.filter(a => a.providerId === currentUser.id);
+  const myApis = apis.filter(a => a.providerId === user.id);
   const totalSubscribers = myApis.reduce((acc, a) => acc + (a.subscribersCount || 0), 0);
   const myApiIds = new Set(myApis.map(a => a.id));
   const myApiNames = new Set(myApis.map(a => a.name));
@@ -45,7 +47,7 @@ export const ProviderDashboardPage: React.FC = () => {
               </span>
             )}
             <span className="text-body-sm text-on-surface-variant font-code-md">
-              Org: {currentUser.company || t('Độc lập / Cá nhân')}
+              Org: {user.company || t('Độc lập / Cá nhân')}
             </span>
           </div>
           <h1 className="text-headline-lg font-bold text-on-surface">{t('Welcome back, Developer')}</h1>
@@ -58,18 +60,24 @@ export const ProviderDashboardPage: React.FC = () => {
           <Button
             variant="secondary"
             icon="auto_stories"
-            onClick={() => navigate('/provider/import-openapi')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Import OpenAPI')}
           </Button>
           <Button
             variant="primary"
             icon="add_circle"
-            onClick={() => navigate('/provider/create-api')}
+            disabled
+            title="Chưa được backend Sprint 1 hỗ trợ"
           >
             {t('Create API Product')}
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-body-sm text-on-surface">
+        Các KPI và trạng thái Provider bên dưới là dữ liệu minh họa, chưa kết nối API nghiệp vụ Sprint 2.
       </div>
 
       {/* Compliance / Verification Banner */}

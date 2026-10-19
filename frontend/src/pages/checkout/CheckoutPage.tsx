@@ -10,6 +10,8 @@ export const CheckoutPage: React.FC = () => {
   const { apiId, planId } = useParams<{ apiId: string; planId: string }>();
   const { apis, subscribeToPlan } = useApp();
   const { currentUser } = useAuth();
+  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  const user = currentUser!;
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -23,7 +25,7 @@ export const CheckoutPage: React.FC = () => {
   const handleCompleteSubscription = () => {
     setIsProcessing(true);
     setTimeout(() => {
-      subscribeToPlan(api.id, plan.id, currentUser.id);
+      subscribeToPlan(api.id, plan.id, user.id);
       setIsProcessing(false);
       navigate('/dashboard/subscriptions');
     }, 1200);

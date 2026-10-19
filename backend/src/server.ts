@@ -2,6 +2,10 @@ import { createApp, localFrontendOrigins } from './app.js';
 import { AuthService } from './auth.js';
 import { MemoryAuthStore } from './store.js';
 import { PostgresAuthStore } from './postgres-store.js';
+import { invalidDnsServers, parseDnsServers } from './provider-dns.js';
+import { ProviderService } from './provider-service.js';
+import { AdminReviewService } from './admin-review-service.js';
+import { AuditService } from './audit-service.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
 if (!['postgres', 'memory'].includes(mode)) throw new Error('AUTH_STORE must be postgres or memory');
@@ -9,13 +13,22 @@ if (mode === 'memory' && process.env.NODE_ENV === 'production') throw new Error(
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('replace-')) throw new Error('A random JWT_SECRET is required. Run npm run setup for local development.');
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
+const dnsServers = parseDnsServers(process.env.DNS_SERVERS);
+const badDnsServers = invalidDnsServers(dnsServers);
+if (badDnsServers.length) throw new Error(`DNS_SERVERS must be a comma-separated list of IP or IP:port values: ${badDnsServers.join(', ')}`);
 const secret = process.env.JWT_SECRET;
 const store = mode === 'postgres' ? new PostgresAuthStore(process.env.DATABASE_URL ?? '') : new MemoryAuthStore();
 if (store instanceof PostgresAuthStore) await store.ready();
 const allowedOrigins = process.env.CORS_ORIGINS !== undefined
   ? process.env.CORS_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
   : process.env.NODE_ENV === 'production' ? [] : localFrontendOrigins;
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins });
+const provider = store instanceof PostgresAuthStore ? new ProviderService(store.pool) : undefined;
+if (provider) await provider.ready();
+const audit = store instanceof PostgresAuthStore ? new AuditService(store.pool) : undefined;
+if (audit) await audit.ready();
+const review = store instanceof PostgresAuthStore && audit ? new AdminReviewService(store.pool, audit) : undefined;
+if (review) await review.ready();
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });

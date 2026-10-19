@@ -45,14 +45,19 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
         className={`w-full ${maxWidthClasses[maxWidth]} bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-2xl overflow-hidden animate-scale-up`}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/30 bg-surface-container-low">
           <div>
-            <h3 className="text-headline-sm font-headline-sm text-on-surface">{title}</h3>
+            <h3 id="modal-title" className="text-headline-sm font-headline-sm text-on-surface">{title}</h3>
             {description && <p className="text-body-sm text-on-surface-variant mt-0.5">{description}</p>}
           </div>
           <button
+            type="button"
+            aria-label="Đóng hộp thoại"
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors"
           >
