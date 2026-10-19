@@ -761,69 +761,190 @@ async function runSuite() {
     // BƯỚC S9 (E2E-UI-05): Non-Destructive Version Preservation & Plan Tier Isolation
     // ==========================================
     await chayBuoc('S9', 'Bảo toàn tài liệu OpenAPI phiên bản cũ và bảo vệ gói cước Basic 0 đồng', async () => {
-      if (!reconciledDraftApiId) {
-        throw new Error('Chưa có reconciledDraftApiId từ bước S8.');
+      // 1. Tạo một bản nháp API độc lập qua UI Wizard và đưa vào trạng thái partial-failure có thể phục hồi
+      await page.goto(`${BASE_URL}/provider/create-api`, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('input[type="text"]', { timeout: 10000 });
+
+      const s9Timestamp = Date.now();
+      const s9ApiName = `Version Preserved API ${s9Timestamp}`;
+
+      // Bước 1: Nhập metadata với version 1.0.0
+      const nameInput = page.locator('input[type="text"]').first();
+      await nameInput.fill(s9ApiName);
+      const descInput = page.locator('textarea').first();
+      await descInput.fill('API kiểm thử bảo toàn phiên bản OpenAPI 1.0.0 và gói Basic 0 đồng');
+      const versionInput = page.locator('input[placeholder="1.0.0"]').first();
+      await versionInput.clear();
+      await versionInput.fill('1.0.0');
+
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(600);
+
+      // Bước 2: Base URL
+      const urlInput = page.locator('input[type="url"], input[placeholder*="http"]').first();
+      await urlInput.clear();
+      await urlInput.fill('https://api.open-meteo.com/v1');
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(600);
+
+      // Bước 3: Định mức gói Free
+      const quotaInput = page.locator('input[type="number"]').first();
+      await quotaInput.clear();
+      await quotaInput.fill('2500');
+      const rpsInput = page.locator('input[type="number"]').nth(1);
+      await rpsInput.clear();
+      await rpsInput.fill('15');
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(600);
+
+      // Bước 4: Đưa Wizard vào trạng thái partial-failure bằng cách chặn lưu thỏa thuận pháp lý
+      await page.route('**/api/provider/apis/*/legal', route => {
+        log('[Mock Network S9] Giả lập lỗi 500 khi lưu thỏa thuận pháp lý cho S9');
+        route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { message: 'Giả lập lỗi mạng khi lưu thỏa thuận pháp lý cho S9' } })
+        });
+      });
+
+      const legalLabel = page.locator('label').filter({ hasText: 'Tôi đã đọc, hiểu rõ' }).first();
+      await legalLabel.waitFor({ state: 'visible', timeout: 10000 });
+      const legalCheckbox = legalLabel.locator('input[type="checkbox"]').first();
+      for (let i = 0; i < 20; i++) {
+        if (!(await legalCheckbox.isDisabled())) break;
+        await page.waitForTimeout(500);
       }
+      await legalCheckbox.check();
 
-      // 1. Gắn tài liệu OpenAPI và Documentation vào phiên bản 1.0.0 trong PostgreSQL
-      await pool.query(`
-        UPDATE api_versions
-        SET openapi_document = '{"openapi":"3.0.0","info":{"title":"Preserved Test API V1"}}'::jsonb
-        WHERE api_id = $1 AND version = '1.0.0'
-      `, [reconciledDraftApiId]);
+      const finishBtn = page.locator('button:has-text("Hoàn tất & Đăng ký API")').first();
+      await finishBtn.click();
 
-      const v1Row = await pool.query("SELECT id FROM api_versions WHERE api_id = $1 AND version = '1.0.0'", [reconciledDraftApiId]);
+      // Chờ cảnh báo lỗi partial-failure
+      await page.waitForSelector('[role="alert"]', { timeout: 10000 });
+      log('Wizard S9 đã đạt trạng thái partial failure có thể phục hồi (bản nháp đã lưu trên backend)');
+
+      // Hủy chặn endpoint legal để retry thành công
+      await page.unroute('**/api/provider/apis/*/legal');
+
+      // Lấy ID bản nháp vừa tạo từ DB
+      const s9DraftRow = await pool.query('SELECT id FROM apis WHERE provider_id = $1 AND name = $2', [createdProviderId, s9ApiName]);
+      if (s9DraftRow.rows.length === 0) {
+        throw new Error('Bản nháp S9 không tìm thấy trong database.');
+      }
+      const s9DraftApiId = s9DraftRow.rows[0].id;
+
+      // 2. Gắn tài liệu OpenAPI và documentation vào phiên bản 1.0.0 vừa được tạo
+      const v1Row = await pool.query("SELECT id FROM api_versions WHERE api_id = $1 AND version = '1.0.0'", [s9DraftApiId]);
       if (v1Row.rows.length === 0) {
-        throw new Error('Không tìm thấy phiên bản 1.0.0 của API bản nháp.');
+        throw new Error('Không tìm thấy phiên bản 1.0.0 của bản nháp S9.');
       }
       const v1Id = v1Row.rows[0].id;
+      const originalV1OpenApi = {
+        openapi: '3.0.0',
+        info: { title: 'Preserved Test API V1', version: '1.0.0' },
+        paths: { '/v1/status': { get: { summary: 'Status Check' } } }
+      };
+      await pool.query('UPDATE api_versions SET openapi_document = $1::jsonb WHERE id = $2', [JSON.stringify(originalV1OpenApi), v1Id]);
 
+      const originalDocContent = { sections: ['Preserved Doc Section V1'], author: 'Provider QA' };
       await pool.query(`
         INSERT INTO api_documentations (api_id, version_id, source, content)
-        VALUES ($1, $2, 'OPENAPI_IMPORT', '{"sections": ["Preserved Doc Section V1"]}'::jsonb)
-        ON CONFLICT (version_id) DO UPDATE SET content = '{"sections": ["Preserved Doc Section V1"]}'::jsonb
-      `, [reconciledDraftApiId, v1Id]);
+        VALUES ($1, $2, 'OPENAPI_IMPORT', $3::jsonb)
+        ON CONFLICT (version_id) DO UPDATE SET content = $3::jsonb
+      `, [s9DraftApiId, v1Id, JSON.stringify(originalDocContent)]);
 
-      // 2. Chèn gói khuyến mãi Basic với giá 0 USD vào api_plans
+      // 3. Chèn gói cước Basic với giá 0 USD vào api_plans
       await pool.query(`
         INSERT INTO api_plans (api_id, name, price_monthly, currency, quota, rate_limit, is_active)
-        VALUES ($1, 'Basic', 0, 'USD', 60000, 250, TRUE)
+        VALUES ($1, 'Basic', 0, 'USD', 50000, 200, TRUE)
         ON CONFLICT (api_id, name) DO NOTHING
-      `, [reconciledDraftApiId]);
+      `, [s9DraftApiId]);
 
-      // 3. Giả lập tạo phiên bản mới 2.0.0 (không ghi đè v1.0.0)
-      await pool.query(`
-        INSERT INTO api_versions (api_id, version, changelog)
-        VALUES ($1, '2.0.0', 'Phiên bản cải tiến 2.0.0')
-        ON CONFLICT (api_id, version) DO NOTHING
-      `, [reconciledDraftApiId]);
+      // Ghi nhận snapshot tài nguyên trước khi retry
+      log(`Đã ghi nhận snapshot V1 (ID=${v1Id}) và gói Basic 0 USD trước khi retry.`);
 
-      // 4. Đối soát kiểm chứng toàn vẹn trong PostgreSQL
-      const v1Verify = await pool.query('SELECT openapi_document FROM api_versions WHERE id = $1', [v1Id]);
-      if (!v1Verify.rows[0]?.openapi_document) {
-        throw new Error('Tài liệu openapi_document của phiên bản 1.0.0 bị xóa hoặc null.');
+      // 4. Sử dụng tương tác trình duyệt (browser interactions) để quay về Bước 1 và sửa Version thành 2.0.0
+      // Đang ở Step 4 -> lùi về Step 3 -> Step 2 -> Step 1
+      await page.click('button:has-text("Quay lại"), button:has-text("← Back")');
+      await page.waitForTimeout(500);
+      await page.click('button:has-text("Quay lại"), button:has-text("← Back")');
+      await page.waitForTimeout(500);
+      await page.click('button:has-text("Quay lại"), button:has-text("← Back")');
+      await page.waitForSelector('input[placeholder="1.0.0"]', { timeout: 6000 });
+
+      // Nhập version mới 2.0.0 vào input
+      const versionInputEdit = page.locator('input[placeholder="1.0.0"]').first();
+      await versionInputEdit.clear();
+      await versionInputEdit.fill('2.0.0');
+      log('Đã cập nhật phiên bản mong muốn thành 2.0.0 trên Step 1 qua UI');
+
+      // Đi tiếp qua các Step 1 -> 2 -> 3 -> 4
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(500);
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(500);
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(500);
+
+      // Tích xác nhận thỏa thuận nếu cần
+      if (!(await legalCheckbox.isChecked())) {
+        await legalCheckbox.check();
+      }
+
+      // 5. Kích hoạt Wizard Retry thật bằng cách nhấn nút Hoàn tất
+      await finishBtn.click();
+
+      // Chờ điều hướng sạch sẽ sang /provider/publishing-workflow
+      await page.waitForFunction(
+        () => window.location.pathname.includes('/provider/publishing-workflow') || window.location.pathname.includes('/provider/workflow'),
+        { timeout: 15000 }
+      );
+      log('Đã điều hướng sạch sẽ sang Publishing Workflow sau retry thành công.');
+
+      // 6. Kiểm chứng trong PostgreSQL:
+      // a. Phiên bản 2.0.0 được tạo ra bởi logic ứng dụng (createProviderVersion)
+      const v2Row = await pool.query("SELECT id, version, changelog FROM api_versions WHERE api_id = $1 AND version = '2.0.0'", [s9DraftApiId]);
+      if (v2Row.rows.length === 0) {
+        throw new Error('Phiên bản 2.0.0 không được tạo bởi logic ứng dụng sau khi retry.');
+      }
+      log(`✅ Phiên bản 2.0.0 được tạo thành công bởi ứng dụng: ID=${v2Row.rows[0].id}`);
+
+      // b. Phiên bản 1.0.0 vẫn tồn tại với ID cũ, tài liệu OpenAPI và Documentation nguyên vẹn
+      const v1Verify = await pool.query('SELECT id, openapi_document FROM api_versions WHERE id = $1', [v1Id]);
+      if (v1Verify.rows.length === 0) {
+        throw new Error('Phiên bản 1.0.0 bị mất sau retry.');
+      }
+      if (JSON.stringify(v1Verify.rows[0].openapi_document) !== JSON.stringify(originalV1OpenApi)) {
+        throw new Error('Tài liệu openapi_document của phiên bản 1.0.0 bị xóa hoặc thay đổi sau retry.');
       }
 
       const docVerify = await pool.query('SELECT content FROM api_documentations WHERE version_id = $1', [v1Id]);
-      if (!docVerify.rows[0]?.content) {
-        throw new Error('Bản ghi api_documentations của phiên bản 1.0.0 bị mất.');
+      if (docVerify.rows.length === 0 || JSON.stringify(docVerify.rows[0].content) !== JSON.stringify(originalDocContent)) {
+        throw new Error('Bản ghi api_documentations của phiên bản 1.0.0 bị mất hoặc sửa đổi sau retry.');
       }
+      log('✅ Tài liệu OpenAPI và Documentation của phiên bản 1.0.0 được bảo toàn 100%.');
 
-      // Kiểm chứng gói Basic 0 USD không bị nhầm lẫn hoặc ghi đè thành Free
-      const basicPlan = await pool.query("SELECT price_monthly, quota, rate_limit FROM api_plans WHERE api_id = $1 AND name = 'Basic'", [reconciledDraftApiId]);
+      // c. Gói Basic 0 USD vẫn giữ nguyên, không bị ghi đè hay biến thành Free
+      const basicPlan = await pool.query("SELECT price_monthly, currency, quota, rate_limit FROM api_plans WHERE api_id = $1 AND name = 'Basic'", [s9DraftApiId]);
       if (basicPlan.rows.length === 0) {
         throw new Error('Gói Basic đã bị xóa hoặc mất khỏi api_plans.');
       }
-      if (Number(basicPlan.rows[0].price_monthly) !== 0 || Number(basicPlan.rows[0].quota) !== 60000) {
-        throw new Error(`Dữ liệu gói Basic bị sai lệch: giá=${basicPlan.rows[0].price_monthly}, quota=${basicPlan.rows[0].quota}`);
+      if (Number(basicPlan.rows[0].price_monthly) !== 0 || basicPlan.rows[0].currency !== 'USD' || Number(basicPlan.rows[0].quota) !== 50000 || basicPlan.rows[0].rate_limit !== 200) {
+        throw new Error(`Dữ liệu gói Basic bị sai lệch sau retry: ${JSON.stringify(basicPlan.rows[0])}`);
       }
 
-      const freePlan = await pool.query("SELECT price_monthly, quota FROM api_plans WHERE api_id = $1 AND name = 'Free'", [reconciledDraftApiId]);
-      if (freePlan.rows.length === 0 || Number(freePlan.rows[0].quota) !== 3800) {
-        throw new Error('Gói Free bị xáo trộn sau khi chèn gói Basic.');
+      // d. Gói Free được đối soát đúng theo giá trị Step 3 (quota 2500, rps 15)
+      const freePlan = await pool.query("SELECT price_monthly, quota, rate_limit FROM api_plans WHERE api_id = $1 AND name = 'Free'", [s9DraftApiId]);
+      if (freePlan.rows.length === 0 || Number(freePlan.rows[0].quota) !== 2500 || freePlan.rows[0].rate_limit !== 15) {
+        throw new Error(`Gói Free không khớp giá trị cấu hình Step 3: ${JSON.stringify(freePlan.rows[0])}`);
       }
+      log('✅ Gói Basic 0 USD và gói Free được đối soát độc lập, không nhầm lẫn bậc giá.');
 
-      log('✅ Kiểm chứng thành công: Phiên bản 1.0.0 và gói Basic 0 đồng được bảo toàn nguyên vẹn.');
+      // e. Không nhân bản bản ghi API
+      const apiCheck = await pool.query('SELECT count(*) FROM apis WHERE provider_id = $1 AND name = $2', [createdProviderId, s9ApiName]);
+      if (Number(apiCheck.rows[0].count) !== 1) {
+        throw new Error(`Phát hiện bản ghi API trùng lặp trong DB: count=${apiCheck.rows[0].count}`);
+      }
 
       const screenshotPath = path.join(SCREENSHOT_DIR, 'sprint2-e2e-08-version-preservation.png');
       await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -831,7 +952,9 @@ async function runSuite() {
 
       return {
         v1Preserved: true,
+        v2CreatedByApp: true,
         basicZeroDollarPreserved: true,
+        freePlanReconciled: true,
         screenshot: 'qa-scripts/screenshots/sprint2-e2e-08-version-preservation.png'
       };
     });
@@ -840,11 +963,12 @@ async function runSuite() {
     // BƯỚC S10 (E2E-UI-06): Network Ambiguity, Fail-Closed & Cross-Account Isolation
     // ==========================================
     await chayBuoc('S10', 'Bảo vệ lỗi mạng 408 chống gửi trùng, cơ chế thỏa thuận fail-closed và phân lập phiên', async () => {
-      // 1. Kiểm thử Network Ambiguity (HTTP 408 Timeout)
+      // ----------------------------------------------------
+      // 1. Kiểm thử Network Ambiguity (HTTP 408 Timeout) & Chặn Blind Duplicate POST
+      // ----------------------------------------------------
       await page.goto(`${BASE_URL}/provider/create-api`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('input[type="text"]', { timeout: 10000 });
 
-      // Nhập đủ các bước tới Step 4
       const timestamp = Date.now();
       const nameInput = page.locator('input[type="text"]').first();
       await nameInput.fill(`Ambiguity Test API ${timestamp}`);
@@ -862,10 +986,12 @@ async function runSuite() {
       await page.click('button:has-text("Tiếp tục sang"), button:has-text("Proceed to"), button:has-text("Tiếp tục")');
       await page.waitForTimeout(600);
 
-      // Chặn API tạo mới và trả về HTTP 408 Request Timeout
+      // Chặn API tạo mới và đếm số lượng request gửi đi
+      let postApisCount = 0;
       await page.route('**/api/provider/apis', route => {
         if (route.request().method() === 'POST') {
-          log('[Mock Network] Chặn POST /api/provider/apis và trả về HTTP 408 Request Timeout');
+          postApisCount++;
+          log(`[Mock Network S10] Nhận yêu cầu POST /api/provider/apis (lần ${postApisCount}), trả về HTTP 408 Request Timeout`);
           route.fulfill({
             status: 408,
             contentType: 'application/json',
@@ -901,50 +1027,191 @@ async function runSuite() {
         throw new Error('Thiếu đường link an toàn tới /provider/apis trong banner lỗi mạng mơ hồ.');
       }
 
-      // Kiểm tra nút submit đã bị vô hiệu hóa để chặn blind duplicate POST
+      // Kiểm tra nút submit đã bị vô hiệu hóa và chỉ có đúng 1 yêu cầu POST được phát ra
       const isFinishDisabled = await finishBtn.isDisabled();
       if (!isFinishDisabled) {
         throw new Error('Nút Hoàn tất không bị vô hiệu hóa khi gặp lỗi mơ hồ mạng.');
       }
-      log('✅ Nút submit đã bị vô hiệu hóa thành công để chặn duplicate POST.');
+      if (postApisCount !== 1) {
+        throw new Error(`Phát hiện gửi trùng yêu cầu POST: postApisCount=${postApisCount}`);
+      }
+      log('✅ Nút submit bị khóa và chỉ duy nhất 1 request POST được gửi (chống blind duplicate POST).');
 
       // Hủy chặn endpoint
       await page.unroute('**/api/provider/apis');
 
-      // 2. Kiểm thử Thỏa thuận Fail-Closed
+      // ----------------------------------------------------
+      // 2. Kiểm thử Thỏa thuận Fail-Closed (Máy chủ phản hồi lỗi 500 khi xác thực thỏa thuận)
+      // ----------------------------------------------------
       await page.goto(`${BASE_URL}/provider/create-api`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('input[type="text"]', { timeout: 10000 });
-      await page.locator('input[type="text"]').first().fill('Fail-Closed Check API');
-      await page.locator('textarea').first().fill('Mo ta fail-closed');
+
+      const fcApiName = `Fail-Closed Agreement API ${timestamp}`;
+      await page.locator('input[type="text"]').first().fill(fcApiName);
+      await page.locator('textarea').first().fill('Kiểm thử cơ chế fail-closed khi máy chủ thỏa thuận lỗi 500');
       await page.click('button:has-text("Tiếp tục sang"), button:has-text("Tiếp tục")');
       await page.waitForTimeout(500);
+
       await page.locator('input[type="url"], input[placeholder*="http"]').first().fill('https://api.open-meteo.com/v1');
       await page.click('button:has-text("Tiếp tục sang"), button:has-text("Tiếp tục")');
       await page.waitForTimeout(500);
+
       await page.click('button:has-text("Tiếp tục sang"), button:has-text("Tiếp tục")');
       await page.waitForTimeout(500);
 
-      const fcFinishBtn = page.locator('button:has-text("Hoàn tất & Đăng ký API")').first();
-      const isInitiallyDisabled = await fcFinishBtn.isDisabled();
-      if (!isInitiallyDisabled) {
-        throw new Error('Nút Hoàn tất không ở trạng thái disabled khi chưa tích thỏa thuận.');
+      // Chờ thỏa thuận tải xong và tích đồng ý
+      const fcLegalLabel = page.locator('label').filter({ hasText: 'Tôi đã đọc, hiểu rõ' }).first();
+      await fcLegalLabel.waitFor({ state: 'visible', timeout: 10000 });
+      const fcLegalCheckbox = fcLegalLabel.locator('input[type="checkbox"]').first();
+      for (let i = 0; i < 20; i++) {
+        if (!(await fcLegalCheckbox.isDisabled())) break;
+        await page.waitForTimeout(500);
       }
-      log('✅ Cơ chế fail-closed: nút Hoàn tất bị khóa khi chưa chấp thuận.');
+      await fcLegalCheckbox.check();
 
-      // 3. Phân lập phiên đăng nhập (Cross-Account Isolation)
+      // Giả lập máy chủ thỏa thuận trả về HTTP 500 khi handleFinish gọi lại để xác thực phía máy chủ
+      let agreementValidationCalled = false;
+      await page.route('**/api/provider/agreement', route => {
+        agreementValidationCalled = true;
+        log('[Mock Network S10] Chặn GET /api/provider/agreement khi bấm Hoàn tất, trả về 500 Server Error');
+        route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { message: 'Máy chủ thỏa thuận phản hồi lỗi 500' } })
+        });
+      });
+
+      const fcFinishBtn = page.locator('button:has-text("Hoàn tất & Đăng ký API")').first();
+      await fcFinishBtn.click();
+
+      // Kiểm tra banner lỗi xác thực thỏa thuận
+      await page.waitForSelector('[role="alert"]', { timeout: 10000 });
+      const fcAlert = page.locator('[role="alert"]').filter({ hasText: 'Không thể xác thực Điều khoản Thỏa thuận Nhà cung cấp từ máy chủ' });
+      await fcAlert.waitFor({ state: 'visible', timeout: 8000 });
+      log('Đã hiển thị banner lỗi fail-closed khi xác thực thỏa thuận máy chủ thất bại.');
+
+      // Hủy chặn endpoint thỏa thuận
+      await page.unroute('**/api/provider/agreement');
+
+      if (!agreementValidationCalled) {
+        throw new Error('Yêu cầu xác thực thỏa thuận authoritative phía máy chủ (GET /api/provider/agreement) không được kích hoạt!');
+      }
+
+      // Kiểm chứng toàn vẹn trong PostgreSQL: ZERO MUTATIONS across apis, api_versions, api_plans, api_legal_agreements
+      const checkApis = await pool.query('SELECT count(*) FROM apis WHERE name = $1', [fcApiName]);
+      if (Number(checkApis.rows[0].count) !== 0) {
+        throw new Error('Vi phạm fail-closed: Bản ghi apis đã bị tạo dù thỏa thuận máy chủ xác thực lỗi!');
+      }
+
+      const checkPlans = await pool.query('SELECT count(*) FROM api_plans p JOIN apis a ON a.id = p.api_id WHERE a.name = $1', [fcApiName]);
+      if (Number(checkPlans.rows[0].count) !== 0) {
+        throw new Error('Vi phạm fail-closed: Bản ghi api_plans đã bị tạo!');
+      }
+
+      const checkVersions = await pool.query('SELECT count(*) FROM api_versions v JOIN apis a ON a.id = v.api_id WHERE a.name = $1', [fcApiName]);
+      if (Number(checkVersions.rows[0].count) !== 0) {
+        throw new Error('Vi phạm fail-closed: Bản ghi api_versions đã bị tạo!');
+      }
+
+      const checkLegal = await pool.query('SELECT count(*) FROM api_legal_agreements l JOIN apis a ON a.id = l.api_id WHERE a.name = $1', [fcApiName]);
+      if (Number(checkLegal.rows[0].count) !== 0) {
+        throw new Error('Vi phạm fail-closed: Bản ghi api_legal_agreements đã bị tạo!');
+      }
+      log('✅ Kiểm chứng fail-closed thành công: 0 biến động dữ liệu trong DB khi xác thực thỏa thuận thất bại.');
+
+      // ----------------------------------------------------
+      // 3. Kiểm thử Phân lập Phiên trong yêu cầu bất đồng bộ đang in-flight (Cross-Account Isolation)
+      // ----------------------------------------------------
+      await page.goto(`${BASE_URL}/provider/create-api`, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('input[type="text"]', { timeout: 10000 });
+
+      const leakApiName = `In-Flight Leak Test API ${timestamp}`;
+      await page.locator('input[type="text"]').first().fill(leakApiName);
+      await page.locator('textarea').first().fill('Kiểm thử triệt tiêu phản hồi in-flight khi đổi tài khoản');
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(500);
+
+      await page.locator('input[type="url"], input[placeholder*="http"]').first().fill('https://api.open-meteo.com/v1');
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(500);
+
+      await page.click('button:has-text("Tiếp tục sang"), button:has-text("Tiếp tục")');
+      await page.waitForTimeout(500);
+
+      // Tích thỏa thuận
+      const leakLegalLabel = page.locator('label').filter({ hasText: 'Tôi đã đọc, hiểu rõ' }).first();
+      await leakLegalLabel.waitFor({ state: 'visible', timeout: 10000 });
+      const leakLegalCheckbox = leakLegalLabel.locator('input[type="checkbox"]').first();
+      for (let i = 0; i < 20; i++) {
+        if (!(await leakLegalCheckbox.isDisabled())) break;
+        await page.waitForTimeout(500);
+      }
+      await leakLegalCheckbox.check();
+
+      // Giả lập yêu cầu POST /api/provider/apis bị trễ 2500ms (in-flight)
+      let inFlightStarted = false;
+      let inFlightFinished = false;
+      await page.route('**/api/provider/apis', async route => {
+        if (route.request().method() === 'POST') {
+          inFlightStarted = true;
+          log('[Mock Network S10] In-flight POST /api/provider/apis đang trễ 2500ms...');
+          await new Promise(r => setTimeout(r, 2500));
+          inFlightFinished = true;
+          route.fulfill({
+            status: 201,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              id: 'synthetic-in-flight-api-id',
+              name: leakApiName,
+              status: 'Draft'
+            })
+          });
+        } else {
+          route.continue();
+        }
+      });
+
+      // Bấm Hoàn tất để kích hoạt request in-flight
+      const leakFinishBtn = page.locator('button:has-text("Hoàn tất & Đăng ký API")').first();
+      await leakFinishBtn.click();
+
+      // Chờ request thực sự bắt đầu bay trên đường truyền
+      for (let i = 0; i < 20; i++) {
+        if (inFlightStarted) break;
+        await page.waitForTimeout(100);
+      }
+
+      // Ngay khi request đang in-flight, người dùng đổi tài khoản / đăng xuất và chuyển sang Admin
+      log('Yêu cầu đang in-flight: tiến hành đổi phiên sang tài khoản Admin...');
       await context.clearCookies();
-      await page.evaluate(() => sessionStorage.clear());
+      await page.evaluate(() => {
+        sessionStorage.clear();
+        localStorage.clear();
+      });
       await loginUser(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       await page.goto(`${BASE_URL}/admin`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('h1', { timeout: 10000 });
 
-      // Xác nhận không rò rỉ dữ liệu Provider sang Admin
-      const bodyText = await page.locator('body').innerText();
-      if (bodyText.includes(`qa-e2e-provider-${timestamp}`)) {
-        throw new Error('Phát hiện rò rỉ email Provider trong giao diện Admin.');
+      // Chờ request in-flight hoàn thành trên đường truyền
+      for (let i = 0; i < 30; i++) {
+        if (inFlightFinished) break;
+        await page.waitForTimeout(200);
       }
-      log('✅ Phân lập phiên hoàn hảo: không rò rỉ dữ liệu phiên.');
+      await page.unroute('**/api/provider/apis');
+
+      // Kiểm tra giao diện Admin không rò rỉ ID hoặc thông tin Provider trước
+      const adminBodyText = await page.locator('body').innerText();
+      if (adminBodyText.includes('synthetic-in-flight-api-id') || adminBodyText.includes(createdProviderEmail)) {
+        throw new Error('Phát hiện rò rỉ ID hoặc dữ liệu Provider trong phiên làm việc của Admin!');
+      }
+
+      // Kiểm chứng trong PostgreSQL: Phản hồi trễ của tài khoản cũ không tiếp tục kích hoạt tạo version/plan
+      const leakCheck = await pool.query("SELECT count(*) FROM api_versions WHERE api_id = 'synthetic-in-flight-api-id'");
+      if (Number(leakCheck.rows[0].count) !== 0) {
+        throw new Error('Vi phạm phân lập: In-flight response của phiên trước vẫn tiếp tục tạo version!');
+      }
+      log('✅ Phân lập phiên hoàn hảo: Stale response khi chuyển đổi tài khoản bị triệt tiêu hoàn toàn.');
 
       const screenshotPath = path.join(SCREENSHOT_DIR, 'sprint2-e2e-09-ambiguity-and-isolation.png');
       await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -953,8 +1220,9 @@ async function runSuite() {
       return {
         ambiguityBannerShown: true,
         blindPostBlocked: true,
-        failClosedEnforced: true,
-        sessionIsolated: true,
+        postApisCount,
+        failClosedZeroMutations: true,
+        inFlightIsolated: true,
         screenshot: 'qa-scripts/screenshots/sprint2-e2e-09-ambiguity-and-isolation.png'
       };
     });

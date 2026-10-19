@@ -16,7 +16,7 @@ Key metrics achieved:
 
 - **P2 Wizard Retry Defect:** Completely resolved with full authoritative reconciliation and fail-safe draft recovery across all retry paths.
 - **Test Suite:** **16/16 test suites passing (145/145 tests clean)**, including all 16 dedicated retry test cases (`TC-FE-RETRY-01` to `TC-FE-RETRY-16`), 5 non-destructive version tests (`TC-FE-RETRY-VER-01` to `05`), 6 canonical plan tests (`TC-FE-RETRY-PLAN-01` to `06`), and 3 network ambiguity tests (`TC-FE-RETRY-DRAFT-01` to `03`). Total wizard suite: 38/38 clean.
-- **Code Quality & Linter:** Eliminated all 40 code defect warnings across 10 pages. Strict zero rules disabled in `.oxlintrc.json`.
+- **Code Quality & Linter:** Eliminated all 40 code defect warnings across 10 pages. Strict zero rules disabled in `.oxlintrc.json`. 0 errors, 2 accepted non-blocking Fast Refresh warnings documented on context files.
 - **Bundle Architecture:** Monolithic ~1.13 MB production JavaScript chunk split into dynamic route-level chunks with vendor isolation, eliminating the >500 kB chunk size warning (largest app chunk reduced to <490 kB, page chunks between 3 kB and 32 kB).
 - **TypeScript:** Strict compilation (`tsc -b`) passing with **0 errors**.
 
@@ -29,7 +29,7 @@ Key metrics achieved:
 | **FIND-01** | **P2 (Blocker)** | Data Integrity / State Machine | Wizard retry after partial creation failure desynchronized resources, swallowed 409 conflict errors, and caused false-success navigation. | **Resolved** (`CreateApiWizardPage.tsx`) |
 | **FIND-02** | **P1** | Security / Fail-Closed | Missing fail-closed enforcement when legal agreement fetch fails, potentially allowing unconsented publishing. | **Resolved** (Hard fail-closed check before submission) |
 | **FIND-03** | **P1** | Security / Isolation | Race conditions and cross-account data leaks during rapid user switching in Admin and Provider consoles. | **Resolved** (Session pinning refs & abort controllers) |
-| **FIND-04** | **P2** | React Purity & Hygiene | 42 `oxlint` warnings across 10 pages (`react(purity)`, `react(set-state-in-effect)`, `react(refs)`, `exhaustive-deps`). | **Resolved** (0 warnings across all files) |
+| **FIND-04** | **P2** | React Purity & Hygiene | 42 `oxlint` warnings across 10 pages (`react(purity)`, `react(set-state-in-effect)`, `react(refs)`, `exhaustive-deps`). | **Resolved** (0 errors, 40 code defects resolved; 2 non-blocking Fast Refresh warnings documented) |
 | **FIND-05** | **P2** | Performance / Packaging | Monolithic production bundle (1,133.96 kB) exceeding Vite's 500 kB chunk warning threshold. | **Resolved** (`React.lazy` code splitting + vendor manual chunks) |
 | **FIND-06** | **P3** | UX / Ergonomics | Multi-step navigation state preservation during wizard backward navigation and draft recovery. | **Resolved** (Synchronized form values & back traversal) |
 
