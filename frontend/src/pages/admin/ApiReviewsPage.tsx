@@ -59,73 +59,66 @@ export const ApiReviewsPage: React.FC = () => {
   const [loadingDossier, setLoadingDossier] = useState(false);
   const [dossierError, setDossierError] = useState<string | null>(null);
 
-  // Reset and abort when admin user identity changes (e.g., Admin A -> Admin B or logout)
-  useEffect(() => {
-    const prevUserId = activeUserRef.current;
-    activeUserRef.current = currentUser?.id;
-    if (prevUserId !== currentUser?.id) {
-      requestIdRef.current++;
-      dossierRequestIdRef.current++;
-      mutationRequestIdRef.current++;
-      setActionLoadingId(null);
-      if (dossierAbortControllerRef.current) {
-        dossierAbortControllerRef.current.abort();
-        dossierAbortControllerRef.current = null;
-      }
-      setApis([]);
-      setTotal(0);
-      setError(null);
-      setActionSuccess(null);
-      setDossierModalOpen(false);
-      setSelectedApiForDossier(null);
-      setDossier(null);
-      setDossierError(null);
-      setRejectModalOpen(false);
-      setSelectedApiForReject(null);
-      if (!currentUser) {
-        setLoading(false);
-      }
-    }
-  }, [currentUser]);
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  const [currentTime] = useState(() => Date.now());
 
-  const fetchApis = (status = statusFilter, currentPage = page) => {
+  // Render-phase state adjustment when admin user identity changes
+  const [lastUserId, setLastUserId] = useState(currentUser?.id);
+  if (currentUser?.id !== lastUserId) {
+    setLastUserId(currentUser?.id);
+    setActionLoadingId(null);
+    setApis([]);
+    setTotal(0);
+    setError(null);
+    setActionSuccess(null);
+    setDossierModalOpen(false);
+    setSelectedApiForDossier(null);
+    setDossier(null);
+    setDossierError(null);
+    setRejectModalOpen(false);
+    setSelectedApiForReject(null);
+    if (!currentUser) {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    activeUserRef.current = currentUser?.id;
+    if (dossierAbortControllerRef.current) {
+      dossierAbortControllerRef.current.abort();
+      dossierAbortControllerRef.current = null;
+    }
+  }, [currentUser?.id]);
+
+  const currentUserId = currentUser?.id;
+  useEffect(() => {
+    if (!currentUserId) return;
     const controller = new AbortController();
     const requestId = ++requestIdRef.current;
-    const requestUserId = currentUser?.id;
 
-    if (!currentUser) {
-      return () => controller.abort();
-    }
-
-    setLoading(true);
-    setError(null);
-
-    listAdminApis(status, currentPage, 20, controller.signal)
+    listAdminApis(statusFilter, page, 20, controller.signal)
       .then(res => {
-        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === currentUserId) {
           setApis(res.items || []);
           setTotal(res.total || 0);
         }
       })
       .catch(err => {
-        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === currentUserId) {
           setError(formatBackendErrorMessage(err));
         }
       })
       .finally(() => {
-        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === currentUserId) {
           setLoading(false);
         }
       });
 
     return () => controller.abort();
-  };
-
-  useEffect(() => {
-    return fetchApis(statusFilter, page);
-  }, [statusFilter, page, currentUser?.id]);
+  }, [statusFilter, page, currentUserId, refreshCounter]);
 
   const handleStatusTabChange = (newStatus: AdminApiStatus) => {
+    setLoading(true);
     setStatusFilter(newStatus);
     setPage(1);
     setActionSuccess(null);
@@ -144,7 +137,7 @@ export const ApiReviewsPage: React.FC = () => {
       await reviewAdminApi(api.id, next, reason);
       if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setActionSuccess(`Chuyển trạng thái API "${api.name}" sang ${next} thành công.`);
-      fetchApis(statusFilter, page);
+      setRefreshCounter(c => c + 1);
     } catch (err) {
       if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setError(formatBackendErrorMessage(err));
@@ -184,7 +177,7 @@ export const ApiReviewsPage: React.FC = () => {
       setRejectModalOpen(false);
       setSelectedApiForReject(null);
       setActionSuccess(`Đã từ chối xuất bản API "${selectedApiForReject.name}".`);
-      fetchApis(statusFilter, page);
+      setRefreshCounter(c => c + 1);
     } catch (err) {
       if (activeUserRef.current !== requestUserId || mutationId !== mutationRequestIdRef.current) return;
       setRejectError(formatBackendErrorMessage(err));
@@ -264,7 +257,7 @@ export const ApiReviewsPage: React.FC = () => {
       {error && (
         <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error flex items-center justify-between gap-3 text-body-sm">
           <span>{error}</span>
-          <Button size="sm" variant="secondary" onClick={() => fetchApis()}>
+          <Button size="sm" variant="secondary" onClick={() => { setLoading(true); setRefreshCounter(c => c + 1); }}>
             Thử lại
           </Button>
         </div>
@@ -443,7 +436,7 @@ export const ApiReviewsPage: React.FC = () => {
                 const expiresAtRaw = dossier.domainVerification?.verificationExpiresAt;
                 const expiresAtMs = expiresAtRaw ? new Date(expiresAtRaw).getTime() : NaN;
                 const hasValidExpiry = !isNaN(expiresAtMs);
-                const isExpired = hasValidExpiry ? expiresAtMs <= Date.now() : true;
+                const isExpired = hasValidExpiry ? expiresAtMs <= currentTime : true;
                 const hasMatchingHostname = Boolean(apiHostname && verifiedHostname && apiHostname === verifiedHostname);
 
                 let dnsStatusText: React.ReactNode;

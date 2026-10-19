@@ -36,65 +36,57 @@ export const ProviderVerificationsPage: React.FC = () => {
   const [selectedOrgName, setSelectedOrgName] = useState<string>('');
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState<string | null>(null);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
-  // Reset and abort when admin user identity changes (e.g., Admin A -> Admin B or logout)
-  useEffect(() => {
-    const prevUserId = activeUserRef.current;
-    activeUserRef.current = currentUser?.id;
-    if (prevUserId !== currentUser?.id) {
-      requestIdRef.current++;
-      mutationRequestIdRef.current++;
-      setActionLoadingId(null);
-      setVerifications([]);
-      setTotal(0);
-      setError(null);
-      setActionSuccess(null);
-      setRejectModalOpen(false);
-      setSelectedProviderId(null);
-      if (!currentUser) {
-        setLoading(false);
-      }
+  // Render-phase state adjustment when admin user identity changes
+  const [lastUserId, setLastUserId] = useState(currentUser?.id);
+  if (currentUser?.id !== lastUserId) {
+    setLastUserId(currentUser?.id);
+    setActionLoadingId(null);
+    setVerifications([]);
+    setTotal(0);
+    setError(null);
+    setActionSuccess(null);
+    setRejectModalOpen(false);
+    setSelectedProviderId(null);
+    if (!currentUser) {
+      setLoading(false);
     }
-  }, [currentUser]);
+  }
 
-  const fetchVerifications = (status = statusFilter, currentPage = page) => {
+  useEffect(() => {
+    activeUserRef.current = currentUser?.id;
+  }, [currentUser?.id]);
+
+  const currentUserId = currentUser?.id;
+  useEffect(() => {
+    if (!currentUserId) return;
     const controller = new AbortController();
     const requestId = ++requestIdRef.current;
-    const requestUserId = currentUser?.id;
 
-    if (!currentUser) {
-      return () => controller.abort();
-    }
-
-    setLoading(true);
-    setError(null);
-
-    listAdminVerifications(status, currentPage, 20, controller.signal)
+    listAdminVerifications(statusFilter, page, 20, controller.signal)
       .then(res => {
-        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === currentUserId) {
           setVerifications(res.items || []);
           setTotal(res.total || 0);
         }
       })
       .catch(err => {
-        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === currentUserId) {
           setError(formatBackendErrorMessage(err));
         }
       })
       .finally(() => {
-        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === requestUserId) {
+        if (requestId === requestIdRef.current && !controller.signal.aborted && activeUserRef.current === currentUserId) {
           setLoading(false);
         }
       });
 
     return () => controller.abort();
-  };
-
-  useEffect(() => {
-    return fetchVerifications(statusFilter, page);
-  }, [statusFilter, page, currentUser?.id]);
+  }, [statusFilter, page, currentUserId, refreshCounter]);
 
   const handleStatusChange = (newStatus: AdminVerificationStatus) => {
+    setLoading(true);
     setStatusFilter(newStatus);
     setPage(1);
     setActionSuccess(null);
@@ -113,7 +105,7 @@ export const ProviderVerificationsPage: React.FC = () => {
       await reviewAdminVerification(v.providerId, 'Verified');
       if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
         setActionSuccess(`Đã phê duyệt xác minh thành công cho ${v.organizationName || v.providerName}.`);
-        fetchVerifications(statusFilter, page);
+        setRefreshCounter(c => c + 1);
       }
     } catch (err) {
       if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
@@ -156,7 +148,7 @@ export const ProviderVerificationsPage: React.FC = () => {
         setRejectModalOpen(false);
         setSelectedProviderId(null);
         setActionSuccess(`Đã từ chối hồ sơ xác minh của ${selectedOrgName}.`);
-        fetchVerifications(statusFilter, page);
+        setRefreshCounter(c => c + 1);
       }
     } catch (err) {
       if (activeUserRef.current === requestUserId && mutationId === mutationRequestIdRef.current) {
@@ -205,7 +197,7 @@ export const ProviderVerificationsPage: React.FC = () => {
       {error && (
         <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error flex items-center justify-between gap-3 text-body-sm">
           <span>{error}</span>
-          <Button size="sm" variant="secondary" onClick={() => fetchVerifications()}>
+          <Button size="sm" variant="secondary" onClick={() => { setLoading(true); setRefreshCounter(c => c + 1); }}>
             Thử lại
           </Button>
         </div>

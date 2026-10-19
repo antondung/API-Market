@@ -45,7 +45,7 @@ export const EndpointManagementPage: React.FC = () => {
 
   // Endpoints data
   const [endpoints, setEndpoints] = useState<ProviderEndpoint[]>([]);
-  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(Boolean(queryApiId));
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
@@ -77,7 +77,7 @@ export const EndpointManagementPage: React.FC = () => {
   // 1. Fetch APIs list on mount
   useEffect(() => {
     const controller = new AbortController();
-    setLoadingApis(true);
+
     listProviderApis(1, 100, controller.signal)
       .then(res => {
         if (!controller.signal.aborted) {
@@ -103,11 +103,12 @@ export const EndpointManagementPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [retryKey]);
+  }, [queryApiId, retryKey]);
 
   // Sync searchParam when selectedApiId changes
   const handleSelectApi = (apiId: string) => {
     setSelectedApiId(apiId);
+    setLoadingDetails(true);
     setSearchParams({ api: apiId });
   };
 
@@ -116,8 +117,6 @@ export const EndpointManagementPage: React.FC = () => {
     if (!selectedApiId) return;
 
     const controller = new AbortController();
-    setLoadingDetails(true);
-    setError(null);
 
     Promise.all([
       listProviderVersions(selectedApiId, controller.signal),
@@ -127,8 +126,8 @@ export const EndpointManagementPage: React.FC = () => {
         if (!controller.signal.aborted) {
           setVersions(vRes || []);
           setEndpoints(eRes || []);
-          if (vRes?.length && !epVersionId) {
-            setEpVersionId(vRes[0].id);
+          if (vRes?.length) {
+            setEpVersionId(prev => prev || vRes[0].id);
           }
         }
       })
