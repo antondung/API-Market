@@ -34,7 +34,7 @@ export const PricingManagementPage: React.FC = () => {
 
   // Plans data
   const [plans, setPlans] = useState<ProviderPlan[]>([]);
-  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [loadingPlans, setLoadingPlans] = useState(Boolean(queryApiId));
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
@@ -56,7 +56,7 @@ export const PricingManagementPage: React.FC = () => {
   // 1. Fetch APIs list on mount
   useEffect(() => {
     const controller = new AbortController();
-    setLoadingApis(true);
+
     listProviderApis(1, 100, controller.signal)
       .then(res => {
         if (!controller.signal.aborted) {
@@ -82,11 +82,12 @@ export const PricingManagementPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [retryKey]);
+  }, [queryApiId, retryKey]);
 
   // Sync searchParam when selectedApiId changes
   const handleSelectApi = (apiId: string) => {
     setSelectedApiId(apiId);
+    setLoadingPlans(true);
     setSearchParams({ api: apiId });
   };
 
@@ -95,8 +96,6 @@ export const PricingManagementPage: React.FC = () => {
     if (!selectedApiId) return;
 
     const controller = new AbortController();
-    setLoadingPlans(true);
-    setError(null);
 
     listProviderPlans(selectedApiId, controller.signal)
       .then(res => {

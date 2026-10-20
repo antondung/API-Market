@@ -69,10 +69,11 @@ export const PublishingWorkflowPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 
+  const [currentTime] = useState(() => Date.now());
+
   // 1. Fetch APIs list on mount
   useEffect(() => {
     const controller = new AbortController();
-    setLoadingApis(true);
     listProviderApis(1, 100, controller.signal)
       .then(res => {
         if (!controller.signal.aborted) {
@@ -98,12 +99,17 @@ export const PublishingWorkflowPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [queryApiId]);
 
   const handleSelectApi = (apiId: string) => {
     setSelectedApiId(apiId);
     setSearchParams({ api: apiId });
     setSubmitSuccess(null);
+    setChallengeData(null);
+    setDomainMessage(null);
+    setDomainError(null);
+    setError(null);
+    setDetailsFetchError(null);
   };
 
   // 2. Fetch Readiness Checklist & Status for Selected API with Promise.allSettled
@@ -111,12 +117,6 @@ export const PublishingWorkflowPage: React.FC = () => {
     if (!selectedApiId) return;
 
     const controller = new AbortController();
-    setLoadingDetails(true);
-    setError(null);
-    setDetailsFetchError(null);
-    setChallengeData(null);
-    setDomainMessage(null);
-    setDomainError(null);
 
     Promise.allSettled([
       getProviderPublishStatus(selectedApiId, controller.signal),
@@ -254,7 +254,7 @@ export const PublishingWorkflowPage: React.FC = () => {
   const isDomainVerified = Boolean(
     domainVerification?.verified &&
     domainVerification.verificationExpiresAt &&
-    new Date(domainVerification.verificationExpiresAt).getTime() > Date.now()
+    new Date(domainVerification.verificationExpiresAt).getTime() > currentTime
   );
 
   // Authoritative Documentation Invariant (backend/src/provider-service.ts:194)

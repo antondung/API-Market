@@ -149,6 +149,87 @@ jobs:
       - run: npm test -- --no-file-parallelism
       - run: npm run build
 
+  frontend-browser-e2e:
+    name: Frontend Browser E2E Sprint 2
+    needs: [phat-hien, frontend]
+    if: needs.phat-hien.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: api_market_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      AUTH_STORE: postgres
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/api_market_test
+      JWT_SECRET: ci-only-secret-for-browser-e2e-not-used-anywhere-else
+      PORT: 3000
+      HOST: 127.0.0.1
+      API_URL: http://127.0.0.1:3000
+      BASE_URL: http://127.0.0.1:5173
+      CI: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cai dat dependencies root
+        run: npm ci
+      - name: Cai dat dependencies frontend va build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+      - name: Cai dat dependencies qa-scripts va Playwright browser
+        run: |
+          cd qa-scripts
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Tao schema va du lieu seed
+        run: node --import tsx backend/src/database-cli.ts --seed
+      - name: Khoi dong backend
+        run: |
+          node --import tsx backend/src/server.ts > backend.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/health > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat backend.log
+          exit 1
+      - name: Khoi dong Vite preview frontend
+        run: |
+          cd frontend
+          npx vite preview --port 5173 --host 127.0.0.1 > ../frontend.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5173 > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat ../frontend.log
+          exit 1
+      - name: Chay bo test Browser E2E
+        run: node qa-scripts/sprint2-ui-e2e-runner.cjs
+      - name: Luu ket qua va anh chup man hinh
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprint2-browser-e2e-evidence
+          path: |
+            qa-scripts/sprint2-ui-e2e-results.json
+            qa-scripts/screenshots/
+            backend.log
+            frontend.log
+          if-no-files-found: ignore
+
   python:
     name: Python
     needs: phat-hien
@@ -277,7 +358,7 @@ jobs:
   ket-qua:
     name: Kiem tra nen tang
     if: always()
-    needs: [phat-hien, nen-tang, node, frontend, api-e2e, python, java-maven, java-gradle, dotnet, go, rust, php, ruby, cpp]
+    needs: [phat-hien, nen-tang, node, frontend, api-e2e, frontend-browser-e2e, python, java-maven, java-gradle, dotnet, go, rust, php, ruby, cpp]
     runs-on: ubuntu-latest
     steps:
       - name: Tong hop ket qua

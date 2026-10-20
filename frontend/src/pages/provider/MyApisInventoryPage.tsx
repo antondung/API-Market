@@ -70,8 +70,6 @@ export const MyApisInventoryPage: React.FC = () => {
   // Load APIs and Verification
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
 
     Promise.all([
       listProviderApis(page, pageSize, controller.signal),
@@ -255,7 +253,7 @@ export const MyApisInventoryPage: React.FC = () => {
       {error && (
         <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error flex items-center justify-between gap-3">
           <span>{error}</span>
-          <Button size="sm" variant="secondary" onClick={() => setRetryKey(k => k + 1)}>
+          <Button size="sm" variant="secondary" onClick={() => { setLoading(true); setError(null); setRetryKey(k => k + 1); }}>
             Thử lại
           </Button>
         </div>
@@ -523,7 +521,10 @@ export const MyApisInventoryPage: React.FC = () => {
                   size="sm"
                   variant="secondary"
                   disabled={page <= 1}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  onClick={() => {
+                    setLoading(true);
+                    setPage(p => Math.max(1, p - 1));
+                  }}
                 >
                   Trang trước
                 </Button>
@@ -531,7 +532,10 @@ export const MyApisInventoryPage: React.FC = () => {
                   size="sm"
                   variant="secondary"
                   disabled={page >= totalPages}
-                  onClick={() => setPage(p => p + 1)}
+                  onClick={() => {
+                    setLoading(true);
+                    setPage(p => p + 1);
+                  }}
                 >
                   Trang sau
                 </Button>

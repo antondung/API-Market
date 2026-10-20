@@ -11,52 +11,62 @@ import { PublicFooter } from './components/layout/PublicFooter';
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
-// Marketplace & Discovery Pages
-import { MarketplacePage } from './pages/marketplace/MarketplacePage';
-import { ApiDetailPage } from './pages/marketplace/ApiDetailPage';
-import { ApiPlaygroundPage } from './pages/marketplace/ApiPlaygroundPage';
-import { TrySandboxPage } from './pages/marketplace/TrySandboxPage';
-import { CompareApisPage } from './pages/marketplace/CompareApisPage';
-import { PricingPage } from './pages/marketplace/PricingPage';
-import { CheckoutPage } from './pages/checkout/CheckoutPage';
+// Lazy-loaded Marketplace & Discovery Pages
+const MarketplacePage = React.lazy(() => import('./pages/marketplace/MarketplacePage').then(m => ({ default: m.MarketplacePage })));
+const ApiDetailPage = React.lazy(() => import('./pages/marketplace/ApiDetailPage').then(m => ({ default: m.ApiDetailPage })));
+const ApiPlaygroundPage = React.lazy(() => import('./pages/marketplace/ApiPlaygroundPage').then(m => ({ default: m.ApiPlaygroundPage })));
+const TrySandboxPage = React.lazy(() => import('./pages/marketplace/TrySandboxPage').then(m => ({ default: m.TrySandboxPage })));
+const CompareApisPage = React.lazy(() => import('./pages/marketplace/CompareApisPage').then(m => ({ default: m.CompareApisPage })));
+const PricingPage = React.lazy(() => import('./pages/marketplace/PricingPage').then(m => ({ default: m.PricingPage })));
+const CheckoutPage = React.lazy(() => import('./pages/checkout/CheckoutPage').then(m => ({ default: m.CheckoutPage })));
 
-// Auth & Access Control Pages
-import { LoginPage } from './pages/auth/LoginPage';
-import { RegisterPage } from './pages/auth/RegisterPage';
-import { SessionSimulatorPage } from './pages/auth/SessionSimulatorPage';
-import { Unauthorized401Page } from './pages/auth/Unauthorized401Page';
-import { Forbidden403Page } from './pages/auth/Forbidden403Page';
+// Lazy-loaded Auth & Access Control Pages
+const LoginPage = React.lazy(() => import('./pages/auth/LoginPage').then(m => ({ default: m.LoginPage })));
+const RegisterPage = React.lazy(() => import('./pages/auth/RegisterPage').then(m => ({ default: m.RegisterPage })));
+const SessionSimulatorPage = React.lazy(() => import('./pages/auth/SessionSimulatorPage').then(m => ({ default: m.SessionSimulatorPage })));
+const Unauthorized401Page = React.lazy(() => import('./pages/auth/Unauthorized401Page').then(m => ({ default: m.Unauthorized401Page })));
+const Forbidden403Page = React.lazy(() => import('./pages/auth/Forbidden403Page').then(m => ({ default: m.Forbidden403Page })));
 
-// Consumer Workspace Pages
-import { ConsumerDashboardPage } from './pages/consumer/ConsumerDashboardPage';
-import { MySubscriptionsPage } from './pages/consumer/MySubscriptionsPage';
-import { ApiKeysPage } from './pages/consumer/ApiKeysPage';
-import { UsageQuotaPage } from './pages/consumer/UsageQuotaPage';
-import { CostGuardPage } from './pages/consumer/CostGuardPage';
-import { RequestHistoryPage } from './pages/consumer/RequestHistoryPage';
-import { ProfileSettingsPage } from './pages/consumer/ProfileSettingsPage';
+// Lazy-loaded Consumer Workspace Pages
+const ConsumerDashboardPage = React.lazy(() => import('./pages/consumer/ConsumerDashboardPage').then(m => ({ default: m.ConsumerDashboardPage })));
+const MySubscriptionsPage = React.lazy(() => import('./pages/consumer/MySubscriptionsPage').then(m => ({ default: m.MySubscriptionsPage })));
+const ApiKeysPage = React.lazy(() => import('./pages/consumer/ApiKeysPage').then(m => ({ default: m.ApiKeysPage })));
+const UsageQuotaPage = React.lazy(() => import('./pages/consumer/UsageQuotaPage').then(m => ({ default: m.UsageQuotaPage })));
+const CostGuardPage = React.lazy(() => import('./pages/consumer/CostGuardPage').then(m => ({ default: m.CostGuardPage })));
+const RequestHistoryPage = React.lazy(() => import('./pages/consumer/RequestHistoryPage').then(m => ({ default: m.RequestHistoryPage })));
+const ProfileSettingsPage = React.lazy(() => import('./pages/consumer/ProfileSettingsPage').then(m => ({ default: m.ProfileSettingsPage })));
 
-// Provider Workspace Pages
-import { ProviderDashboardPage } from './pages/provider/ProviderDashboardPage';
-import { ProviderVerificationPage } from './pages/provider/ProviderVerificationPage';
-import { MyApisInventoryPage } from './pages/provider/MyApisInventoryPage';
-import { CreateApiWizardPage } from './pages/provider/CreateApiWizardPage';
-import { EndpointManagementPage } from './pages/provider/EndpointManagementPage';
-import { OpenApiImportPage } from './pages/provider/OpenApiImportPage';
-import { PricingManagementPage } from './pages/provider/PricingManagementPage';
-import { PublishingWorkflowPage } from './pages/provider/PublishingWorkflowPage';
-import { SubscribersPage } from './pages/provider/SubscribersPage';
-import { AnalyticsHealthPage } from './pages/provider/AnalyticsHealthPage';
+// Lazy-loaded Provider Workspace Pages
+const ProviderDashboardPage = React.lazy(() => import('./pages/provider/ProviderDashboardPage').then(m => ({ default: m.ProviderDashboardPage })));
+const ProviderVerificationPage = React.lazy(() => import('./pages/provider/ProviderVerificationPage').then(m => ({ default: m.ProviderVerificationPage })));
+const MyApisInventoryPage = React.lazy(() => import('./pages/provider/MyApisInventoryPage').then(m => ({ default: m.MyApisInventoryPage })));
+const CreateApiWizardPage = React.lazy(() => import('./pages/provider/CreateApiWizardPage').then(m => ({ default: m.CreateApiWizardPage })));
+const EndpointManagementPage = React.lazy(() => import('./pages/provider/EndpointManagementPage').then(m => ({ default: m.EndpointManagementPage })));
+const OpenApiImportPage = React.lazy(() => import('./pages/provider/OpenApiImportPage').then(m => ({ default: m.OpenApiImportPage })));
+const PricingManagementPage = React.lazy(() => import('./pages/provider/PricingManagementPage').then(m => ({ default: m.PricingManagementPage })));
+const PublishingWorkflowPage = React.lazy(() => import('./pages/provider/PublishingWorkflowPage').then(m => ({ default: m.PublishingWorkflowPage })));
+const SubscribersPage = React.lazy(() => import('./pages/provider/SubscribersPage').then(m => ({ default: m.SubscribersPage })));
+const AnalyticsHealthPage = React.lazy(() => import('./pages/provider/AnalyticsHealthPage').then(m => ({ default: m.AnalyticsHealthPage })));
 
-// Admin Workspace Pages
-import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
-import { UserManagementPage } from './pages/admin/UserManagementPage';
-import { ProviderVerificationsPage } from './pages/admin/ProviderVerificationsPage';
-import { ApiReviewsPage } from './pages/admin/ApiReviewsPage';
-import { ReportsModerationPage } from './pages/admin/ReportsModerationPage';
-import { SubscriptionMonitoringPage } from './pages/admin/SubscriptionMonitoringPage';
-import { AuditLogsPage } from './pages/admin/AuditLogsPage';
-import { GatewayOperationsPage } from './pages/admin/GatewayOperationsPage';
+// Lazy-loaded Admin Workspace Pages
+const AdminDashboardPage = React.lazy(() => import('./pages/admin/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
+const UserManagementPage = React.lazy(() => import('./pages/admin/UserManagementPage').then(m => ({ default: m.UserManagementPage })));
+const ProviderVerificationsPage = React.lazy(() => import('./pages/admin/ProviderVerificationsPage').then(m => ({ default: m.ProviderVerificationsPage })));
+const ApiReviewsPage = React.lazy(() => import('./pages/admin/ApiReviewsPage').then(m => ({ default: m.ApiReviewsPage })));
+const ReportsModerationPage = React.lazy(() => import('./pages/admin/ReportsModerationPage').then(m => ({ default: m.ReportsModerationPage })));
+const SubscriptionMonitoringPage = React.lazy(() => import('./pages/admin/SubscriptionMonitoringPage').then(m => ({ default: m.SubscriptionMonitoringPage })));
+const AuditLogsPage = React.lazy(() => import('./pages/admin/AuditLogsPage').then(m => ({ default: m.AuditLogsPage })));
+const GatewayOperationsPage = React.lazy(() => import('./pages/admin/GatewayOperationsPage').then(m => ({ default: m.GatewayOperationsPage })));
+
+// Page Loading Suspense Fallback
+const PageLoadingFallback: React.FC = () => (
+  <div className="min-h-[50vh] flex items-center justify-center p-8">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      <span className="text-body-sm text-on-surface-variant font-medium">Đang tải...</span>
+    </div>
+  </div>
+);
 
 // Layout Wrappers
 const PublicLayout: React.FC = () => (
@@ -85,7 +95,8 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <ScopedAppProvider>
-          <Routes>
+          <React.Suspense fallback={<PageLoadingFallback />}>
+            <Routes>
             {/* PUBLIC & MARKETPLACE ROUTES */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<MarketplacePage />} />
@@ -146,6 +157,7 @@ export function App() {
                 <Route path="/provider/openapi-import" element={<Navigate to="/provider/import-openapi" replace />} />
                 <Route path="/provider/pricing" element={<PricingManagementPage />} />
                 <Route path="/provider/workflow" element={<PublishingWorkflowPage />} />
+                <Route path="/provider/publishing-workflow" element={<PublishingWorkflowPage />} />
                 <Route path="/provider/subscribers" element={<SubscribersPage />} />
                 <Route path="/provider/analytics" element={<AnalyticsHealthPage />} />
                 <Route path="/provider/verification" element={<ProviderVerificationPage />} />
@@ -176,7 +188,8 @@ export function App() {
             {/* CATCH ALL */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </ScopedAppProvider>
+        </React.Suspense>
+      </ScopedAppProvider>
       </AuthProvider>
     </BrowserRouter>
   );
