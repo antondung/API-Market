@@ -189,7 +189,7 @@ test('manual endpoint changes invalidate docs and migration + seed rerun retain 
     // Fixture agreement is separate from Danh demo agreement; retire it explicitly in test DB.
     await f.store.pool.query('UPDATE agreements SET is_active=false');
     await f.store.migrate(true, true); await f.store.migrate(true, true);
-    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 5);
+    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 6);
     assert.equal((await f.store.pool.query("SELECT COUNT(*)::int AS n FROM apis WHERE name IN ('Weather Now API','Currency Rates API','Product Catalog API')")).rows[0].n, 3);
   } finally { await f.close(); }
 });
@@ -357,5 +357,30 @@ test('Provider audit writes are atomic and never include domain tokens or person
     await f.store.pool.query("CREATE FUNCTION fail_provider_audit() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'Injected audit failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER fail_provider_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_provider_audit()");
     await request(f.app).put(r.path).set('Authorization', bearer(r.token)).send({ ...metadata, name: 'Should rollback' }).expect(500);
     assert.equal((await f.service.get(f.users[0]!.id, r.api.id)).name, 'Ready');
+  } finally { await f.close(); }
+});
+
+test('rejection reason constraint rejects NULL, empty and blank reasons but accepts a real one', async () => {
+  const f = await fixture();
+  try {
+    await f.verify();
+    const providerId = f.providers[0]!.id;
+    const record = await create(f, 'Rejection reason API');
+    const insertVerification = (reason: string | null) => f.store.pool.query(
+      "INSERT INTO provider_verifications(provider_id,organization_name,contact_email,evidence_urls,status,reviewed_at,reviewed_by,reject_reason) VALUES($1,'Org','a@b.test','[\"https://example.com/license\"]','Rejected',NOW(),$2,$3)",
+      [providerId, f.admin, reason]);
+    // LENGTH(BTRIM(NULL)) is NULL and PostgreSQL accepts a NULL CHECK, so NULL used to pass.
+    for (const reason of [null, '', '   ']) {
+      await assert.rejects(insertVerification(reason), (error: any) => error.code === '23514');
+    }
+    await insertVerification('Missing licence document');
+
+    const insertReview = (reason: string | null) => f.store.pool.query(
+      "INSERT INTO api_reviews(api_id,reviewer_id,from_status,to_status,reason) VALUES($1,$2,'Under Review','Rejected',$3)",
+      [record.api.id, f.admin, reason]);
+    for (const reason of [null, '', '   ']) {
+      await assert.rejects(insertReview(reason), (error: any) => error.code === '23514');
+    }
+    await insertReview('Endpoint documentation is incomplete');
   } finally { await f.close(); }
 });
