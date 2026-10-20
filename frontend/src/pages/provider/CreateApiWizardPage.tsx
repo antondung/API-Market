@@ -16,6 +16,7 @@ import {
   createProviderPlan,
   updateProviderPlan,
   saveProviderLegal,
+  getProviderLegal,
   getProviderAgreement,
   getProviderVerification,
   formatProviderErrorMessage,
@@ -119,6 +120,10 @@ export const CreateApiWizardPage: React.FC = () => {
   const [legalConfirmed, setLegalConfirmed] = useState(false);
   const [acceptedAgreementVersion, setAcceptedAgreementVersion] = useState<string | null>(null);
   const [agreementError, setAgreementError] = useState<string | null>(null);
+  // The form is hydrated from the stored draft before Finish is allowed, so a reload never
+  // overwrites persisted draft values with wizard defaults.
+  const [restoringDraft, setRestoringDraft] = useState(false);
+  const [draftRestoreError, setDraftRestoreError] = useState<string | null>(null);
   const lastAgreementIdRef = useRef<string | null>(null);
   const lastAgreementVersionRef = useRef<string | null>(null);
   const lastUserIdRef = useRef<string | null>(currentUser?.id || null);
@@ -127,9 +132,9 @@ export const CreateApiWizardPage: React.FC = () => {
   const isMountedRef = useRef(true);
   // Track last seen user and agreement version during render to reset account-scoped state
   const [prevUserId, setPrevUserId] = useState(currentUser?.id || null);
-  if (currentUser?.id !== prevUserId) {
-    setPrevUserId(currentUser?.id || null);
-    setCreatedDraftApiId(null);
+    if (currentUser?.id !== prevUserId) {
+      setPrevUserId(currentUser?.id || null);
+      setCreatedDraftApiId(null);
       writeStoredDraftId(currentUser?.id || null, null);
       setAmbiguousDraftCreation(false);
       setAgreement(null);
@@ -139,12 +144,6 @@ export const CreateApiWizardPage: React.FC = () => {
       setWizardError(null);
       setSubmitting(false);
     }
-
-    // Restore a draft created before a reload so retrying Finish reuses it instead of
-    // creating a duplicate API. Runs once per account.
-    useEffect(() => {
-      setCreatedDraftApiId(readStoredDraftId(currentUser?.id || null));
-    }, [currentUser?.id]);
 
   // Reset legal confirmation if agreement version changes mid-session (render-phase adjustment)
   if (agreement && acceptedAgreementVersion && acceptedAgreementVersion !== agreement.version) {
@@ -209,6 +208,82 @@ export const CreateApiWizardPage: React.FC = () => {
       });
 
     return () => controller.abort();
+  }, [currentUser?.id]);
+
+  // Restore the full wizard form from the persisted draft before Finish can run.
+  // Restoring only the id is unsafe: the retry path deep-compares form values against the
+  // backend and would push wizard defaults (empty name, sample base URL, default quota) over
+  // the values the provider saved before the reload.
+  useEffect(() => {
+    const storedDraftId = readStoredDraftId(currentUser?.id || null);
+    setCreatedDraftApiId(storedDraftId);
+    setDraftRestoreError(null);
+    if (!storedDraftId) {
+      setRestoringDraft(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const effectUserId = currentUser?.id || null;
+    let cancelled = false;
+    setRestoringDraft(true);
+
+    Promise.allSettled([
+      getProviderApi(storedDraftId, controller.signal),
+      listProviderVersions(storedDraftId, controller.signal),
+      listProviderPlans(storedDraftId, controller.signal),
+      getProviderLegal(storedDraftId, controller.signal),
+    ])
+      .then(([apiResult, versionsResult, plansResult, legalResult]) => {
+        if (cancelled || controller.signal.aborted || currentUserIdRef.current !== effectUserId) return;
+
+        if (apiResult.status !== 'fulfilled') {
+          setDraftRestoreError(
+            'Không thể tải bản nháp đã lưu. Vui lòng kiểm tra kết nối rồi thử lại, hoặc mở "Kho API của tôi".'
+          );
+          return;
+        }
+
+        const draft = apiResult.value;
+        setName(draft.name ?? '');
+        setCategory(draft.category ?? CATEGORIES[0]);
+        setBaseUrl(draft.baseUrl ?? '');
+        setTagsInput((draft.tags ?? []).join(', '));
+        // The wizard keeps one description field but the API stores a single value.
+        setLongDescription(draft.description ?? '');
+
+        if (versionsResult.status === 'fulfilled' && versionsResult.value.length > 0) {
+          setVersion(versionsResult.value[0].version);
+        }
+
+        if (plansResult.status === 'fulfilled') {
+          const freePlan = plansResult.value.find(plan => plan.name.trim().toLowerCase() === 'free');
+          if (freePlan) {
+            setFreeQuota(String(freePlan.quota));
+            setFreeRps(String(freePlan.rateLimit));
+          }
+        }
+
+        if (legalResult.status === 'fulfilled' && legalResult.value) {
+          const legal = legalResult.value;
+          setDataClassification(legal.dataClassification ?? 'Public');
+          if (typeof legal.processesPersonalData === 'boolean') {
+            setProcessesPersonalData(legal.processesPersonalData);
+            setSelectedPersonalDataTypes(legal.personalDataTypes ?? []);
+            setDataProcessingPurpose(legal.dataProcessingPurpose ?? '');
+          }
+        }
+      })
+      .finally(() => {
+        if (!cancelled && !controller.signal.aborted && currentUserIdRef.current === effectUserId) {
+          setRestoringDraft(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [currentUser?.id]);
 
   const isAgreementValid = Boolean(
@@ -619,6 +694,19 @@ export const CreateApiWizardPage: React.FC = () => {
               Bản nháp #{createdDraftApiId} đã được lưu an toàn. Nhấn lại Hoàn tất để tiếp tục.
             </span>
           )}
+        </div>
+      )}
+
+      {/* Draft restore failure: Finish stays blocked until the stored draft is readable. */}
+      {draftRestoreError && (
+        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <span>{draftRestoreError}</span>
+          <Link
+            to="/provider/apis"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface text-error font-medium text-xs border border-error/40 hover:bg-error-container/40 shrink-0"
+          >
+            Mở Kho API của tôi →
+          </Link>
         </div>
       )}
 
@@ -1099,11 +1187,11 @@ export const CreateApiWizardPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="md"
-                disabled={submitting || ambiguousDraftCreation || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
+                disabled={submitting || restoringDraft || Boolean(draftRestoreError) || ambiguousDraftCreation || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
                 onClick={handleFinish}
                 icon="check_circle"
               >
-                {submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
+                                {restoringDraft ? 'Đang khôi phục bản nháp...' : submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
               </Button>
             </div>
           </div>

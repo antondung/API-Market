@@ -2087,5 +2087,111 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
       expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-new-1');
     });
   });
+
+  it('TC-FE-RETRY-RELOAD-03: hydrates the saved draft values before Finish so nothing is overwritten', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-new' } as any);
+    const updateApiSpy = vi.spyOn(providerApiModule, 'updateProviderApi').mockResolvedValue({} as any);
+    const updatePlanSpy = vi.spyOn(providerApiModule, 'updateProviderPlan').mockResolvedValue({} as any);
+    const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({} as any);
+    const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({} as any);
+
+    // Values that differ from every wizard default.
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-draft-finance',
+      status: 'Draft',
+      name: 'Draft Finance',
+      description: 'Du lieu tai chinh da luu',
+      category: 'Finance & Banking',
+      baseUrl: 'https://finance.partner.example/v2',
+      tags: ['finance', 'ledger'],
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([{ id: 'ver-9', version: '3.2.1' }] as any);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-9', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 50000, rateLimit: 50 },
+    ] as any);
+    const getLegalSpy = vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue({
+      ownershipDeclaration: 'I own it',
+      distributionRights: 'I can distribute',
+      dataClassification: 'Confidential',
+      processesPersonalData: false,
+      personalDataTypes: [],
+    } as any);
+
+    sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-finance' }));
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    // The stored draft is read before the provider can reach the final step.
+    await waitFor(() => {
+      expect(getLegalSpy).toHaveBeenCalled();
+    });
+
+    // advanceToStep4 types into the name field; use the value already stored in the draft so
+    // no metadata change is pending.
+    await advanceToStep4('Draft Finance');
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await waitFor(() => {
+      expect(finishBtn.hasAttribute('disabled')).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-draft-finance');
+    });
+
+    // No duplicate API, and the stored values are not pushed over with wizard defaults.
+    expect(createApiSpy).not.toHaveBeenCalled();
+    expect(updateApiSpy).not.toHaveBeenCalled();
+    expect(updatePlanSpy).not.toHaveBeenCalled();
+    expect(createPlanSpy).not.toHaveBeenCalled();
+    expect(createVersionSpy).not.toHaveBeenCalled();
+  });
+
+  it('TC-FE-RETRY-RELOAD-04: blocks Finish and shows recovery when the stored draft cannot be loaded', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-new' } as any);
+    vi.spyOn(providerApiModule, 'updateProviderApi').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([]);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([]);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(null);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockRejectedValue(new Error('Network down'));
+
+    sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-broken' }));
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Không thể tải bản nháp đã lưu/i)).toBeDefined();
+    });
+
+    await advanceToStep4();
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    expect(finishBtn.hasAttribute('disabled')).toBe(true);
+
+    fireEvent.click(finishBtn);
+    expect(createApiSpy).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
 });
 
