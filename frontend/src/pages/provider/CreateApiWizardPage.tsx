@@ -50,6 +50,32 @@ const ALL_PERSONAL_DATA_TYPES: { type: PersonalDataType; label: string }[] = [
   { type: 'Other', label: 'Dữ liệu nhận dạng cá nhân khác (Other)' },
 ];
 
+  // A draft API is created before the remaining wizard steps run. If a later step fails the
+  // provider is told the draft is safe, so the id must survive a reload; otherwise pressing
+  // Finish again would create a second API with the same name and hit uq_apis_provider_name.
+  const DRAFT_STORAGE_KEY = 'apihub_provider_draft_api_id';
+
+  const readStoredDraftId = (userId: string | null): string | null => {
+    if (!userId) return null;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { userId?: string; apiId?: string };
+      return parsed.userId === userId && parsed.apiId ? parsed.apiId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeStoredDraftId = (userId: string | null, apiId: string | null) => {
+    try {
+      if (!userId || !apiId) sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      else sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ userId, apiId }));
+    } catch {
+      // Storage can be unavailable (private mode); the in-memory state still works.
+    }
+  };
+
 export const CreateApiWizardPage: React.FC = () => {
   const { currentUser } = useAuth();
   const { t } = useLanguage();
@@ -104,14 +130,21 @@ export const CreateApiWizardPage: React.FC = () => {
   if (currentUser?.id !== prevUserId) {
     setPrevUserId(currentUser?.id || null);
     setCreatedDraftApiId(null);
-    setAmbiguousDraftCreation(false);
-    setAgreement(null);
-    setLegalConfirmed(false);
-    setAcceptedAgreementVersion(null);
-    setAgreementError(null);
-    setWizardError(null);
-    setSubmitting(false);
-  }
+      writeStoredDraftId(currentUser?.id || null, null);
+      setAmbiguousDraftCreation(false);
+      setAgreement(null);
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+      setAgreementError(null);
+      setWizardError(null);
+      setSubmitting(false);
+    }
+
+    // Restore a draft created before a reload so retrying Finish reuses it instead of
+    // creating a duplicate API. Runs once per account.
+    useEffect(() => {
+      setCreatedDraftApiId(readStoredDraftId(currentUser?.id || null));
+    }, [currentUser?.id]);
 
   // Reset legal confirmation if agreement version changes mid-session (render-phase adjustment)
   if (agreement && acceptedAgreementVersion && acceptedAgreementVersion !== agreement.version) {
@@ -342,7 +375,8 @@ export const CreateApiWizardPage: React.FC = () => {
 
         targetApiId = createdApi.id;
         setCreatedDraftApiId(createdApi.id);
-        setAmbiguousDraftCreation(false);
+                writeStoredDraftId(pinnedUserId, createdApi.id);
+                setAmbiguousDraftCreation(false);
 
         // 2. Initial Version Creation
         const versionStr = version.trim() || '1.0.0';
@@ -539,7 +573,11 @@ export const CreateApiWizardPage: React.FC = () => {
       // Verify session before final success navigation or success UI updates
       if (!checkSession()) return;
 
-      navigate(`/provider/publishing-workflow?api=${targetApiId}`);
+            // The draft is now a complete API; drop the recovery marker.
+            writeStoredDraftId(pinnedUserId, null);
+            setCreatedDraftApiId(null);
+
+            navigate(`/provider/publishing-workflow?api=${targetApiId}`);
     } catch (err) {
       if (!checkSession()) return;
       setWizardError(formatProviderErrorMessage(err));

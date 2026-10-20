@@ -57,23 +57,24 @@ describe('CreateApiWizardPage (Finding F2 fail-closed agreement tests)', () => {
     vi.restoreAllMocks();
     mockNavigate.mockReset();
     currentUserState = mockUser;
+      sessionStorage.clear();
 
-    vi.spyOn(AuthContextModule, 'useAuth').mockImplementation(() => ({
-      currentUser: currentUserState,
-      user: currentUserState,
-      isAuthenticated: Boolean(currentUserState),
-      sessionReady: true,
-      sessionError: null,
-      backendOnline: true,
-      checkBackendConnection: vi.fn(),
-      retrySession: vi.fn(),
-      login: vi.fn(),
-      register: vi.fn(),
-      logout: vi.fn(),
-    } as any));
+      vi.spyOn(AuthContextModule, 'useAuth').mockImplementation(() => ({
+        currentUser: currentUserState,
+        user: currentUserState,
+        isAuthenticated: Boolean(currentUserState),
+        sessionReady: true,
+        sessionError: null,
+        backendOnline: true,
+        checkBackendConnection: vi.fn(),
+        retrySession: vi.fn(),
+        login: vi.fn(),
+        register: vi.fn(),
+        logout: vi.fn(),
+      } as any));
 
-    vi.spyOn(providerApiModule, 'getProviderVerification').mockResolvedValue(mockVerification);
-  });
+      vi.spyOn(providerApiModule, 'getProviderVerification').mockResolvedValue(mockVerification);
+    });
 
   const advanceToStep4 = async () => {
     // Step 1: fill required name and click Tiếp tục
@@ -2007,6 +2008,84 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
     fireEvent.click(submitBtn);
     expect(createApiSpy).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('TC-FE-RETRY-RELOAD-01: reuses the stored draft after a reload instead of creating a duplicate API', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-draft-7' } as any);
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-draft-7',
+      status: 'Draft',
+      name: 'Test Weather API',
+      description: 'Dịch vụ API thương mại',
+      category: 'Machine Learning & AI',
+      baseUrl: 'https://api.mycompany.io/v1',
+      tags: ['production', 'api'],
+    } as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([]);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-1' } as any);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([]);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+
+    // A previous attempt created the draft, then a later step failed and the page reloaded.
+    sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-7' }));
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4();
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      // The stored draft is reused, so no second API is created.
+      expect(createApiSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-draft-7');
+    });
+
+    // The marker is cleared once the wizard completes.
+    expect(sessionStorage.getItem('apihub_provider_draft_api_id')).toBeNull();
+  });
+
+  it('TC-FE-RETRY-RELOAD-02: ignores a stored draft that belongs to another account', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-new-1' } as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({ id: 'ver-1' } as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
+    vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+
+    sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: 'someone-else', apiId: 'api-other' }));
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4();
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      expect(createApiSpy).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).toHaveBeenCalledWith('/provider/publishing-workflow?api=api-new-1');
+    });
   });
 });
 
