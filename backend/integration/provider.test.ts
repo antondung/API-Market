@@ -189,7 +189,7 @@ test('manual endpoint changes invalidate docs and migration + seed rerun retain 
     // Fixture agreement is separate from Danh demo agreement; retire it explicitly in test DB.
     await f.store.pool.query('UPDATE agreements SET is_active=false');
     await f.store.migrate(true, true); await f.store.migrate(true, true);
-    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 5);
+    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 6);
     assert.equal((await f.store.pool.query("SELECT COUNT(*)::int AS n FROM apis WHERE name IN ('Weather Now API','Currency Rates API','Product Catalog API')")).rows[0].n, 3);
   } finally { await f.close(); }
 });
