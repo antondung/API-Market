@@ -16,6 +16,7 @@ import {
   createProviderPlan,
   updateProviderPlan,
   saveProviderLegal,
+  getProviderLegal,
   getProviderAgreement,
   getProviderVerification,
   formatProviderErrorMessage,
@@ -49,6 +50,39 @@ const ALL_PERSONAL_DATA_TYPES: { type: PersonalDataType; label: string }[] = [
   { type: 'HealthBiometrics', label: 'Sức khỏe & Sinh trắc học (HealthBiometrics)' },
   { type: 'Other', label: 'Dữ liệu nhận dạng cá nhân khác (Other)' },
 ];
+
+  // A draft API is created before the remaining wizard steps run. If a later step fails the
+  // provider is told the draft is safe, so the id must survive a reload; otherwise pressing
+  // Finish again would create a second API with the same name and hit uq_apis_provider_name.
+  const DRAFT_STORAGE_KEY = 'apihub_provider_draft_api_id';
+
+// Exact sentences the wizard writes. Stored legal text is free-form, so only these are
+// recognised when restoring the radio buttons.
+const OWNERSHIP_OWN_TEXT = 'API do chính Provider phát triển và sở hữu (First-Party Owner)';
+const OWNERSHIP_THIRD_PARTY_TEXT = 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
+const DISTRIBUTION_THIRD_PARTY_TEXT = 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép';
+const DISTRIBUTION_OWN_TEXT = 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+
+  const readStoredDraftId = (userId: string | null): string | null => {
+    if (!userId) return null;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { userId?: string; apiId?: string };
+      return parsed.userId === userId && parsed.apiId ? parsed.apiId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeStoredDraftId = (userId: string | null, apiId: string | null) => {
+    try {
+      if (!userId || !apiId) sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      else sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ userId, apiId }));
+    } catch {
+      // Storage can be unavailable (private mode); the in-memory state still works.
+    }
+  };
 
 export const CreateApiWizardPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -86,6 +120,13 @@ export const CreateApiWizardPage: React.FC = () => {
   // Step 4: Ownership, Legal & Data Classification (US-08)
   const [ownershipType, setOwnershipType] = useState<'OWN' | 'THIRD_PARTY'>('OWN');
   const [usesThirdPartyData, setUsesThirdPartyData] = useState(false);
+    // The backend stores both commitments as free text, so a stored value may not match either
+    // wizard sentence. Keep the original text and only replace it when the provider actually
+    // changes the choice; otherwise a reload would rewrite a valid declaration.
+    const [storedOwnershipDeclaration, setStoredOwnershipDeclaration] = useState<string | null>(null);
+    const [storedDistributionRights, setStoredDistributionRights] = useState<string | null>(null);
+    const [ownershipTouched, setOwnershipTouched] = useState(false);
+    const [distributionTouched, setDistributionTouched] = useState(false);
   const [dataClassification, setDataClassification] = useState<DataClassification>('Public');
   const [processesPersonalData, setProcessesPersonalData] = useState(false);
   const [selectedPersonalDataTypes, setSelectedPersonalDataTypes] = useState<PersonalDataType[]>([]);
@@ -93,6 +134,10 @@ export const CreateApiWizardPage: React.FC = () => {
   const [legalConfirmed, setLegalConfirmed] = useState(false);
   const [acceptedAgreementVersion, setAcceptedAgreementVersion] = useState<string | null>(null);
   const [agreementError, setAgreementError] = useState<string | null>(null);
+  // The form is hydrated from the stored draft before Finish is allowed, so a reload never
+  // overwrites persisted draft values with wizard defaults.
+  const [restoringDraft, setRestoringDraft] = useState(false);
+  const [draftRestoreError, setDraftRestoreError] = useState<string | null>(null);
   const lastAgreementIdRef = useRef<string | null>(null);
   const lastAgreementVersionRef = useRef<string | null>(null);
   const lastUserIdRef = useRef<string | null>(currentUser?.id || null);
@@ -101,17 +146,22 @@ export const CreateApiWizardPage: React.FC = () => {
   const isMountedRef = useRef(true);
   // Track last seen user and agreement version during render to reset account-scoped state
   const [prevUserId, setPrevUserId] = useState(currentUser?.id || null);
-  if (currentUser?.id !== prevUserId) {
-    setPrevUserId(currentUser?.id || null);
-    setCreatedDraftApiId(null);
-    setAmbiguousDraftCreation(false);
-    setAgreement(null);
-    setLegalConfirmed(false);
-    setAcceptedAgreementVersion(null);
-    setAgreementError(null);
-    setWizardError(null);
-    setSubmitting(false);
-  }
+    if (currentUser?.id !== prevUserId) {
+      setPrevUserId(currentUser?.id || null);
+      setCreatedDraftApiId(null);
+      writeStoredDraftId(currentUser?.id || null, null);
+      setAmbiguousDraftCreation(false);
+      setAgreement(null);
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+      setAgreementError(null);
+      setWizardError(null);
+      setSubmitting(false);
+      setStoredOwnershipDeclaration(null);
+      setStoredDistributionRights(null);
+      setOwnershipTouched(false);
+      setDistributionTouched(false);
+    }
 
   // Reset legal confirmation if agreement version changes mid-session (render-phase adjustment)
   if (agreement && acceptedAgreementVersion && acceptedAgreementVersion !== agreement.version) {
@@ -176,6 +226,103 @@ export const CreateApiWizardPage: React.FC = () => {
       });
 
     return () => controller.abort();
+  }, [currentUser?.id]);
+
+  // Restore the full wizard form from the persisted draft before Finish can run.
+  // Restoring only the id is unsafe: the retry path deep-compares form values against the
+  // backend and would push wizard defaults (empty name, sample base URL, default quota) over
+  // the values the provider saved before the reload.
+  useEffect(() => {
+    const storedDraftId = readStoredDraftId(currentUser?.id || null);
+    setCreatedDraftApiId(storedDraftId);
+    setDraftRestoreError(null);
+    if (!storedDraftId) {
+      setRestoringDraft(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const effectUserId = currentUser?.id || null;
+    let cancelled = false;
+    setRestoringDraft(true);
+
+    Promise.allSettled([
+      getProviderApi(storedDraftId, controller.signal),
+      listProviderVersions(storedDraftId, controller.signal),
+      listProviderPlans(storedDraftId, controller.signal),
+      getProviderLegal(storedDraftId, controller.signal),
+    ])
+      .then(([apiResult, versionsResult, plansResult, legalResult]) => {
+        if (cancelled || controller.signal.aborted || currentUserIdRef.current !== effectUserId) return;
+
+        // A failed read must block Finish: leaving a field at its wizard default would let the
+        // retry path push that default over the value stored in the draft. Only a successful
+        // read that legitimately returns nothing (no versions/plans/legal yet) may be skipped.
+        const failed: string[] = [];
+        if (apiResult.status === 'rejected') failed.push('thông tin API');
+        if (versionsResult.status === 'rejected') failed.push('phiên bản');
+        if (plansResult.status === 'rejected') failed.push('gói cước');
+        if (legalResult.status === 'rejected') failed.push('khai báo pháp lý');
+
+        if (failed.length > 0) {
+          setDraftRestoreError(
+            `Không thể tải ${failed.join(', ')} của bản nháp đã lưu. Vui lòng kiểm tra kết nối rồi tải lại trang, hoặc mở "Kho API của tôi".`
+          );
+          return;
+        }
+
+        // Every result is fulfilled here; the guard above returns otherwise.
+        if (apiResult.status !== 'fulfilled' || versionsResult.status !== 'fulfilled'
+          || plansResult.status !== 'fulfilled' || legalResult.status !== 'fulfilled') return;
+
+        const draft = apiResult.value;
+        setName(draft.name ?? '');
+        setCategory(draft.category ?? CATEGORIES[0]);
+        setBaseUrl(draft.baseUrl ?? '');
+        setTagsInput((draft.tags ?? []).join(', '));
+        // The wizard keeps one description field but the API stores a single value.
+        setLongDescription(draft.description ?? '');
+
+        const versions = versionsResult.value;
+        if (versions.length > 0) setVersion(versions[0].version);
+
+        const freePlan = plansResult.value.find(plan => plan.name.trim().toLowerCase() === 'free');
+        if (freePlan) {
+          setFreeQuota(String(freePlan.quota));
+          setFreeRps(String(freePlan.rateLimit));
+        }
+
+        const legal = legalResult.value;
+        if (legal) {
+          setDataClassification(legal.dataClassification ?? 'Public');
+          // Keep the stored text verbatim. Only recognise the exact wizard sentences so the
+          // radio buttons reflect the saved choice; anything else stays as-is and is
+          // resubmitted unchanged unless the provider edits it.
+          setStoredOwnershipDeclaration(legal.ownershipDeclaration ?? null);
+          setStoredDistributionRights(legal.distributionRights ?? null);
+          setOwnershipTouched(false);
+          setDistributionTouched(false);
+          if (legal.ownershipDeclaration === OWNERSHIP_OWN_TEXT) setOwnershipType('OWN');
+          else if (legal.ownershipDeclaration === OWNERSHIP_THIRD_PARTY_TEXT) setOwnershipType('THIRD_PARTY');
+          if (legal.distributionRights === DISTRIBUTION_THIRD_PARTY_TEXT) setUsesThirdPartyData(true);
+          else if (legal.distributionRights === DISTRIBUTION_OWN_TEXT) setUsesThirdPartyData(false);
+          if (typeof legal.processesPersonalData === 'boolean') {
+            setProcessesPersonalData(legal.processesPersonalData);
+            setSelectedPersonalDataTypes(legal.personalDataTypes ?? []);
+            setDataProcessingPurpose(legal.dataProcessingPurpose ?? '');
+          }
+        }
+      })
+      .finally(() => {
+        if (!cancelled && !controller.signal.aborted && currentUserIdRef.current === effectUserId) {
+          setRestoringDraft(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [currentUser?.id]);
 
   const isAgreementValid = Boolean(
@@ -342,7 +489,8 @@ export const CreateApiWizardPage: React.FC = () => {
 
         targetApiId = createdApi.id;
         setCreatedDraftApiId(createdApi.id);
-        setAmbiguousDraftCreation(false);
+                writeStoredDraftId(pinnedUserId, createdApi.id);
+                setAmbiguousDraftCreation(false);
 
         // 2. Initial Version Creation
         const versionStr = version.trim() || '1.0.0';
@@ -518,12 +666,14 @@ export const CreateApiWizardPage: React.FC = () => {
 
       // 4. Save Legal Affirmation & Privacy Contract (US-08)
       const agreementVer = currentServerAgreement.version;
-      const ownershipDecl = ownershipType === 'OWN'
-        ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
-        : 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
-      const distributionRights = usesThirdPartyData
-        ? 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép'
-        : 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+      // Resubmit the stored text verbatim unless the provider changed the choice, so a
+      // free-form declaration is never rewritten into a wizard sentence.
+      const ownershipDecl = !ownershipTouched && storedOwnershipDeclaration
+        ? storedOwnershipDeclaration
+        : ownershipType === 'OWN' ? OWNERSHIP_OWN_TEXT : OWNERSHIP_THIRD_PARTY_TEXT;
+      const distributionRights = !distributionTouched && storedDistributionRights
+        ? storedDistributionRights
+        : usesThirdPartyData ? DISTRIBUTION_THIRD_PARTY_TEXT : DISTRIBUTION_OWN_TEXT;
 
       await saveProviderLegal(targetApiId!, {
         ownershipDeclaration: ownershipDecl,
@@ -539,7 +689,11 @@ export const CreateApiWizardPage: React.FC = () => {
       // Verify session before final success navigation or success UI updates
       if (!checkSession()) return;
 
-      navigate(`/provider/publishing-workflow?api=${targetApiId}`);
+            // The draft is now a complete API; drop the recovery marker.
+            writeStoredDraftId(pinnedUserId, null);
+            setCreatedDraftApiId(null);
+
+            navigate(`/provider/publishing-workflow?api=${targetApiId}`);
     } catch (err) {
       if (!checkSession()) return;
       setWizardError(formatProviderErrorMessage(err));
@@ -581,6 +735,19 @@ export const CreateApiWizardPage: React.FC = () => {
               Bản nháp #{createdDraftApiId} đã được lưu an toàn. Nhấn lại Hoàn tất để tiếp tục.
             </span>
           )}
+        </div>
+      )}
+
+      {/* Draft restore failure: Finish stays blocked until the stored draft is readable. */}
+      {draftRestoreError && (
+        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <span>{draftRestoreError}</span>
+          <Link
+            to="/provider/apis"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface text-error font-medium text-xs border border-error/40 hover:bg-error-container/40 shrink-0"
+          >
+            Mở Kho API của tôi →
+          </Link>
         </div>
       )}
 
@@ -835,7 +1002,7 @@ export const CreateApiWizardPage: React.FC = () => {
                     type="radio"
                     name="ownership"
                     checked={ownershipType === 'OWN'}
-                    onChange={() => setOwnershipType('OWN')}
+                    onChange={() => { setOwnershipType('OWN'); setOwnershipTouched(true); }}
                     className="accent-primary"
                   />
                   <span>{t('API do chính Provider phát triển và sở hữu (First-Party Owner)')}</span>
@@ -845,7 +1012,7 @@ export const CreateApiWizardPage: React.FC = () => {
                     type="radio"
                     name="ownership"
                     checked={ownershipType === 'THIRD_PARTY'}
-                    onChange={() => setOwnershipType('THIRD_PARTY')}
+                    onChange={() => { setOwnershipType('THIRD_PARTY'); setOwnershipTouched(true); }}
                     className="accent-primary"
                   />
                   <span>{t('API của bên thứ ba nhưng Provider được phép phân phối / thương mại hóa (Authorized Distributor)')}</span>
@@ -857,7 +1024,7 @@ export const CreateApiWizardPage: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={usesThirdPartyData}
-                    onChange={(e) => setUsesThirdPartyData(e.target.checked)}
+                    onChange={(e) => { setUsesThirdPartyData(e.target.checked); setDistributionTouched(true); }}
                     className="rounded accent-primary"
                   />
                   <span className="text-on-surface-variant">{t('API có sử dụng dữ liệu hoặc dịch vụ của bên thứ ba')}</span>
@@ -1061,11 +1228,11 @@ export const CreateApiWizardPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="md"
-                disabled={submitting || ambiguousDraftCreation || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
+                disabled={submitting || restoringDraft || Boolean(draftRestoreError) || ambiguousDraftCreation || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
                 onClick={handleFinish}
                 icon="check_circle"
               >
-                {submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
+                                {restoringDraft ? 'Đang khôi phục bản nháp...' : submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
               </Button>
             </div>
           </div>
