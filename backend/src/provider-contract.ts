@@ -46,7 +46,7 @@ const array = (name: string) => ({ type: 'array', items: ref(name) });
 Object.assign(schemas, {
   ProviderApi: record({ id: string, providerId: string, name: string, description: string, category: string, baseUrl: string, tags: { type: 'array', items: string }, status: { type: 'string', enum: ['Draft','Submitted','Under Review','Approved','Published','Rejected'] }, submittedAt: timestamp, approvedAt: timestamp, publishedAt: timestamp, createdAt: timestamp, updatedAt: timestamp }),
   ProviderVerification: record({ id: string, providerId: string, organizationName: string, contactEmail: string, evidenceUrls: { type: 'array', items: string }, status: { type: 'string', enum: ['Pending','Verified','Rejected'] }, rejectReason: { type: ['string','null'] }, reviewedBy: { type: ['string','null'] }, reviewedAt: timestamp, submittedAt: timestamp }),
-  ProviderVersion: record({ id: string, apiId: string, version: string, changelog: string, openapiDocument: { type: ['object','null'] } }),
+  ProviderVersion: record({ id: string, apiId: string, version: string, changelog: string, openapiDocument: { type: ['object','null'] }, documentationStale: { type: 'boolean', description: 'Manual endpoint changes require reimport before submission; retained imported document is still readable.' } }),
   ProviderEndpoint: record({ id: string, apiId: string, versionId: string, method: string, path: string, description: string, parameters: { type: 'array', items: { type: 'object' } }, requestSchema: {}, responseExample: {} }),
   ProviderPlan: record({ id: string, apiId: string, name: { type: 'string', enum: ['Free','Basic','Pro'] }, priceMonthly: { type: 'number' }, currency: string, quota: integer, rateLimit: integer, isActive: { type: 'boolean' } }),
   ProviderLegal: record({ id: string, apiId: string, agreementId: string, agreementVersion: string, ownershipDeclaration: string, distributionRights: string, dataClassification: string, acceptedAt: timestamp,
@@ -74,7 +74,7 @@ function resultSchema(path: string, method: string): object {
 }
 export const providerContract = {
   openapi: '3.1.0', info: { title: 'API Market — Sprint 2 Provider', version: '0.2.0',
-    description: 'Implemented with PostgreSQL schema 003 from Danh. Provider owner required; creation requires Verified; mutations require Draft. Admin review routes belong to Dũng. Standard data/error envelopes; child collections return arrays, API list returns items,total,page,pageSize. Import replaces endpoints/docs for versionId atomically. Manual endpoint edits invalidate imported documentation.' },
+    description: 'Provider owner required; creation requires Verified; mutations require Draft. Standard data/error envelopes; child collections return arrays, API list returns items,total,page,pageSize. Import replaces endpoints/docs for versionId atomically. Version metadata updates preserve documents and synchronize info.version on rename. Manual endpoint changes retain imported documentation and mark affected versions documentationStale; moving an endpoint marks both versions. Submit returns 400 DOCUMENTATION_STALE until affected versions are reimported. Explicit Version/API deletion still deletes their children. Requires migrations through 007.' },
   components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } }, schemas },
   paths: Object.fromEntries([...new Set(routes.map(route => route[1]))].map(path => [path,
     Object.fromEntries(routes.filter(route => route[1] === path).map(([method, , schema, summary]) => [method, {

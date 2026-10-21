@@ -33,6 +33,7 @@ export class ProviderService {
   async ready() {
     await this.pool.query('SELECT id,processes_personal_data FROM api_legal_declarations LIMIT 0');
     await this.pool.query('SELECT api_id FROM api_domain_verifications LIMIT 0');
+    await this.pool.query('SELECT documentation_stale FROM api_versions LIMIT 0');
   }
   private async audit(client: PoolClient, actor: string, action: string, api: string, detail: Record<string, unknown> = {}) {
     await new AuditService(this.pool).write(client, { actorId: actor, actorRole: 'API_PROVIDER', action, targetType: 'api', targetId: api, detail });
@@ -65,6 +66,13 @@ export class ProviderService {
   private async version(client: PoolClient, api: string, version: string) {
     const result = (await client.query('SELECT * FROM api_versions WHERE id=$1 AND api_id=$2', [id(version), api])).rows[0];
     if (!result) throw missing(); return result;
+  }
+  private async markDocumentationStale(client: PoolClient, api: string, versions: unknown[]) {
+    // A version with no document cannot have a stale import: normal coverage validation
+    // still prevents submission until its first documentation is supplied.
+    await client.query(`UPDATE api_versions v SET documentation_stale=TRUE,updated_at=NOW()
+      WHERE v.api_id=$1 AND v.id=ANY($2::int[]) AND (v.openapi_document IS NOT NULL
+        OR EXISTS(SELECT 1 FROM api_documentations d WHERE d.api_id=v.api_id AND d.version_id=v.id))`, [api, versions]);
   }
   async getVerification(actor: string) {
     return this.transaction(actor, async (c, p) => { const record = await this.verification(c, p); return record ? row(record) : null; });
@@ -111,10 +119,15 @@ export class ProviderService {
   }
   async updateVersion(actor: string, api: string, version: string, input: Input) {
     return this.transaction(actor, async (c, p) => {
-      await this.owned(c, p, api, true); await this.version(c, api, version);
-      await c.query('DELETE FROM api_documentations WHERE version_id=$1 AND api_id=$2', [version, api]);
-      await c.query('UPDATE api_versions SET openapi_document=NULL WHERE id=$1 AND api_id=$2', [version, api]);
-      return row((await c.query('UPDATE api_versions SET version=$1,changelog=$2,updated_at=NOW() WHERE id=$3 AND api_id=$4 RETURNING *', [input.version, input.changelog, version, api])).rows[0]);
+      await this.owned(c, p, api, true);
+      const previous = await this.version(c, api, version);
+      await c.query('UPDATE api_versions SET version=$1,changelog=$2,updated_at=NOW() WHERE id=$3 AND api_id=$4', [input.version, input.changelog, version, api]);
+      if (previous.version !== input.version) {
+        // Only synchronize the OpenAPI version label; preserve paths, schemas and extensions.
+        await c.query("UPDATE api_documentations SET content=jsonb_set(content,'{info,version}',to_jsonb($1::text)),updated_at=NOW() WHERE version_id=$2 AND api_id=$3 AND jsonb_typeof(content->'info')='object'", [input.version, version, api]);
+        await c.query("UPDATE api_versions SET openapi_document=jsonb_set(openapi_document,'{info,version}',to_jsonb($1::text)) WHERE id=$2 AND api_id=$3 AND jsonb_typeof(openapi_document->'info')='object'", [input.version, version, api]);
+      }
+      return row((await c.query('SELECT * FROM api_versions WHERE id=$1 AND api_id=$2', [version, api])).rows[0]);
     });
   }
   async deleteVersion(actor: string, api: string, version: string) {
@@ -126,14 +139,16 @@ export class ProviderService {
   async endpoint(actor: string, api: string, input: Input, endpointId?: string) {
     return this.transaction(actor, async (c, p) => {
       await this.owned(c, p, api, true); await this.version(c, api, input.versionId);
+      const previous = endpointId ? (await c.query('SELECT version_id FROM api_endpoints WHERE api_id=$1 AND id=$2', [api, id(endpointId)])).rows[0] : null;
+      if (endpointId && !previous) throw missing();
       const values = [input.versionId, input.method, input.path, input.description, JSON.stringify(input.parameters ?? []), JSON.stringify(input.requestSchema ?? null), JSON.stringify(input.responseExample ?? null), api];
       const result = endpointId
         ? await c.query('UPDATE api_endpoints SET version_id=$1,method=$2,path=$3,description=$4,parameters=$5,request_schema=$6,response_example=$7,updated_at=NOW() WHERE api_id=$8 AND id=$9 RETURNING *', [...values, id(endpointId)])
         : await c.query('INSERT INTO api_endpoints(version_id,method,path,description,parameters,request_schema,response_example,api_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', values);
       if (!result.rows[0]) throw missing();
-      // Manual edits invalidate imported docs; require a fresh import before submission.
-      await c.query('DELETE FROM api_documentations WHERE api_id=$1', [api]);
-      await c.query('UPDATE api_versions SET openapi_document=NULL WHERE api_id=$1', [api]);
+      // Preserve the import for review/recovery; stale versions cannot be submitted.
+      // Moving an endpoint affects its old and new version, never unrelated versions.
+      await this.markDocumentationStale(c, api, [input.versionId, ...(previous ? [previous.version_id] : [])]);
       return row(result.rows[0]);
     });
   }
@@ -151,10 +166,10 @@ export class ProviderService {
     return this.transaction(actor, async (c, p) => {
       await this.owned(c, p, api, true);
       const table = kind === 'endpoints' ? 'api_endpoints' : 'api_plans';
-      if (!(await c.query(`DELETE FROM ${table} WHERE id=$1 AND api_id=$2`, [id(child), api])).rowCount) throw missing();
+      const deleted = await c.query(`DELETE FROM ${table} WHERE id=$1 AND api_id=$2 RETURNING ${kind === 'endpoints' ? 'version_id' : 'id'}`, [id(child), api]);
+      if (!deleted.rowCount) throw missing();
       if (kind === 'endpoints') {
-        await c.query('DELETE FROM api_documentations WHERE api_id=$1', [api]);
-        await c.query('UPDATE api_versions SET openapi_document=NULL WHERE api_id=$1', [api]);
+        await this.markDocumentationStale(c, api, [deleted.rows[0].version_id]);
       }
     });
   }
@@ -185,7 +200,7 @@ export class ProviderService {
       for (const endpoint of imported.endpoints) await c.query('INSERT INTO api_endpoints(api_id,version_id,method,path,description,parameters,request_schema,response_example) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
         [api, versionId, endpoint.method, endpoint.path, endpoint.description || endpoint.summary || `${endpoint.method} ${endpoint.path}`, JSON.stringify(endpoint.parameters), JSON.stringify(endpoint.requestBody ?? null), JSON.stringify(endpoint.responses)]);
       const document = JSON.stringify(imported.documentation);
-      await c.query('UPDATE api_versions SET openapi_document=$1,updated_at=NOW() WHERE id=$2 AND api_id=$3', [document, versionId, api]);
+      await c.query('UPDATE api_versions SET openapi_document=$1,documentation_stale=FALSE,updated_at=NOW() WHERE id=$2 AND api_id=$3', [document, versionId, api]);
       await c.query("INSERT INTO api_documentations(api_id,version_id,source,content) VALUES($1,$2,'OPENAPI_IMPORT',$3) ON CONFLICT(version_id) DO UPDATE SET content=$3,source='OPENAPI_IMPORT',updated_at=NOW()", [api, versionId, document]);
       await this.audit(c, actor, 'api.openapi.imported', api, { versionId, endpointCount: imported.endpoints.length });
       return { versionId, endpointCount: imported.endpoints.length, title: imported.title };
@@ -200,6 +215,8 @@ export class ProviderService {
       const legal = (await c.query('SELECT agreement_id,processes_personal_data FROM api_legal_declarations WHERE api_id=$1', [api])).rows[0];
       const domain = (await c.query('SELECT hostname FROM api_domain_verifications WHERE api_id=$1 AND verified_at IS NOT NULL AND verification_expires_at>NOW()', [api])).rows[0];
       if (!domain || domain.hostname !== domainHostname(record.base_url)) throw new ApiError(400, 'DOMAIN_NOT_VERIFIED', 'Verify the current base URL hostname before submitting');
+      const stale = (await c.query('SELECT EXISTS(SELECT 1 FROM api_versions WHERE api_id=$1 AND documentation_stale) AS stale', [api])).rows[0].stale;
+      if (stale) throw new ApiError(400, 'DOCUMENTATION_STALE', 'Reimport OpenAPI for changed versions before submitting; the previous documents are retained');
       // An endpoint and its documentation must belong to the same version.
       const content = (await c.query("SELECT COUNT(*)::int AS n, COUNT(d.id) FILTER (WHERE d.content->'paths'->e.path->LOWER(e.method) IS NOT NULL)::int AS documented FROM api_endpoints e LEFT JOIN api_documentations d ON d.version_id=e.version_id AND d.api_id=e.api_id WHERE e.api_id=$1", [api])).rows[0];
       const plans = (await c.query('SELECT COUNT(*)::int AS n FROM api_plans WHERE api_id=$1 AND is_active', [api])).rows[0];
