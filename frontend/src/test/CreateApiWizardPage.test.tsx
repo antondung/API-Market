@@ -2278,5 +2278,68 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
       expect(mockNavigate).not.toHaveBeenCalled();
     });
   }
+
+  it('TC-FE-RETRY-RELOAD-08: preserves a third-party ownership declaration across a reload', async () => {
+    vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+    const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-new' } as any);
+    vi.spyOn(providerApiModule, 'updateProviderApi').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([{ id: 'ver-9', version: '3.2.1' }] as any);
+    vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({} as any);
+    vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+      { id: 'plan-9', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 50000, rateLimit: 50 },
+    ] as any);
+    vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({} as any);
+    const saveLegalSpy = vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({} as any);
+
+    vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+      id: 'api-draft-third',
+      status: 'Draft',
+      name: 'Draft Third Party',
+      description: 'Du lieu ben thu ba',
+      category: 'Finance & Banking',
+      baseUrl: 'https://third.partner.example/v2',
+      tags: ['third'],
+    } as any);
+
+    // The provider previously declared an Authorized Distributor with third-party data.
+    vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue({
+      ownershipDeclaration: 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)',
+      distributionRights: 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép',
+      dataClassification: 'Confidential',
+      processesPersonalData: false,
+      personalDataTypes: [],
+    } as any);
+
+    sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-third' }));
+
+    render(
+      <MemoryRouter>
+        <CreateApiWizardPage />
+      </MemoryRouter>
+    );
+
+    await advanceToStep4('Draft Third Party');
+
+    const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+    await waitFor(() => {
+      expect(finishBtn.hasAttribute('disabled')).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(finishBtn);
+    });
+
+    await waitFor(() => {
+      expect(saveLegalSpy).toHaveBeenCalled();
+    });
+
+    // The stored commitments must be resubmitted unchanged, not reset to the wizard defaults.
+    const payload = saveLegalSpy.mock.calls[0][1] as any;
+    expect(payload.ownershipDeclaration).toContain('Authorized Distributor');
+    expect(payload.distributionRights).toContain('bên thứ ba');
+    expect(createApiSpy).not.toHaveBeenCalled();
+  });
 });
 

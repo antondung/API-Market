@@ -277,6 +277,19 @@ export const CreateApiWizardPage: React.FC = () => {
         const legal = legalResult.value;
         if (legal) {
           setDataClassification(legal.dataClassification ?? 'Public');
+          // The backend stores the two commitments as free text, so map them back to the
+          // wizard choices. Without this the retry path would resubmit the defaults and
+          // silently rewrite an Authorized Distributor declaration as First-Party Owner.
+          if (legal.ownershipDeclaration) {
+            setOwnershipType(
+              legal.ownershipDeclaration.includes('Authorized Distributor') ? 'THIRD_PARTY' : 'OWN'
+            );
+          }
+          if (legal.distributionRights) {
+            setUsesThirdPartyData(
+              legal.distributionRights.includes('bên thứ ba') ? true : false
+            );
+          }
           if (typeof legal.processesPersonalData === 'boolean') {
             setProcessesPersonalData(legal.processesPersonalData);
             setSelectedPersonalDataTypes(legal.personalDataTypes ?? []);
