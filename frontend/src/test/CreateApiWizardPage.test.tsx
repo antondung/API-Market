@@ -2341,5 +2341,84 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
     expect(payload.distributionRights).toContain('bên thứ ba');
     expect(createApiSpy).not.toHaveBeenCalled();
   });
+
+  // The backend accepts free-form legal text, so a stored declaration may not match either
+  // wizard sentence. It must be resubmitted verbatim, not rewritten from a substring guess.
+  const freeTextLegalCases: { name: string; ownership: string; distribution: string }[] = [
+    {
+      name: 'TC-FE-RETRY-RELOAD-09: keeps a free-form ownership declaration verbatim',
+      ownership: 'Provider được chủ sở hữu cấp phép phân phối API của đối tác.',
+      distribution: 'Không tích hợp dữ liệu bên thứ ba.',
+    },
+    {
+      name: 'TC-FE-RETRY-RELOAD-10: keeps a negated third-party distribution statement verbatim',
+      ownership: 'API do chính Provider phát triển và sở hữu (First-Party Owner)',
+      distribution: 'Không tích hợp dữ liệu bên thứ ba.',
+    },
+  ];
+
+  for (const testCase of freeTextLegalCases) {
+    it(testCase.name, async () => {
+      vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+      const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-new' } as any);
+      vi.spyOn(providerApiModule, 'updateProviderApi').mockResolvedValue({} as any);
+      vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([{ id: 'ver-9', version: '3.2.1' }] as any);
+      vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({} as any);
+      vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+        { id: 'plan-9', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 50000, rateLimit: 50 },
+      ] as any);
+      vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({} as any);
+      const saveLegalSpy = vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({} as any);
+
+      vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+        id: 'api-draft-free',
+        status: 'Draft',
+        name: 'Draft Free Text',
+        description: 'Mo ta',
+        category: 'Finance & Banking',
+        baseUrl: 'https://free.partner.example/v2',
+        tags: ['free'],
+      } as any);
+
+      vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue({
+        ownershipDeclaration: testCase.ownership,
+        distributionRights: testCase.distribution,
+        dataClassification: 'Confidential',
+        processesPersonalData: false,
+        personalDataTypes: [],
+      } as any);
+
+      sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-free' }));
+
+      render(
+        <MemoryRouter>
+          <CreateApiWizardPage />
+        </MemoryRouter>
+      );
+
+      await advanceToStep4('Draft Free Text');
+
+      const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+      fireEvent.click(checkbox);
+
+      const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+      await waitFor(() => {
+        expect(finishBtn.hasAttribute('disabled')).toBe(false);
+      });
+      await act(async () => {
+        fireEvent.click(finishBtn);
+      });
+
+      await waitFor(() => {
+        expect(saveLegalSpy).toHaveBeenCalled();
+      });
+
+      // The provider did not touch either choice, so both strings must survive unchanged.
+      const payload = saveLegalSpy.mock.calls[0][1] as any;
+      expect(payload.ownershipDeclaration).toBe(testCase.ownership);
+      expect(payload.distributionRights).toBe(testCase.distribution);
+      expect(createApiSpy).not.toHaveBeenCalled();
+    });
+  }
 });
 

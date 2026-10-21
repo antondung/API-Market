@@ -56,6 +56,13 @@ const ALL_PERSONAL_DATA_TYPES: { type: PersonalDataType; label: string }[] = [
   // Finish again would create a second API with the same name and hit uq_apis_provider_name.
   const DRAFT_STORAGE_KEY = 'apihub_provider_draft_api_id';
 
+// Exact sentences the wizard writes. Stored legal text is free-form, so only these are
+// recognised when restoring the radio buttons.
+const OWNERSHIP_OWN_TEXT = 'API do chính Provider phát triển và sở hữu (First-Party Owner)';
+const OWNERSHIP_THIRD_PARTY_TEXT = 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
+const DISTRIBUTION_THIRD_PARTY_TEXT = 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép';
+const DISTRIBUTION_OWN_TEXT = 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+
   const readStoredDraftId = (userId: string | null): string | null => {
     if (!userId) return null;
     try {
@@ -113,6 +120,13 @@ export const CreateApiWizardPage: React.FC = () => {
   // Step 4: Ownership, Legal & Data Classification (US-08)
   const [ownershipType, setOwnershipType] = useState<'OWN' | 'THIRD_PARTY'>('OWN');
   const [usesThirdPartyData, setUsesThirdPartyData] = useState(false);
+    // The backend stores both commitments as free text, so a stored value may not match either
+    // wizard sentence. Keep the original text and only replace it when the provider actually
+    // changes the choice; otherwise a reload would rewrite a valid declaration.
+    const [storedOwnershipDeclaration, setStoredOwnershipDeclaration] = useState<string | null>(null);
+    const [storedDistributionRights, setStoredDistributionRights] = useState<string | null>(null);
+    const [ownershipTouched, setOwnershipTouched] = useState(false);
+    const [distributionTouched, setDistributionTouched] = useState(false);
   const [dataClassification, setDataClassification] = useState<DataClassification>('Public');
   const [processesPersonalData, setProcessesPersonalData] = useState(false);
   const [selectedPersonalDataTypes, setSelectedPersonalDataTypes] = useState<PersonalDataType[]>([]);
@@ -143,6 +157,10 @@ export const CreateApiWizardPage: React.FC = () => {
       setAgreementError(null);
       setWizardError(null);
       setSubmitting(false);
+      setStoredOwnershipDeclaration(null);
+      setStoredDistributionRights(null);
+      setOwnershipTouched(false);
+      setDistributionTouched(false);
     }
 
   // Reset legal confirmation if agreement version changes mid-session (render-phase adjustment)
@@ -277,19 +295,17 @@ export const CreateApiWizardPage: React.FC = () => {
         const legal = legalResult.value;
         if (legal) {
           setDataClassification(legal.dataClassification ?? 'Public');
-          // The backend stores the two commitments as free text, so map them back to the
-          // wizard choices. Without this the retry path would resubmit the defaults and
-          // silently rewrite an Authorized Distributor declaration as First-Party Owner.
-          if (legal.ownershipDeclaration) {
-            setOwnershipType(
-              legal.ownershipDeclaration.includes('Authorized Distributor') ? 'THIRD_PARTY' : 'OWN'
-            );
-          }
-          if (legal.distributionRights) {
-            setUsesThirdPartyData(
-              legal.distributionRights.includes('bên thứ ba') ? true : false
-            );
-          }
+          // Keep the stored text verbatim. Only recognise the exact wizard sentences so the
+          // radio buttons reflect the saved choice; anything else stays as-is and is
+          // resubmitted unchanged unless the provider edits it.
+          setStoredOwnershipDeclaration(legal.ownershipDeclaration ?? null);
+          setStoredDistributionRights(legal.distributionRights ?? null);
+          setOwnershipTouched(false);
+          setDistributionTouched(false);
+          if (legal.ownershipDeclaration === OWNERSHIP_OWN_TEXT) setOwnershipType('OWN');
+          else if (legal.ownershipDeclaration === OWNERSHIP_THIRD_PARTY_TEXT) setOwnershipType('THIRD_PARTY');
+          if (legal.distributionRights === DISTRIBUTION_THIRD_PARTY_TEXT) setUsesThirdPartyData(true);
+          else if (legal.distributionRights === DISTRIBUTION_OWN_TEXT) setUsesThirdPartyData(false);
           if (typeof legal.processesPersonalData === 'boolean') {
             setProcessesPersonalData(legal.processesPersonalData);
             setSelectedPersonalDataTypes(legal.personalDataTypes ?? []);
@@ -650,12 +666,14 @@ export const CreateApiWizardPage: React.FC = () => {
 
       // 4. Save Legal Affirmation & Privacy Contract (US-08)
       const agreementVer = currentServerAgreement.version;
-      const ownershipDecl = ownershipType === 'OWN'
-        ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
-        : 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
-      const distributionRights = usesThirdPartyData
-        ? 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép'
-        : 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+      // Resubmit the stored text verbatim unless the provider changed the choice, so a
+      // free-form declaration is never rewritten into a wizard sentence.
+      const ownershipDecl = !ownershipTouched && storedOwnershipDeclaration
+        ? storedOwnershipDeclaration
+        : ownershipType === 'OWN' ? OWNERSHIP_OWN_TEXT : OWNERSHIP_THIRD_PARTY_TEXT;
+      const distributionRights = !distributionTouched && storedDistributionRights
+        ? storedDistributionRights
+        : usesThirdPartyData ? DISTRIBUTION_THIRD_PARTY_TEXT : DISTRIBUTION_OWN_TEXT;
 
       await saveProviderLegal(targetApiId!, {
         ownershipDeclaration: ownershipDecl,
@@ -984,7 +1002,7 @@ export const CreateApiWizardPage: React.FC = () => {
                     type="radio"
                     name="ownership"
                     checked={ownershipType === 'OWN'}
-                    onChange={() => setOwnershipType('OWN')}
+                    onChange={() => { setOwnershipType('OWN'); setOwnershipTouched(true); }}
                     className="accent-primary"
                   />
                   <span>{t('API do chính Provider phát triển và sở hữu (First-Party Owner)')}</span>
@@ -994,7 +1012,7 @@ export const CreateApiWizardPage: React.FC = () => {
                     type="radio"
                     name="ownership"
                     checked={ownershipType === 'THIRD_PARTY'}
-                    onChange={() => setOwnershipType('THIRD_PARTY')}
+                    onChange={() => { setOwnershipType('THIRD_PARTY'); setOwnershipTouched(true); }}
                     className="accent-primary"
                   />
                   <span>{t('API của bên thứ ba nhưng Provider được phép phân phối / thương mại hóa (Authorized Distributor)')}</span>
@@ -1006,7 +1024,7 @@ export const CreateApiWizardPage: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={usesThirdPartyData}
-                    onChange={(e) => setUsesThirdPartyData(e.target.checked)}
+                    onChange={(e) => { setUsesThirdPartyData(e.target.checked); setDistributionTouched(true); }}
                     className="rounded accent-primary"
                   />
                   <span className="text-on-surface-variant">{t('API có sử dụng dữ liệu hoặc dịch vụ của bên thứ ba')}</span>
