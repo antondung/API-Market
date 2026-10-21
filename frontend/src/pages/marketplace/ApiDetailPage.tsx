@@ -19,7 +19,7 @@ export const ApiDetailPage: React.FC = () => {
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitted, setReportSubmitted] = useState(false);
 
-  const api = apis.find(a => a.id === id);
+  const api = apis.find(a => a.id === id && a.status === 'Published');
 
   if (!api) {
     return (

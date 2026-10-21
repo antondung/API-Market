@@ -42,8 +42,8 @@ export const MarketplacePage: React.FC = () => {
   const filteredApis = useMemo(() => {
     return apis
       .filter(api => {
-        // Only show published in marketplace (or draft if testing)
-        if (api.status !== 'Published' && api.status !== 'Draft') return false;
+        // A public catalog must never include private drafts, including locally cached records.
+        if (api.status !== 'Published') return false;
 
         // Category filter
         if (selectedCategory !== 'All' && api.category !== selectedCategory) return false;

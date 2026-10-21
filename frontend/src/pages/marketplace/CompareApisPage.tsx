@@ -8,7 +8,8 @@ import { CustomSelect } from '../../components/ui/CustomSelect';
 
 export const CompareApisPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const { apis } = useApp();
+  const { apis: cachedApis } = useApp();
+  const apis = cachedApis.filter(api => api.status === 'Published');
   const { t } = useLanguage();
   const navigate = useNavigate();
 
