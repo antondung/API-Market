@@ -241,10 +241,10 @@ export const CreateApiWizardPage: React.FC = () => {
         // retry path push that default over the value stored in the draft. Only a successful
         // read that legitimately returns nothing (no versions/plans/legal yet) may be skipped.
         const failed: string[] = [];
-        if (apiResult.status !== 'fulfilled') failed.push('thông tin API');
-        if (versionsResult.status !== 'fulfilled') failed.push('phiên bản');
-        if (plansResult.status !== 'fulfilled') failed.push('gói cước');
-        if (legalResult.status !== 'fulfilled') failed.push('khai báo pháp lý');
+        if (apiResult.status === 'rejected') failed.push('thông tin API');
+        if (versionsResult.status === 'rejected') failed.push('phiên bản');
+        if (plansResult.status === 'rejected') failed.push('gói cước');
+        if (legalResult.status === 'rejected') failed.push('khai báo pháp lý');
 
         if (failed.length > 0) {
           setDraftRestoreError(
@@ -252,6 +252,10 @@ export const CreateApiWizardPage: React.FC = () => {
           );
           return;
         }
+
+        // Every result is fulfilled here; the guard above returns otherwise.
+        if (apiResult.status !== 'fulfilled' || versionsResult.status !== 'fulfilled'
+          || plansResult.status !== 'fulfilled' || legalResult.status !== 'fulfilled') return;
 
         const draft = apiResult.value;
         setName(draft.name ?? '');
