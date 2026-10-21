@@ -2027,6 +2027,7 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
     vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([]);
     vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({ id: 'plan-1' } as any);
     vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({ id: 'legal-1' } as any);
+    vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue(null);
 
     // A previous attempt created the draft, then a later step failed and the page reloaded.
     sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-7' }));
@@ -2181,7 +2182,7 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Không thể tải bản nháp đã lưu/i)).toBeDefined();
+      expect(screen.getByText(/Không thể tải .*thông tin API/i)).toBeDefined();
     });
 
     await advanceToStep4();
@@ -2193,5 +2194,89 @@ describe('CreateApiWizardPage (TC-FE-RETRY-01 through TC-FE-RETRY-16 Regression 
     expect(createApiSpy).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
+
+  // A partial hydrate must block Finish: leaving a field at its wizard default would let the
+  // retry path push that default over the value stored in the draft.
+  const partialHydrateCases: { name: string; label: string; fail: () => void }[] = [
+    {
+      name: 'TC-FE-RETRY-RELOAD-05: blocks Finish when the plan list cannot be loaded',
+      label: 'gói cước',
+      fail: () => { vi.spyOn(providerApiModule, 'listProviderPlans').mockRejectedValue(new Error('Network down')); },
+    },
+    {
+      name: 'TC-FE-RETRY-RELOAD-06: blocks Finish when the version list cannot be loaded',
+      label: 'phiên bản',
+      fail: () => { vi.spyOn(providerApiModule, 'listProviderVersions').mockRejectedValue(new Error('Network down')); },
+    },
+    {
+      name: 'TC-FE-RETRY-RELOAD-07: blocks Finish when the legal declaration cannot be loaded',
+      label: 'khai báo pháp lý',
+      fail: () => { vi.spyOn(providerApiModule, 'getProviderLegal').mockRejectedValue(new Error('Network down')); },
+    },
+  ];
+
+  for (const testCase of partialHydrateCases) {
+    it(testCase.name, async () => {
+      vi.spyOn(providerApiModule, 'getProviderAgreement').mockResolvedValue(validAgreement);
+      const createApiSpy = vi.spyOn(providerApiModule, 'createProviderApi').mockResolvedValue({ id: 'api-new' } as any);
+      const updateApiSpy = vi.spyOn(providerApiModule, 'updateProviderApi').mockResolvedValue({} as any);
+      const updatePlanSpy = vi.spyOn(providerApiModule, 'updateProviderPlan').mockResolvedValue({} as any);
+      const createPlanSpy = vi.spyOn(providerApiModule, 'createProviderPlan').mockResolvedValue({} as any);
+      const createVersionSpy = vi.spyOn(providerApiModule, 'createProviderVersion').mockResolvedValue({} as any);
+      vi.spyOn(providerApiModule, 'saveProviderLegal').mockResolvedValue({} as any);
+
+      vi.spyOn(providerApiModule, 'getProviderApi').mockResolvedValue({
+        id: 'api-draft-finance',
+        status: 'Draft',
+        name: 'Draft Finance',
+        description: 'Du lieu tai chinh da luu',
+        category: 'Finance & Banking',
+        baseUrl: 'https://finance.partner.example/v2',
+        tags: ['finance', 'ledger'],
+      } as any);
+      vi.spyOn(providerApiModule, 'listProviderVersions').mockResolvedValue([{ id: 'ver-9', version: '3.2.1' }] as any);
+      vi.spyOn(providerApiModule, 'listProviderPlans').mockResolvedValue([
+        { id: 'plan-9', name: 'Free', priceMonthly: 0, currency: 'USD', quota: 50000, rateLimit: 50 },
+      ] as any);
+      vi.spyOn(providerApiModule, 'getProviderLegal').mockResolvedValue({
+        ownershipDeclaration: 'I own it',
+        distributionRights: 'I can distribute',
+        dataClassification: 'Confidential',
+        processesPersonalData: false,
+        personalDataTypes: [],
+      } as any);
+
+      // One of the four hydrate requests fails.
+      testCase.fail();
+
+      sessionStorage.setItem('apihub_provider_draft_api_id', JSON.stringify({ userId: mockUser.id, apiId: 'api-draft-finance' }));
+
+      render(
+        <MemoryRouter>
+          <CreateApiWizardPage />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(new RegExp(`Không thể tải .*${testCase.label}`, 'i'))).toBeDefined();
+      });
+
+      await advanceToStep4('Draft Finance');
+
+      const checkbox = screen.getByLabelText(/Tôi đã đọc/i) as HTMLInputElement;
+      fireEvent.click(checkbox);
+
+      const finishBtn = screen.getByRole('button', { name: /Hoàn tất & Đăng ký API/i });
+      expect(finishBtn.hasAttribute('disabled')).toBe(true);
+
+      fireEvent.click(finishBtn);
+      expect(createApiSpy).not.toHaveBeenCalled();
+      expect(updateApiSpy).not.toHaveBeenCalled();
+      expect(updatePlanSpy).not.toHaveBeenCalled();
+      expect(createPlanSpy).not.toHaveBeenCalled();
+      expect(createVersionSpy).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  }
 });
 

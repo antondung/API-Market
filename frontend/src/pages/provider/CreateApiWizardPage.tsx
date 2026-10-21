@@ -237,9 +237,18 @@ export const CreateApiWizardPage: React.FC = () => {
       .then(([apiResult, versionsResult, plansResult, legalResult]) => {
         if (cancelled || controller.signal.aborted || currentUserIdRef.current !== effectUserId) return;
 
-        if (apiResult.status !== 'fulfilled') {
+        // A failed read must block Finish: leaving a field at its wizard default would let the
+        // retry path push that default over the value stored in the draft. Only a successful
+        // read that legitimately returns nothing (no versions/plans/legal yet) may be skipped.
+        const failed: string[] = [];
+        if (apiResult.status !== 'fulfilled') failed.push('thông tin API');
+        if (versionsResult.status !== 'fulfilled') failed.push('phiên bản');
+        if (plansResult.status !== 'fulfilled') failed.push('gói cước');
+        if (legalResult.status !== 'fulfilled') failed.push('khai báo pháp lý');
+
+        if (failed.length > 0) {
           setDraftRestoreError(
-            'Không thể tải bản nháp đã lưu. Vui lòng kiểm tra kết nối rồi thử lại, hoặc mở "Kho API của tôi".'
+            `Không thể tải ${failed.join(', ')} của bản nháp đã lưu. Vui lòng kiểm tra kết nối rồi tải lại trang, hoặc mở "Kho API của tôi".`
           );
           return;
         }
@@ -252,20 +261,17 @@ export const CreateApiWizardPage: React.FC = () => {
         // The wizard keeps one description field but the API stores a single value.
         setLongDescription(draft.description ?? '');
 
-        if (versionsResult.status === 'fulfilled' && versionsResult.value.length > 0) {
-          setVersion(versionsResult.value[0].version);
+        const versions = versionsResult.value;
+        if (versions.length > 0) setVersion(versions[0].version);
+
+        const freePlan = plansResult.value.find(plan => plan.name.trim().toLowerCase() === 'free');
+        if (freePlan) {
+          setFreeQuota(String(freePlan.quota));
+          setFreeRps(String(freePlan.rateLimit));
         }
 
-        if (plansResult.status === 'fulfilled') {
-          const freePlan = plansResult.value.find(plan => plan.name.trim().toLowerCase() === 'free');
-          if (freePlan) {
-            setFreeQuota(String(freePlan.quota));
-            setFreeRps(String(freePlan.rateLimit));
-          }
-        }
-
-        if (legalResult.status === 'fulfilled' && legalResult.value) {
-          const legal = legalResult.value;
+        const legal = legalResult.value;
+        if (legal) {
           setDataClassification(legal.dataClassification ?? 'Public');
           if (typeof legal.processesPersonalData === 'boolean') {
             setProcessesPersonalData(legal.processesPersonalData);
