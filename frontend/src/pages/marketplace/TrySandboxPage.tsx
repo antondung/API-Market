@@ -11,7 +11,7 @@ export const TrySandboxPage: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const api = apis.find(a => a.id === id);
+  const api = apis.find(a => a.id === id && a.status === 'Published');
 
   // Hooks phải gọi vô điều kiện, trước mọi early return (Rules of Hooks).
   const remaining = api ? (tryGrants[api.id] ?? 8) : 0;

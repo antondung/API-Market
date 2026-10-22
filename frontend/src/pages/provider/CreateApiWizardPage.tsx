@@ -1,15 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { ApiError } from '../../services/authApi';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CustomSelect } from '../../components/ui/CustomSelect';
 import { useLanguage } from '../../i18n';
 import {
   createProviderApi,
+  getProviderApi,
+  updateProviderApi,
+  listProviderVersions,
   createProviderVersion,
+  listProviderPlans,
   createProviderPlan,
+  updateProviderPlan,
   saveProviderLegal,
+  getProviderLegal,
   getProviderAgreement,
   getProviderVerification,
   formatProviderErrorMessage,
@@ -44,6 +51,39 @@ const ALL_PERSONAL_DATA_TYPES: { type: PersonalDataType; label: string }[] = [
   { type: 'Other', label: 'Dữ liệu nhận dạng cá nhân khác (Other)' },
 ];
 
+  // A draft API is created before the remaining wizard steps run. If a later step fails the
+  // provider is told the draft is safe, so the id must survive a reload; otherwise pressing
+  // Finish again would create a second API with the same name and hit uq_apis_provider_name.
+  const DRAFT_STORAGE_KEY = 'apihub_provider_draft_api_id';
+
+// Exact sentences the wizard writes. Stored legal text is free-form, so only these are
+// recognised when restoring the radio buttons.
+const OWNERSHIP_OWN_TEXT = 'API do chính Provider phát triển và sở hữu (First-Party Owner)';
+const OWNERSHIP_THIRD_PARTY_TEXT = 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
+const DISTRIBUTION_THIRD_PARTY_TEXT = 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép';
+const DISTRIBUTION_OWN_TEXT = 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+
+  const readStoredDraftId = (userId: string | null): string | null => {
+    if (!userId) return null;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { userId?: string; apiId?: string };
+      return parsed.userId === userId && parsed.apiId ? parsed.apiId : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeStoredDraftId = (userId: string | null, apiId: string | null) => {
+    try {
+      if (!userId || !apiId) sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      else sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ userId, apiId }));
+    } catch {
+      // Storage can be unavailable (private mode); the in-memory state still works.
+    }
+  };
+
 export const CreateApiWizardPage: React.FC = () => {
   const { currentUser } = useAuth();
   const { t } = useLanguage();
@@ -55,6 +95,7 @@ export const CreateApiWizardPage: React.FC = () => {
 
   // Draft recovery state
   const [createdDraftApiId, setCreatedDraftApiId] = useState<string | null>(null);
+  const [ambiguousDraftCreation, setAmbiguousDraftCreation] = useState(false);
 
   // Verification & Agreement status
   const [verification, setVerification] = useState<ProviderVerification | null>(null);
@@ -79,6 +120,13 @@ export const CreateApiWizardPage: React.FC = () => {
   // Step 4: Ownership, Legal & Data Classification (US-08)
   const [ownershipType, setOwnershipType] = useState<'OWN' | 'THIRD_PARTY'>('OWN');
   const [usesThirdPartyData, setUsesThirdPartyData] = useState(false);
+    // The backend stores both commitments as free text, so a stored value may not match either
+    // wizard sentence. Keep the original text and only replace it when the provider actually
+    // changes the choice; otherwise a reload would rewrite a valid declaration.
+    const [storedOwnershipDeclaration, setStoredOwnershipDeclaration] = useState<string | null>(null);
+    const [storedDistributionRights, setStoredDistributionRights] = useState<string | null>(null);
+    const [ownershipTouched, setOwnershipTouched] = useState(false);
+    const [distributionTouched, setDistributionTouched] = useState(false);
   const [dataClassification, setDataClassification] = useState<DataClassification>('Public');
   const [processesPersonalData, setProcessesPersonalData] = useState(false);
   const [selectedPersonalDataTypes, setSelectedPersonalDataTypes] = useState<PersonalDataType[]>([]);
@@ -86,11 +134,41 @@ export const CreateApiWizardPage: React.FC = () => {
   const [legalConfirmed, setLegalConfirmed] = useState(false);
   const [acceptedAgreementVersion, setAcceptedAgreementVersion] = useState<string | null>(null);
   const [agreementError, setAgreementError] = useState<string | null>(null);
+  // The form is hydrated from the stored draft before Finish is allowed, so a reload never
+  // overwrites persisted draft values with wizard defaults.
+  const [restoringDraft, setRestoringDraft] = useState(false);
+  const [draftRestoreError, setDraftRestoreError] = useState<string | null>(null);
   const lastAgreementIdRef = useRef<string | null>(null);
+  const lastAgreementVersionRef = useRef<string | null>(null);
   const lastUserIdRef = useRef<string | null>(currentUser?.id || null);
   const currentUserIdRef = useRef<string | null>(currentUser?.id || null);
 
   const isMountedRef = useRef(true);
+  // Track last seen user and agreement version during render to reset account-scoped state
+  const [prevUserId, setPrevUserId] = useState(currentUser?.id || null);
+    if (currentUser?.id !== prevUserId) {
+      setPrevUserId(currentUser?.id || null);
+      setCreatedDraftApiId(null);
+      writeStoredDraftId(currentUser?.id || null, null);
+      setAmbiguousDraftCreation(false);
+      setAgreement(null);
+      setLegalConfirmed(false);
+      setAcceptedAgreementVersion(null);
+      setAgreementError(null);
+      setWizardError(null);
+      setSubmitting(false);
+      setStoredOwnershipDeclaration(null);
+      setStoredDistributionRights(null);
+      setOwnershipTouched(false);
+      setDistributionTouched(false);
+    }
+
+  // Reset legal confirmation if agreement version changes mid-session (render-phase adjustment)
+  if (agreement && acceptedAgreementVersion && acceptedAgreementVersion !== agreement.version) {
+    setLegalConfirmed(false);
+    setAcceptedAgreementVersion(null);
+  }
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -98,26 +176,14 @@ export const CreateApiWizardPage: React.FC = () => {
     };
   }, []);
 
-  // Maintain current user ID ref and reset account-specific wizard state if current user changes
   useEffect(() => {
     currentUserIdRef.current = currentUser?.id || null;
-    if (lastUserIdRef.current !== currentUser?.id) {
-      lastUserIdRef.current = currentUser?.id || null;
-      setCreatedDraftApiId(null);
-      setAgreement(null);
-      setLegalConfirmed(false);
-      setAcceptedAgreementVersion(null);
-      setAgreementError(null);
-      setWizardError(null);
-      setSubmitting(false);
-    }
+    lastUserIdRef.current = currentUser?.id || null;
   }, [currentUser?.id]);
 
   useEffect(() => {
     const controller = new AbortController();
     const effectUserId = currentUser?.id || null;
-    setLoadingInitial(true);
-    setAgreementError(null);
 
     Promise.allSettled([
       getProviderVerification(controller.signal),
@@ -136,11 +202,12 @@ export const CreateApiWizardPage: React.FC = () => {
               setLegalConfirmed(false);
               setAcceptedAgreementVersion(null);
             } else {
-              if (lastAgreementIdRef.current && (lastAgreementIdRef.current !== agr.id || agreement?.version !== agr.version)) {
+              if (lastAgreementIdRef.current && (lastAgreementIdRef.current !== agr.id || lastAgreementVersionRef.current !== agr.version)) {
                 setLegalConfirmed(false);
                 setAcceptedAgreementVersion(null);
               }
               lastAgreementIdRef.current = agr.id;
+              lastAgreementVersionRef.current = agr.version;
               setAgreement(agr);
               setAgreementError(null);
             }
@@ -159,15 +226,104 @@ export const CreateApiWizardPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
-  // Reset legal confirmation if agreement version changes mid-session
+  // Restore the full wizard form from the persisted draft before Finish can run.
+  // Restoring only the id is unsafe: the retry path deep-compares form values against the
+  // backend and would push wizard defaults (empty name, sample base URL, default quota) over
+  // the values the provider saved before the reload.
   useEffect(() => {
-    if (agreement && acceptedAgreementVersion && acceptedAgreementVersion !== agreement.version) {
-      setLegalConfirmed(false);
-      setAcceptedAgreementVersion(null);
+    const storedDraftId = readStoredDraftId(currentUser?.id || null);
+    setCreatedDraftApiId(storedDraftId);
+    setDraftRestoreError(null);
+    if (!storedDraftId) {
+      setRestoringDraft(false);
+      return;
     }
-  }, [agreement?.version, acceptedAgreementVersion]);
+
+    const controller = new AbortController();
+    const effectUserId = currentUser?.id || null;
+    let cancelled = false;
+    setRestoringDraft(true);
+
+    Promise.allSettled([
+      getProviderApi(storedDraftId, controller.signal),
+      listProviderVersions(storedDraftId, controller.signal),
+      listProviderPlans(storedDraftId, controller.signal),
+      getProviderLegal(storedDraftId, controller.signal),
+    ])
+      .then(([apiResult, versionsResult, plansResult, legalResult]) => {
+        if (cancelled || controller.signal.aborted || currentUserIdRef.current !== effectUserId) return;
+
+        // A failed read must block Finish: leaving a field at its wizard default would let the
+        // retry path push that default over the value stored in the draft. Only a successful
+        // read that legitimately returns nothing (no versions/plans/legal yet) may be skipped.
+        const failed: string[] = [];
+        if (apiResult.status === 'rejected') failed.push('thông tin API');
+        if (versionsResult.status === 'rejected') failed.push('phiên bản');
+        if (plansResult.status === 'rejected') failed.push('gói cước');
+        if (legalResult.status === 'rejected') failed.push('khai báo pháp lý');
+
+        if (failed.length > 0) {
+          setDraftRestoreError(
+            `Không thể tải ${failed.join(', ')} của bản nháp đã lưu. Vui lòng kiểm tra kết nối rồi tải lại trang, hoặc mở "Kho API của tôi".`
+          );
+          return;
+        }
+
+        // Every result is fulfilled here; the guard above returns otherwise.
+        if (apiResult.status !== 'fulfilled' || versionsResult.status !== 'fulfilled'
+          || plansResult.status !== 'fulfilled' || legalResult.status !== 'fulfilled') return;
+
+        const draft = apiResult.value;
+        setName(draft.name ?? '');
+        setCategory(draft.category ?? CATEGORIES[0]);
+        setBaseUrl(draft.baseUrl ?? '');
+        setTagsInput((draft.tags ?? []).join(', '));
+        // The wizard keeps one description field but the API stores a single value.
+        setLongDescription(draft.description ?? '');
+
+        const versions = versionsResult.value;
+        if (versions.length > 0) setVersion(versions[0].version);
+
+        const freePlan = plansResult.value.find(plan => plan.name.trim().toLowerCase() === 'free');
+        if (freePlan) {
+          setFreeQuota(String(freePlan.quota));
+          setFreeRps(String(freePlan.rateLimit));
+        }
+
+        const legal = legalResult.value;
+        if (legal) {
+          setDataClassification(legal.dataClassification ?? 'Public');
+          // Keep the stored text verbatim. Only recognise the exact wizard sentences so the
+          // radio buttons reflect the saved choice; anything else stays as-is and is
+          // resubmitted unchanged unless the provider edits it.
+          setStoredOwnershipDeclaration(legal.ownershipDeclaration ?? null);
+          setStoredDistributionRights(legal.distributionRights ?? null);
+          setOwnershipTouched(false);
+          setDistributionTouched(false);
+          if (legal.ownershipDeclaration === OWNERSHIP_OWN_TEXT) setOwnershipType('OWN');
+          else if (legal.ownershipDeclaration === OWNERSHIP_THIRD_PARTY_TEXT) setOwnershipType('THIRD_PARTY');
+          if (legal.distributionRights === DISTRIBUTION_THIRD_PARTY_TEXT) setUsesThirdPartyData(true);
+          else if (legal.distributionRights === DISTRIBUTION_OWN_TEXT) setUsesThirdPartyData(false);
+          if (typeof legal.processesPersonalData === 'boolean') {
+            setProcessesPersonalData(legal.processesPersonalData);
+            setSelectedPersonalDataTypes(legal.personalDataTypes ?? []);
+            setDataProcessingPurpose(legal.dataProcessingPurpose ?? '');
+          }
+        }
+      })
+      .finally(() => {
+        if (!cancelled && !controller.signal.aborted && currentUserIdRef.current === effectUserId) {
+          setRestoringDraft(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [currentUser?.id]);
 
   const isAgreementValid = Boolean(
     agreement &&
@@ -192,6 +348,13 @@ export const CreateApiWizardPage: React.FC = () => {
     const pinnedUserId = currentUserIdRef.current;
     if (!pinnedUserId) {
       setWizardError('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');
+      return;
+    }
+
+    if (ambiguousDraftCreation && !createdDraftApiId) {
+      setWizardError(
+        'Yêu cầu tạo API trước đó gặp sự cố mạng không xác định. Vui lòng vào "Kho API của tôi" kiểm tra xem bản nháp đã được tạo hay chưa trước khi tạo mới.'
+      );
       return;
     }
 
@@ -283,75 +446,236 @@ export const CreateApiWizardPage: React.FC = () => {
       const tagList = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
       const fullDescription = longDescription.trim() || shortDescription.trim();
 
-      // Verify session before resource mutation (1. Create API)
+      // Verify session before resource mutation
       if (!checkSession()) return;
 
-      // 1. Create API if not already created as draft
-      if (!targetApiId) {
-        const createdApi = await createProviderApi({
-          name: trimmedName,
-          description: fullDescription || 'Dịch vụ API thương mại',
-          category,
-          baseUrl: trimmedUrl,
-          tags: tagList,
-        });
+      const expectedDescription = fullDescription || 'Dịch vụ API thương mại';
+      const isExistingDraft = Boolean(createdDraftApiId);
 
-        // Verify session after async operation
+      if (!isExistingDraft) {
+        // 1. Initial Draft Creation
+        let createdApi: any;
+        try {
+          createdApi = await createProviderApi({
+            name: trimmedName,
+            description: expectedDescription,
+            category,
+            baseUrl: trimmedUrl,
+            tags: tagList,
+          });
+        } catch (apiErr: any) {
+          if (!checkSession()) return;
+          const isDefinitiveError =
+            apiErr instanceof ApiError &&
+            apiErr.status >= 400 &&
+            apiErr.status < 500 &&
+            apiErr.status !== 408;
+
+          if (isDefinitiveError) {
+            throw apiErr;
+          }
+
+          // Ambiguous network/server error: draft might have been committed on backend.
+          // Block unsafe automatic re-POST retry to prevent orphan resources or duplicates.
+          setAmbiguousDraftCreation(true);
+          setWizardError(
+            'Yêu cầu tạo API gặp sự cố kết nối mạng hoặc máy chủ phản hồi chậm. Bản nháp có thể đã được lưu. Để bảo đảm toàn vẹn dữ liệu và tránh tạo bản ghi trùng lặp, vui lòng kiểm tra danh sách tại "Kho API của tôi" trước khi thử lại.'
+          );
+          setSubmitting(false);
+          return;
+        }
+
         if (!checkSession()) return;
 
         targetApiId = createdApi.id;
         setCreatedDraftApiId(createdApi.id);
-      }
+                writeStoredDraftId(pinnedUserId, createdApi.id);
+                setAmbiguousDraftCreation(false);
 
-      // Verify session before resource mutation (2. Create Version)
-      if (!checkSession()) return;
+        // 2. Initial Version Creation
+        const versionStr = version.trim() || '1.0.0';
+        try {
+          await createProviderVersion(targetApiId!, {
+            version: versionStr,
+            changelog: 'Phiên bản khởi tạo ban đầu',
+          });
+        } catch (versionErr: any) {
+          const recheckVersions = await listProviderVersions(targetApiId!).catch(() => []);
+          const verifiedVersion = recheckVersions.find(v => v.version === versionStr);
+          if (!verifiedVersion) {
+            throw versionErr;
+          }
+        }
 
-      // 2. Create Initial Version
-      const versionStr = version.trim() || '1.0.0';
-      try {
-        await createProviderVersion(targetApiId, {
-          version: versionStr,
-          changelog: 'Phiên bản khởi tạo ban đầu',
-        });
-      } catch (versionErr: any) {
-        if (versionErr?.status !== 409 && versionErr?.code !== 'RESOURCE_EXISTS') {
-          throw versionErr;
+        if (!checkSession()) return;
+
+        // 3. Initial Free Plan Creation
+        const quotaNum = parseInt(freeQuota, 10) || 2000;
+        const rpsNum = parseInt(freeRps, 10) || 10;
+        try {
+          await createProviderPlan(targetApiId!, {
+            name: 'Free',
+            priceMonthly: 0,
+            currency: 'USD',
+            quota: quotaNum,
+            rateLimit: rpsNum,
+          });
+        } catch (planErr: any) {
+          const recheckPlans = await listProviderPlans(targetApiId!).catch(() => []);
+          const verifiedPlan = recheckPlans.find(
+            p => p.name.trim().toLowerCase() === 'free'
+          );
+          if (
+            !verifiedPlan ||
+            verifiedPlan.priceMonthly !== 0 ||
+            verifiedPlan.currency.toUpperCase() !== 'USD' ||
+            verifiedPlan.quota !== quotaNum ||
+            verifiedPlan.rateLimit !== rpsNum
+          ) {
+            throw planErr;
+          }
+        }
+      } else {
+        // Retry path with existing draft: reconcile draft, version, and plan
+        const authoritativeApi = await getProviderApi(targetApiId!);
+        if (!checkSession()) return;
+
+        if (authoritativeApi.status !== 'Draft') {
+          throw new Error('Bản nháp API này không còn ở trạng thái cho phép chỉnh sửa.');
+        }
+
+        const authoritativeTags = (authoritativeApi.tags ?? []).map(t => t.trim()).filter(Boolean);
+        const tagsChanged =
+          authoritativeTags.length !== tagList.length ||
+          authoritativeTags.some((tag, idx) => tag !== tagList[idx]);
+
+        const metadataChanged =
+          authoritativeApi.name.trim() !== trimmedName ||
+          authoritativeApi.description.trim() !== expectedDescription ||
+          authoritativeApi.category !== category ||
+          authoritativeApi.baseUrl.trim() !== trimmedUrl ||
+          tagsChanged;
+
+        if (metadataChanged) {
+          await updateProviderApi(targetApiId!, {
+            name: trimmedName,
+            description: expectedDescription,
+            category,
+            baseUrl: trimmedUrl,
+            tags: tagList,
+          });
+          if (!checkSession()) return;
+        }
+
+        // Reconcile Version:
+        // Never update or rename existing versions blindly, as that deletes OpenAPI docs
+        // and endpoints on the backend. Prefer creating a new Version to preserve existing data.
+        const versionStr = version.trim() || '1.0.0';
+        const existingVersions = await listProviderVersions(targetApiId!);
+        if (!checkSession()) return;
+
+        const exactVersion = existingVersions.find(v => v.version === versionStr);
+        if (!exactVersion) {
+          try {
+            await createProviderVersion(targetApiId!, {
+              version: versionStr,
+              changelog: 'Phiên bản khởi tạo ban đầu',
+            });
+          } catch (versionErr: any) {
+            const recheckVersions = await listProviderVersions(targetApiId!);
+            const verifiedVersion = recheckVersions.find(v => v.version === versionStr);
+            if (!verifiedVersion) {
+              throw versionErr;
+            }
+          }
+        }
+
+        if (!checkSession()) return;
+
+        // Reconcile Free Plan:
+        // Identify using canonical plan name 'Free'. Never treat Basic/Pro with price=0 as Free.
+        const quotaNum = parseInt(freeQuota, 10) || 2000;
+        const rpsNum = parseInt(freeRps, 10) || 10;
+        const existingPlans = await listProviderPlans(targetApiId!);
+        if (!checkSession()) return;
+
+        const freePlan = existingPlans.find(
+          p => p.name.trim().toLowerCase() === 'free'
+        );
+
+        if (!freePlan) {
+          try {
+            await createProviderPlan(targetApiId!, {
+              name: 'Free',
+              priceMonthly: 0,
+              currency: 'USD',
+              quota: quotaNum,
+              rateLimit: rpsNum,
+            });
+          } catch (planErr: any) {
+            const recheckPlans = await listProviderPlans(targetApiId!);
+            const verifiedPlan = recheckPlans.find(
+              p => p.name.trim().toLowerCase() === 'free'
+            );
+            if (
+              !verifiedPlan ||
+              verifiedPlan.priceMonthly !== 0 ||
+              verifiedPlan.currency.toUpperCase() !== 'USD' ||
+              verifiedPlan.quota !== quotaNum ||
+              verifiedPlan.rateLimit !== rpsNum
+            ) {
+              throw planErr;
+            }
+          }
+        } else {
+          const planNeedsUpdate =
+            freePlan.name !== 'Free' ||
+            freePlan.priceMonthly !== 0 ||
+            freePlan.currency.toUpperCase() !== 'USD' ||
+            freePlan.quota !== quotaNum ||
+            freePlan.rateLimit !== rpsNum;
+
+          if (planNeedsUpdate) {
+            try {
+              await updateProviderPlan(targetApiId!, freePlan.id, {
+                name: 'Free',
+                priceMonthly: 0,
+                currency: 'USD',
+                quota: quotaNum,
+                rateLimit: rpsNum,
+              });
+            } catch (updateErr: any) {
+              const recheckPlans = await listProviderPlans(targetApiId!);
+              const verifiedPlan = recheckPlans.find(p => p.id === freePlan.id);
+              if (
+                !verifiedPlan ||
+                verifiedPlan.name !== 'Free' ||
+                verifiedPlan.priceMonthly !== 0 ||
+                verifiedPlan.currency.toUpperCase() !== 'USD' ||
+                verifiedPlan.quota !== quotaNum ||
+                verifiedPlan.rateLimit !== rpsNum
+              ) {
+                throw updateErr;
+              }
+            }
+          }
         }
       }
 
-      // Verify session after async operation and before next mutation
-      if (!checkSession()) return;
-
-      // 3. Create Default Free Plan
-      const quotaNum = parseInt(freeQuota, 10) || 2000;
-      const rpsNum = parseInt(freeRps, 10) || 10;
-      try {
-        await createProviderPlan(targetApiId, {
-          name: 'Free',
-          priceMonthly: 0,
-          currency: 'USD',
-          quota: quotaNum,
-          rateLimit: rpsNum,
-        });
-      } catch (planErr: any) {
-        if (planErr?.status !== 409 && planErr?.code !== 'RESOURCE_EXISTS') {
-          throw planErr;
-        }
-      }
-
-      // Verify session after async operation and before next mutation
       if (!checkSession()) return;
 
       // 4. Save Legal Affirmation & Privacy Contract (US-08)
       const agreementVer = currentServerAgreement.version;
-      const ownershipDecl = ownershipType === 'OWN'
-        ? 'API do chính Provider phát triển và sở hữu (First-Party Owner)'
-        : 'API của bên thứ ba nhưng Provider được phép phân phối hợp pháp (Authorized Distributor)';
-      const distributionRights = usesThirdPartyData
-        ? 'Dịch vụ có tích hợp dữ liệu hoặc hạ tầng bên thứ ba đã được cấp phép'
-        : 'Sở hữu toàn diện bản quyền mã nguồn và quyền phân phối dịch vụ';
+      // Resubmit the stored text verbatim unless the provider changed the choice, so a
+      // free-form declaration is never rewritten into a wizard sentence.
+      const ownershipDecl = !ownershipTouched && storedOwnershipDeclaration
+        ? storedOwnershipDeclaration
+        : ownershipType === 'OWN' ? OWNERSHIP_OWN_TEXT : OWNERSHIP_THIRD_PARTY_TEXT;
+      const distributionRights = !distributionTouched && storedDistributionRights
+        ? storedDistributionRights
+        : usesThirdPartyData ? DISTRIBUTION_THIRD_PARTY_TEXT : DISTRIBUTION_OWN_TEXT;
 
-      await saveProviderLegal(targetApiId, {
+      await saveProviderLegal(targetApiId!, {
         ownershipDeclaration: ownershipDecl,
         distributionRights,
         dataClassification,
@@ -365,7 +689,11 @@ export const CreateApiWizardPage: React.FC = () => {
       // Verify session before final success navigation or success UI updates
       if (!checkSession()) return;
 
-      navigate(`/provider/publishing-workflow?api=${targetApiId}`);
+            // The draft is now a complete API; drop the recovery marker.
+            writeStoredDraftId(pinnedUserId, null);
+            setCreatedDraftApiId(null);
+
+            navigate(`/provider/publishing-workflow?api=${targetApiId}`);
     } catch (err) {
       if (!checkSession()) return;
       setWizardError(formatProviderErrorMessage(err));
@@ -394,11 +722,32 @@ export const CreateApiWizardPage: React.FC = () => {
       {wizardError && (
         <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span>{wizardError}</span>
+          {ambiguousDraftCreation && (
+            <Link
+              to="/provider/apis"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface text-error font-medium text-xs border border-error/40 hover:bg-error-container/40 shrink-0"
+            >
+              Kiểm tra Kho API của tôi →
+            </Link>
+          )}
           {createdDraftApiId && (
             <span className="text-xs text-on-surface font-mono bg-surface-container px-2.5 py-1 rounded-md border border-outline-variant/30">
               Bản nháp #{createdDraftApiId} đã được lưu an toàn. Nhấn lại Hoàn tất để tiếp tục.
             </span>
           )}
+        </div>
+      )}
+
+      {/* Draft restore failure: Finish stays blocked until the stored draft is readable. */}
+      {draftRestoreError && (
+        <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <span>{draftRestoreError}</span>
+          <Link
+            to="/provider/apis"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface text-error font-medium text-xs border border-error/40 hover:bg-error-container/40 shrink-0"
+          >
+            Mở Kho API của tôi →
+          </Link>
         </div>
       )}
 
@@ -653,7 +1002,7 @@ export const CreateApiWizardPage: React.FC = () => {
                     type="radio"
                     name="ownership"
                     checked={ownershipType === 'OWN'}
-                    onChange={() => setOwnershipType('OWN')}
+                    onChange={() => { setOwnershipType('OWN'); setOwnershipTouched(true); }}
                     className="accent-primary"
                   />
                   <span>{t('API do chính Provider phát triển và sở hữu (First-Party Owner)')}</span>
@@ -663,7 +1012,7 @@ export const CreateApiWizardPage: React.FC = () => {
                     type="radio"
                     name="ownership"
                     checked={ownershipType === 'THIRD_PARTY'}
-                    onChange={() => setOwnershipType('THIRD_PARTY')}
+                    onChange={() => { setOwnershipType('THIRD_PARTY'); setOwnershipTouched(true); }}
                     className="accent-primary"
                   />
                   <span>{t('API của bên thứ ba nhưng Provider được phép phân phối / thương mại hóa (Authorized Distributor)')}</span>
@@ -675,7 +1024,7 @@ export const CreateApiWizardPage: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={usesThirdPartyData}
-                    onChange={(e) => setUsesThirdPartyData(e.target.checked)}
+                    onChange={(e) => { setUsesThirdPartyData(e.target.checked); setDistributionTouched(true); }}
                     className="rounded accent-primary"
                   />
                   <span className="text-on-surface-variant">{t('API có sử dụng dữ liệu hoặc dịch vụ của bên thứ ba')}</span>
@@ -879,11 +1228,11 @@ export const CreateApiWizardPage: React.FC = () => {
               <Button
                 variant="primary"
                 size="md"
-                disabled={submitting || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
+                disabled={submitting || restoringDraft || Boolean(draftRestoreError) || ambiguousDraftCreation || !legalConfirmed || !isAgreementValid || acceptedAgreementVersion !== agreement?.version}
                 onClick={handleFinish}
                 icon="check_circle"
               >
-                {submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
+                                {restoringDraft ? 'Đang khôi phục bản nháp...' : submitting ? 'Đang tạo API...' : 'Hoàn tất & Đăng ký API'}
               </Button>
             </div>
           </div>

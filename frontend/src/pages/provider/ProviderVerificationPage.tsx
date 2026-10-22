@@ -31,8 +31,6 @@ export const ProviderVerificationPage: React.FC = () => {
   // Fetch current verification status from server
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
 
     getProviderVerification(controller.signal)
       .then(res => {
@@ -162,7 +160,7 @@ export const ProviderVerificationPage: React.FC = () => {
       {error && (
         <div role="alert" className="p-4 rounded-xl border border-error/30 bg-error-container/20 text-error flex items-center justify-between gap-3">
           <span>{error}</span>
-          <Button size="sm" variant="secondary" onClick={() => setRetryKey(k => k + 1)}>
+          <Button size="sm" variant="secondary" onClick={() => { setLoading(true); setError(null); setRetryKey(k => k + 1); }}>
             Thử lại
           </Button>
         </div>

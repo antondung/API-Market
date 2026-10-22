@@ -17,6 +17,9 @@ import { ImportError } from './provider-openapi-import.js';
 import multer from 'multer';
 import { providerContract } from './provider-contract.js';
 import { adminReviewPaths } from './admin-review-contract.js';
+import type { MarketplaceService } from './marketplace-service.js';
+import { marketplaceRouter } from './marketplace-router.js';
+import { marketplacePaths } from './marketplace-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -36,7 +39,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -72,11 +75,13 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   }));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
-  const document = options.provider ? {
+  const baseDocument = options.provider ? {
     ...providerContract, info: { title: 'API Market — Auth and Provider', version: '0.2.0' },
     components: { securitySchemes: openapi.components.securitySchemes, schemas: { ...openapi.components.schemas, ...providerContract.components.schemas } },
     paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
+  const document = { ...baseDocument,
+    paths: { ...baseDocument.paths, ...(options.marketplace ? marketplacePaths : {}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -95,6 +100,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     next();
   };
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
+  if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
   app.post('/api/auth/register', async (req, res) => {
     const input = registerSchema.parse(req.body);
     res.status(201).json({ data: await auth.register(input.email, input.password, input.role, input.name) });

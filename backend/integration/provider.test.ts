@@ -188,8 +188,11 @@ test('manual endpoint changes invalidate docs and migration + seed rerun retain 
     await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
     // Fixture agreement is separate from Danh demo agreement; retire it explicitly in test DB.
     await f.store.pool.query('UPDATE agreements SET is_active=false');
-    await f.store.migrate(true, true); await f.store.migrate(true, true);
-    assert.equal((await f.store.pool.query('SELECT COUNT(*)::int AS n FROM backend_schema_migrations')).rows[0].n, 5);
+    await f.store.migrate(true, true);
+    const applied = (await f.store.pool.query('SELECT name FROM backend_schema_migrations ORDER BY name')).rows;
+    await f.store.migrate(true, true);
+    assert.deepEqual((await f.store.pool.query('SELECT name FROM backend_schema_migrations ORDER BY name')).rows, applied);
+    assert.ok(applied.some(record => record.name === '007_provider_documentation_state.sql'));
     assert.equal((await f.store.pool.query("SELECT COUNT(*)::int AS n FROM apis WHERE name IN ('Weather Now API','Currency Rates API','Product Catalog API')")).rows[0].n, 3);
   } finally { await f.close(); }
 });
@@ -216,17 +219,19 @@ test('invalid NUL characters cannot turn Provider input or imported JSONB into s
   } finally { await f.close(); }
 });
 
-test('manual content edits clear cached version OpenAPI and submission requires docs for every endpoint', async () => {
+test('manual content edits retain cached OpenAPI and submission still requires current docs for every endpoint', async () => {
   const f = await fixture();
   try {
     await f.verify(); const r = await ready(f);
     await request(f.app).post(`${r.path}/endpoints`).set('Authorization', bearer(r.token)).send({ versionId: r.version.id, method: 'GET', path: '/extra', description: 'Extra' }).expect(201);
     const versions = await request(f.app).get(`${r.path}/versions`).set('Authorization', bearer(r.token)).expect(200);
-    assert.equal(versions.body.data[0].openapiDocument, null);
+    assert.ok(versions.body.data[0].openapiDocument.paths['/items']);
+    assert.equal(versions.body.data[0].documentationStale, true);
     // Reimport v1, then add an endpoint in v2. A valid v1 must not hide undocumented v2.
     await request(f.app).post(`${r.path}/import-openapi`).set('Authorization', bearer(r.token)).field('versionId', r.version.id).attach('file', Buffer.from(spec), 'demo.yaml').expect(200);
     const v2 = await f.service.addVersion(f.users[0]!.id, r.api.id, { version: 'v2', changelog: 'Second' });
-    await f.store.pool.query("INSERT INTO api_endpoints(api_id,version_id,method,path,description) VALUES($1,$2,'GET','/undocumented','Missing docs')", [r.api.id, v2.id]);
+    await f.service.endpoint(f.users[0]!.id, r.api.id, { versionId: v2.id, method: 'GET', path: '/undocumented', description: 'Missing docs', parameters: [] });
+    assert.equal((await f.service.listChild(f.users[0]!.id, r.api.id, 'versions')).find(version => version.id === v2.id)!.documentationStale, false);
     await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
     await f.store.pool.query('DELETE FROM api_endpoints WHERE version_id=$1', [v2.id]);
     // An existing documentation row with no operations is still incomplete.
@@ -357,5 +362,113 @@ test('Provider audit writes are atomic and never include domain tokens or person
     await f.store.pool.query("CREATE FUNCTION fail_provider_audit() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'Injected audit failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER fail_provider_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_provider_audit()");
     await request(f.app).put(r.path).set('Authorization', bearer(r.token)).send({ ...metadata, name: 'Should rollback' }).expect(500);
     assert.equal((await f.service.get(f.users[0]!.id, r.api.id)).name, 'Ready');
+  } finally { await f.close(); }
+});
+
+test('rejection reason constraint rejects NULL, empty and blank reasons but accepts a real one', async () => {
+  const f = await fixture();
+  try {
+    await f.verify();
+    const providerId = f.providers[0]!.id;
+    const record = await create(f, 'Rejection reason API');
+    const insertVerification = (reason: string | null) => f.store.pool.query(
+      "INSERT INTO provider_verifications(provider_id,organization_name,contact_email,evidence_urls,status,reviewed_at,reviewed_by,reject_reason) VALUES($1,'Org','a@b.test','[\"https://example.com/license\"]','Rejected',NOW(),$2,$3)",
+      [providerId, f.admin, reason]);
+    // LENGTH(BTRIM(NULL)) is NULL and PostgreSQL accepts a NULL CHECK, so NULL used to pass.
+    for (const reason of [null, '', '   ']) {
+      await assert.rejects(insertVerification(reason), (error: any) => error.code === '23514');
+    }
+    await insertVerification('Missing licence document');
+
+    const insertReview = (reason: string | null) => f.store.pool.query(
+      "INSERT INTO api_reviews(api_id,reviewer_id,from_status,to_status,reason) VALUES($1,$2,'Under Review','Rejected',$3)",
+      [record.api.id, f.admin, reason]);
+    for (const reason of [null, '', '   ']) {
+      await assert.rejects(insertReview(reason), (error: any) => error.code === '23514');
+    }
+    await insertReview('Endpoint documentation is incomplete');
+  } finally { await f.close(); }
+});
+
+async function importedVersionFixture(f: Awaited<ReturnType<typeof fixture>>) {
+  await f.verify();
+  const record = await ready(f);
+  const versions = [record.version];
+  for (const version of ['v2', 'v3']) {
+    const added = await f.service.addVersion(f.users[0]!.id, record.api.id, { version, changelog: version });
+    await f.service.import(f.users[0]!.id, record.api.id, String(added.id), spec);
+    versions.push(added);
+  }
+  return { ...record, versions };
+}
+async function documentationSnapshot(f: Awaited<ReturnType<typeof fixture>>, api: string) {
+  return (await f.store.pool.query('SELECT id,version_id,source,content FROM api_documentations WHERE api_id=$1 ORDER BY version_id', [api])).rows;
+}
+
+test('BE-01: Version metadata updates preserve imports and rename only the selected document version', async () => {
+  const f = await fixture();
+  try {
+    const r = await importedVersionFixture(f);
+    const before = await documentationSnapshot(f, r.api.id);
+    const versionPath = `${r.path}/versions/${r.version.id}`;
+    await request(f.app).put(versionPath).set('Authorization', bearer(r.token)).send({ version: 'v1', changelog: 'Only changelog changed' }).expect(200);
+    assert.deepEqual(await documentationSnapshot(f, r.api.id), before);
+    await request(f.app).put(versionPath).set('Authorization', bearer(r.token)).send({ version: 'v1.1', changelog: 'Rename' }).expect(200);
+    const after = await documentationSnapshot(f, r.api.id);
+    assert.equal(after.length, 3);
+    assert.equal(after[0].id, before[0].id);
+    assert.equal(after[0].content.info.version, 'v1.1');
+    assert.deepEqual(after[0].content.paths, before[0].content.paths);
+    assert.deepEqual(after.slice(1), before.slice(1));
+    const versions = (await request(f.app).get(`${r.path}/versions`).set('Authorization', bearer(r.token)).expect(200)).body.data;
+    assert.equal(versions[0].openapiDocument.info.version, 'v1.1');
+    assert.equal(versions[0].documentationStale, false);
+    const renamed = await documentationSnapshot(f, r.api.id);
+    await request(f.app).put(versionPath).set('Authorization', bearer(r.token)).send({ version: 'v2', changelog: 'Conflicting rename' }).expect(409);
+    assert.deepEqual(await documentationSnapshot(f, r.api.id), renamed);
+  } finally { await f.close(); }
+});
+
+for (const action of ['create', 'update', 'delete', 'move'] as const) {
+  test(`BE-01: Endpoint ${action} retains imported docs, scopes stale state and requires explicit reimport`, async () => {
+    const f = await fixture();
+    try {
+      const r = await importedVersionFixture(f);
+      const before = await documentationSnapshot(f, r.api.id);
+      const endpoints = await f.service.listChild(f.users[0]!.id, r.api.id, 'endpoints');
+      const first = endpoints.find(endpoint => endpoint.versionId === r.version.id)!;
+      const input = { versionId: action === 'move' ? r.versions[1].id : r.version.id,
+        method: 'POST', path: action === 'create' ? '/extra' : action === 'move' ? '/moved-items' : '/items', description: 'Manual edit', parameters: [] };
+      if (action === 'create') await request(f.app).post(`${r.path}/endpoints`).set('Authorization', bearer(r.token)).send(input).expect(201);
+      else if (action === 'delete') await request(f.app).delete(`${r.path}/endpoints/${first.id}`).set('Authorization', bearer(r.token)).expect(204);
+      else await request(f.app).put(`${r.path}/endpoints/${first.id}`).set('Authorization', bearer(r.token)).send(input).expect(200);
+      assert.deepEqual(await documentationSnapshot(f, r.api.id), before);
+      let versions = (await request(f.app).get(`${r.path}/versions`).set('Authorization', bearer(r.token)).expect(200)).body.data;
+      assert.deepEqual(versions.map((version: any) => version.openapiDocument), before.map(document => document.content));
+      assert.deepEqual(versions.map((version: any) => version.documentationStale), [true, action === 'move', false]);
+      const blocked = await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(400);
+      assert.equal(blocked.body.error.code, 'DOCUMENTATION_STALE');
+      await f.service.import(f.users[0]!.id, r.api.id, r.version.id, spec);
+      versions = (await request(f.app).get(`${r.path}/versions`).set('Authorization', bearer(r.token)).expect(200)).body.data;
+      assert.deepEqual(versions.map((version: any) => version.documentationStale), [false, action === 'move', false]);
+      if (action === 'move') await f.service.import(f.users[0]!.id, r.api.id, r.versions[1].id, spec);
+      await request(f.app).post(`${r.path}/submit-review`).set('Authorization', bearer(r.token)).send({}).expect(200);
+    } finally { await f.close(); }
+  });
+}
+
+test('BE-01: upgrading an existing imported database and rerunning migration preserves all documents', async () => {
+  const f = await fixture();
+  try {
+    const r = await importedVersionFixture(f);
+    const before = await documentationSnapshot(f, r.api.id);
+    // Reproduce the pre-007 schema/history with already imported content.
+    await f.store.pool.query('ALTER TABLE api_versions DROP COLUMN documentation_stale');
+    await f.store.pool.query("DELETE FROM backend_schema_migrations WHERE name='007_provider_documentation_state.sql'");
+    await f.store.migrate(false, true);
+    await f.store.migrate(false, true);
+    assert.deepEqual(await documentationSnapshot(f, r.api.id), before);
+    const versions = (await request(f.app).get(`${r.path}/versions`).set('Authorization', bearer(r.token)).expect(200)).body.data;
+    assert.deepEqual(versions.map((version: any) => version.documentationStale), [false, false, false]);
   } finally { await f.close(); }
 });

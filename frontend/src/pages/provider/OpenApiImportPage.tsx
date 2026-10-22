@@ -39,7 +39,7 @@ export const OpenApiImportPage: React.FC = () => {
   // Versions data
   const [versions, setVersions] = useState<ProviderVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string>('');
-  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(Boolean(queryApiId));
 
   // Import form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -50,7 +50,7 @@ export const OpenApiImportPage: React.FC = () => {
 
   // Documentation data
   const [documentations, setDocumentations] = useState<ProviderDocumentation[]>([]);
-  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [loadingDocs, setLoadingDocs] = useState(Boolean(queryApiId));
   const [docError, setDocError] = useState<string | null>(null);
   const [selectedDocIndex, setSelectedDocIndex] = useState(0);
 
@@ -61,8 +61,6 @@ export const OpenApiImportPage: React.FC = () => {
   // 1. Fetch APIs list on mount
   useEffect(() => {
     const controller = new AbortController();
-    setLoadingApis(true);
-    setGlobalError(null);
 
     listProviderApis(1, 100, controller.signal)
       .then(res => {
@@ -89,11 +87,13 @@ export const OpenApiImportPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [retryKey]);
+  }, [queryApiId, retryKey]);
 
   // Sync query params
   const handleSelectApi = (apiId: string) => {
     setSelectedApiId(apiId);
+    setLoadingVersions(true);
+    setLoadingDocs(true);
     setSearchParams({ api: apiId, tab: activeTab });
   };
 
@@ -107,7 +107,6 @@ export const OpenApiImportPage: React.FC = () => {
     if (!selectedApiId) return;
 
     const controller = new AbortController();
-    setLoadingVersions(true);
     listProviderVersions(selectedApiId, controller.signal)
       .then(res => {
         if (!controller.signal.aborted) {
@@ -138,8 +137,6 @@ export const OpenApiImportPage: React.FC = () => {
     if (!selectedApiId) return;
 
     const controller = new AbortController();
-    setLoadingDocs(true);
-    setDocError(null);
 
     listProviderDocumentation(selectedApiId, controller.signal)
       .then(res => {

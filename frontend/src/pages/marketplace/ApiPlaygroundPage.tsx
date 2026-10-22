@@ -1,18 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { MethodBadge, Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { CodeBlock } from '../../components/ui/CodeBlock';
 import { useLanguage } from '../../i18n';
+import type { ApiItem } from '../../types';
+import { PublicApiUnavailable } from '../../components/marketplace/PublicApiUnavailable';
 
 export const ApiPlaygroundPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { apis } = useApp();
+  const api = apis.find(item => item.id === id && item.status === 'Published');
+  if (!api || api.endpoints.length === 0) return <PublicApiUnavailable />;
+  return <PublishedApiPlayground key={api.id} api={api} />;
+};
+
+const PublishedApiPlayground: React.FC<{ api: ApiItem }> = ({ api }) => {
   const [searchParams] = useSearchParams();
-  const { apis, executeGatewayCall, apiKeys } = useApp();
+  const { executeGatewayCall, apiKeys } = useApp();
   const { t } = useLanguage();
 
-  const api = apis.find(a => a.id === id) || apis[0];
   const queryEp = searchParams.get('endpoint');
 
   const [selectedEndpointPath, setSelectedEndpointPath] = useState(
@@ -37,12 +45,13 @@ export const ApiPlaygroundPage: React.FC = () => {
     headers: Record<string, string>;
   } | null>(null);
 
-  // Update request body when endpoint changes
-  useEffect(() => {
-    if (selectedEndpoint) {
-      setRequestBody(selectedEndpoint.sampleRequest || '{\n  "prompt": "Hello world"\n}');
+  const handleEndpointSelect = (newPath: string) => {
+    setSelectedEndpointPath(newPath);
+    const ep = api.endpoints.find(e => e.path === newPath);
+    if (ep) {
+      setRequestBody(ep.sampleRequest || '{\n  "prompt": "Hello world"\n}');
     }
-  }, [selectedEndpointPath]);
+  };
 
   const handleSendRequest = async () => {
     setIsLoading(true);
@@ -62,6 +71,9 @@ export const ApiPlaygroundPage: React.FC = () => {
 
   return (
     <div className="pt-20 pb-16 px-6 lg:px-12 max-w-7xl mx-auto">
+      <p role="status" className="p-4 mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10">
+        {t('Chưa kết nối backend Playground. Gửi request đang tắt; chưa có lệnh gọi API thật.')}
+      </p>
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-6 border-b border-outline-variant/30">
         <div>
@@ -121,7 +133,7 @@ export const ApiPlaygroundPage: React.FC = () => {
                 <MethodBadge method={selectedEndpoint?.method || 'POST'} />
                 <select
                   value={selectedEndpointPath}
-                  onChange={(e) => setSelectedEndpointPath(e.target.value)}
+                  onChange={(e) => handleEndpointSelect(e.target.value)}
                   className="bg-transparent flex-1 text-on-surface font-code-md text-body-sm outline-none cursor-pointer"
                 >
                   {api.endpoints.map(ep => (
@@ -189,6 +201,8 @@ export const ApiPlaygroundPage: React.FC = () => {
               size="lg"
               icon="send"
               loading={isLoading}
+              disabled
+              title={t('Chưa kết nối backend Playground')}
               onClick={handleSendRequest}
             >
               {t('Send Request')}
@@ -250,7 +264,7 @@ export const ApiPlaygroundPage: React.FC = () => {
                 <span className="material-symbols-outlined text-[44px] text-outline mb-2">http</span>
                 <p className="text-body-md font-medium text-on-surface">{t('No Request Sent Yet')}</p>
                 <p className="text-body-sm text-on-surface-variant mt-1">
-                  {t('Click "Send Request" to trigger an authentic API Gateway proxy execution.')}
+                  {t('Chức năng gửi request sẽ được mở khi backend Playground được tích hợp.')}
                 </p>
               </div>
             )}

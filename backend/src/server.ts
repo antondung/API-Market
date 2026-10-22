@@ -6,6 +6,7 @@ import { invalidDnsServers, parseDnsServers } from './provider-dns.js';
 import { ProviderService } from './provider-service.js';
 import { AdminReviewService } from './admin-review-service.js';
 import { AuditService } from './audit-service.js';
+import { MarketplaceService } from './marketplace-service.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
 if (!['postgres', 'memory'].includes(mode)) throw new Error('AUTH_STORE must be postgres or memory');
@@ -28,7 +29,8 @@ const audit = store instanceof PostgresAuthStore ? new AuditService(store.pool) 
 if (audit) await audit.ready();
 const review = store instanceof PostgresAuthStore && audit ? new AdminReviewService(store.pool, audit) : undefined;
 if (review) await review.ready();
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit });
+const marketplace = store instanceof PostgresAuthStore ? new MarketplaceService(store.pool) : undefined;
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });

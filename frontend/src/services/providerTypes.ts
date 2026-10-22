@@ -61,6 +61,7 @@ export interface ProviderVersion {
   apiId: string;
   version: string;
   changelog: string;
+  documentationStale?: boolean;
   openapiDocument?: string | null;
   createdAt?: string;
 }
