@@ -1,35 +1,29 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { PublicApiUnavailable } from '../../components/marketplace/PublicApiUnavailable';
 
 export const CheckoutPage: React.FC = () => {
   const { apiId, planId } = useParams<{ apiId: string; planId: string }>();
-  const { apis, subscribeToPlan } = useApp();
+  const { apis } = useApp();
   const { currentUser } = useAuth();
-  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
-  const user = currentUser!;
   const { t } = useLanguage();
-  const navigate = useNavigate();
 
-  const api = apis.find(a => a.id === apiId) || apis[0];
-  const plan = api.plans.find(p => p.id === planId) || api.plans[0];
+  const api = apis.find(a => a.id === apiId && a.status === 'Published');
+  const plan = api?.plans.find(p => p.id === planId);
 
   const [paymentMethod, setPaymentMethod] = useState<'sandbox_card' | 'sandbox_vnpay'>('sandbox_card');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(true);
 
-  const handleCompleteSubscription = () => {
-    setIsProcessing(true);
-    setTimeout(() => {
-      subscribeToPlan(api.id, plan.id, user.id);
-      setIsProcessing(false);
-      navigate('/dashboard/subscriptions');
-    }, 1200);
-  };
+  if (!api || !plan) return <PublicApiUnavailable />;
+  if (!currentUser) return <div className="pt-28 pb-20 px-6 text-center">
+    <p>{t('Vui lòng đăng nhập để xem thông tin đăng ký.')}</p>
+    <Link className="text-primary hover:underline" to="/login">{t('Đăng nhập')}</Link>
+  </div>;
 
   return (
     <div className="pt-20 pb-20 px-6 lg:px-12 max-w-4xl mx-auto">
@@ -40,7 +34,7 @@ export const CheckoutPage: React.FC = () => {
         </Link>
         <h1 className="text-headline-lg font-bold text-on-surface">{t('Complete Your Subscription')}</h1>
         <p className="text-body-md text-on-surface-variant">
-          {t('Payment Sandbox Environment (US-23): Zero real financial risk. Instant authorization and key generation.')}
+          {t('Giao diện tham khảo. Backend Subscription và Payment Sandbox chưa được tích hợp; chưa thể đăng ký hoặc cấp API Key tại đây.')}
         </p>
       </div>
 
@@ -93,7 +87,7 @@ export const CheckoutPage: React.FC = () => {
               {t('Payment Sandbox Simulation')}
             </h3>
             <p className="text-body-sm text-on-surface-variant mb-4">
-              {t('In accordance with project scope (PDF section 8), payments run through the mocked Payment Sandbox engine.')}
+              {t('Chưa có kết quả thanh toán hoặc đăng ký từ máy chủ. Các lựa chọn dưới đây chỉ là giao diện tham khảo.')}
             </p>
 
             <div className="space-y-3 mb-6">
@@ -108,7 +102,7 @@ export const CheckoutPage: React.FC = () => {
                   <span className="material-symbols-outlined text-primary text-[24px]">credit_card</span>
                   <div>
                     <span className="font-semibold text-on-surface text-body-sm block">{t('Mock Credit Card Vault')}</span>
-                    <span className="text-[12px] text-on-surface-variant">{t('4242 •••• •••• 4242 (Instant Approval)')}</span>
+                    <span className="text-[12px] text-on-surface-variant">{t('4242 •••• •••• 4242 (Minh họa)')}</span>
                   </div>
                 </div>
                 <input type="radio" checked={paymentMethod === 'sandbox_card'} readOnly className="accent-primary" />
@@ -149,9 +143,8 @@ export const CheckoutPage: React.FC = () => {
               variant="primary"
               size="lg"
               className="w-full"
-              loading={isProcessing}
-              disabled={!termsAccepted}
-              onClick={handleCompleteSubscription}
+              disabled
+              title={t('Chưa kết nối backend Subscription')}
             >
               {plan.priceMonthly === 0 ? t('Activate Free Sandbox Tier') : `${t('Authorize & Subscribe')} ($${plan.priceMonthly}/tháng)`}
             </Button>
@@ -163,20 +156,20 @@ export const CheckoutPage: React.FC = () => {
           <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
             <h4 className="text-body-md font-bold text-on-surface mb-3 flex items-center gap-2">
               <span className="material-symbols-outlined text-emerald-600 text-[20px]">shield</span>
-              {t('Subscriber Guarantee')}
+              {t('Trạng thái tích hợp')}
             </h4>
             <ul className="space-y-3 text-body-sm text-on-surface-variant">
               <li className="flex items-start gap-2">
                 <span className="material-symbols-outlined text-emerald-600 text-[18px] flex-shrink-0">check</span>
-                <span>{t('Instant API Key issuance with automated Redis quota counter assignment.')}</span>
+                <span>{t('Gateway và kiểm soát quota chưa được tích hợp.')}</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="material-symbols-outlined text-emerald-600 text-[18px] flex-shrink-0">check</span>
-                <span>{t('Real-time Cost Guard threshold alerts (50%, 80%, 100%) to prevent bill shock.')}</span>
+                <span>{t('Cost Guard và cảnh báo ngân sách chưa được tích hợp.')}</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="material-symbols-outlined text-emerald-600 text-[18px] flex-shrink-0">check</span>
-                <span>{t('Cancel or pause your subscription anytime with 1-click in Consumer Dashboard.')}</span>
+                <span>{t('Chưa có giao dịch hoặc subscription được tạo từ màn hình này.')}</span>
               </li>
             </ul>
           </div>

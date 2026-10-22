@@ -6,7 +6,8 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 
 export const PricingPage: React.FC = () => {
-  const { apis } = useApp();
+  const { apis: cachedApis } = useApp();
+  const apis = cachedApis.filter(api => api.status === 'Published');
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
