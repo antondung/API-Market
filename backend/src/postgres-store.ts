@@ -47,7 +47,7 @@ export class PostgresAuthStore implements AuthStore {
       await client.query('SELECT pg_advisory_xact_lock(913002)');
       await client.query('CREATE TABLE IF NOT EXISTS backend_schema_migrations (name TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)');
       const files = ['001_create_auth_schema.sql', ...(demoSeed ? ['002_seed_auth_data.sql'] : []),
-              ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : []), '005_provider_domain_privacy.sql', '006_fix_rejection_reason_null.sql'] : [])];
+        ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : []), '005_provider_domain_privacy.sql', '006_fix_rejection_reason_null.sql', '006_create_marketplace_gateway_schema.sql', '007_provider_documentation_state.sql'] : [])];
       for (const name of files) {
         const source = readFileSync(resolve(migrationDir, name), 'utf8');
         const checksum = createHash('sha256').update(source.replace(/\r\n/g, '\n')).digest('hex');

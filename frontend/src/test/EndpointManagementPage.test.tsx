@@ -86,7 +86,7 @@ describe('EndpointManagementPage component tests', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders loading skeleton and displays stale documentation warning banner', async () => {
+  it('renders loading skeleton and explains documentation preservation and affected versions', async () => {
     vi.spyOn(providerApiModule, 'listProviderApis').mockResolvedValue({
       items: mockApis,
       total: 2,
@@ -106,7 +106,9 @@ describe('EndpointManagementPage component tests', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Lưu ý về tài liệu OpenAPI:/i)).toBeDefined();
-      expect(screen.getByText(/stale documentation/i)).toBeDefined();
+      expect(screen.getByText(/giữ nguyên tài liệu đã import/i)).toBeDefined();
+      expect(screen.getByText(/cả hai Phiên bản cần được tái nhập OpenAPI/i)).toBeDefined();
+      expect(screen.getByText(/Đổi tên Phiên bản hoặc changelog không xóa tài liệu/i)).toBeDefined();
     });
 
     // Check header and API selector

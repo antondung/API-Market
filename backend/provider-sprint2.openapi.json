@@ -3,7 +3,7 @@
   "info": {
     "title": "API Market — Sprint 2 Provider",
     "version": "0.2.0",
-    "description": "Implemented with PostgreSQL schema 003 from Danh. Provider owner required; creation requires Verified; mutations require Draft. Admin review routes belong to Dũng. Standard data/error envelopes; child collections return arrays, API list returns items,total,page,pageSize. Import replaces endpoints/docs for versionId atomically. Manual endpoint edits invalidate imported documentation."
+    "description": "Provider owner required; creation requires Verified; mutations require Draft. Standard data/error envelopes; child collections return arrays, API list returns items,total,page,pageSize. Import replaces endpoints/docs for versionId atomically. Version metadata updates preserve documents and synchronize info.version on rename. Manual endpoint changes retain imported documentation and mark affected versions documentationStale; moving an endpoint marks both versions. Submit returns 400 DOCUMENTATION_STALE until affected versions are reimported. Explicit Version/API deletion still deletes their children. Requires migrations through 007."
   },
   "components": {
     "securitySchemes": {
@@ -496,6 +496,10 @@
               "object",
               "null"
             ]
+          },
+          "documentationStale": {
+            "type": "boolean",
+            "description": "Manual endpoint changes require reimport before submission; retained imported document is still readable."
           }
         },
         "required": [

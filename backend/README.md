@@ -84,6 +84,10 @@ PR #30 và #32 đã merge; Sprint 1 đã nghiệm thu. Dữ liệu SQLite local 
 
 ## Provider Sprint 2
 
+Bản sửa bảo toàn OpenAPI, migration 007 và trạng thái `documentationStale`: [OPENAPI-PRESERVATION.md](OPENAPI-PRESERVATION.md). Chạy `npm run db:migrate` trước khi khởi động phiên bản backend mới.
+
+Sprint 3 đang triển khai Marketplace/API Detail: [SPRINT-3-HANDOFF.md](SPRINT-3-HANDOFF.md) ghi hợp đồng API, kiểm thử và các phụ thuộc còn lại của issue #12.
+
 Backend PostgreSQL hiện phục vụ nhóm `/api/provider` và Swagger chung tại `/docs/`. Chạy `npm run db:migrate` trước khi startup để áp dụng schema 003 của Danh. `db:seed` explicit ở development áp dụng thêm seed 004; không dùng production.
 
 Hướng dẫn endpoint, upload OpenAPI, kết quả kiểm thử và phụ thuộc tích hợp: [SPRINT-2-HANDOFF.md](SPRINT-2-HANDOFF.md). Bổ sung privacy, DNS TXT verification, migration 005 và tích hợp Admin từ code Dũng: [DOMAIN-PRIVACY-HANDOFF.md](DOMAIN-PRIVACY-HANDOFF.md). Chạy migrate 005 trước startup; legal cũ cần khai báo rõ processesPersonalData và domain proof còn hạn trước submit. CORS hỗ trợ GET/POST/PUT/PATCH/DELETE/OPTIONS. Với AUTH_STORE=memory chỉ phục vụ Auth/Admin user hiện có; Provider/Admin review cần PostgreSQL thật.
