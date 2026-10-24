@@ -34,10 +34,31 @@ export const ApiPlaygroundPage: React.FC = () => {
 
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>('');
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [insertKeyIntoSnippet, setInsertKeyIntoSnippet] = useState(false);
   const [queryParams, setQueryParams] = useState<Record<string, string>>({});
   const [headerParams, setHeaderParams] = useState<Record<string, string>>({});
   const [requestBody, setRequestBody] = useState('{\n  "query": "test"\n}');
   const [jsonValidStatus, setJsonValidStatus] = useState<string | null>(null);
+
+  // Security lifecycle: Wipe sensitive credentials on unmount, API switch, or logout
+  useEffect(() => {
+    const handleLogout = () => {
+      setApiKeyInput('');
+      setShowApiKeyInput(false);
+      setHeaderParams({});
+      setInsertKeyIntoSnippet(false);
+    };
+
+    window.addEventListener('apihub:session-invalidated', handleLogout);
+    return () => {
+      setApiKeyInput('');
+      setShowApiKeyInput(false);
+      setHeaderParams({});
+      setInsertKeyIntoSnippet(false);
+      window.removeEventListener('apihub:session-invalidated', handleLogout);
+    };
+  }, [id]);
 
   // Tabs
   const [requestTab, setRequestTab] = useState<'params' | 'headers' | 'body'>('params');
@@ -127,6 +148,11 @@ export const ApiPlaygroundPage: React.FC = () => {
     }
   };
 
+  // Resolved API key for code snippets: default to safe placeholder unless user explicitly opts in
+  const resolvedApiKey = useMemo(() => {
+    return (insertKeyIntoSnippet && apiKeyInput.trim()) ? apiKeyInput.trim() : 'YOUR_API_KEY';
+  }, [insertKeyIntoSnippet, apiKeyInput]);
+
   // Generate dynamic cURL command via hardened generator
   const generatedCurl = useMemo(() => {
     if (!api || !selectedEndpoint) return '';
@@ -134,13 +160,13 @@ export const ApiPlaygroundPage: React.FC = () => {
     return generateCurlSnippet({
       method: selectedEndpoint.method,
       urlPath: selectedEndpoint.path,
-      apiKey: apiKeyInput.trim() || 'YOUR_API_KEY',
+      apiKey: resolvedApiKey,
       queryParams,
       headers: headerParams,
       body: requestBody,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, apiKeyInput, queryParams, headerParams, requestBody]);
+  }, [api, selectedEndpoint, resolvedApiKey, queryParams, headerParams, requestBody]);
 
   // Generate JavaScript fetch via hardened generator
   const generatedJs = useMemo(() => {
@@ -149,13 +175,13 @@ export const ApiPlaygroundPage: React.FC = () => {
     return generateFetchSnippet({
       method: selectedEndpoint.method,
       urlPath: selectedEndpoint.path,
-      apiKey: apiKeyInput.trim() || 'YOUR_API_KEY',
+      apiKey: resolvedApiKey,
       queryParams,
       headers: headerParams,
       body: requestBody,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, apiKeyInput, queryParams, headerParams, requestBody]);
+  }, [api, selectedEndpoint, resolvedApiKey, queryParams, headerParams, requestBody]);
 
   // Generate Python requests via hardened generator
   const generatedPython = useMemo(() => {
@@ -164,13 +190,13 @@ export const ApiPlaygroundPage: React.FC = () => {
     return generatePythonSnippet({
       method: selectedEndpoint.method,
       urlPath: selectedEndpoint.path,
-      apiKey: apiKeyInput.trim() || 'YOUR_API_KEY',
+      apiKey: resolvedApiKey,
       queryParams,
       headers: headerParams,
       body: requestBody,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, apiKeyInput, queryParams, headerParams, requestBody]);
+  }, [api, selectedEndpoint, resolvedApiKey, queryParams, headerParams, requestBody]);
 
   const activeSnippet = useMemo(() => {
     if (codeLang === 'curl') return generatedCurl;
@@ -354,13 +380,37 @@ export const ApiPlaygroundPage: React.FC = () => {
                     <div className="flex items-center bg-surface-container-high rounded-lg border border-outline-variant/30 px-3 py-1.5">
                       <span className="material-symbols-outlined text-on-surface-variant text-[16px] mr-2">key</span>
                       <input
-                        type="text"
+                        type={showApiKeyInput ? 'text' : 'password'}
                         value={apiKeyInput}
                         onChange={(e) => setApiKeyInput(e.target.value)}
                         placeholder={t('Enter API Key')}
+                        autoComplete="off"
                         className="w-full bg-transparent font-code-md text-code-sm text-on-surface focus:outline-none"
                       />
+                      {apiKeyInput && (
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+                          className="p-1 rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer ml-1"
+                          title={showApiKeyInput ? t('Ẩn') : t('Hiện')}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            {showApiKeyInput ? 'visibility_off' : 'visibility'}
+                          </span>
+                        </button>
+                      )}
                     </div>
+                    {apiKeyInput.trim() && (
+                      <label className="flex items-center gap-2 mt-2 text-body-xs text-on-surface-variant cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={insertKeyIntoSnippet}
+                          onChange={(e) => setInsertKeyIntoSnippet(e.target.checked)}
+                          className="rounded border-outline-variant/40 text-primary focus:ring-primary h-3.5 w-3.5"
+                        />
+                        <span>{t('Chèn API Key thật vào snippet (Mặc định: hiển thị "YOUR_API_KEY" để an toàn khi chia sẻ)')}</span>
+                      </label>
+                    )}
                   </div>
 
                   {Object.entries(headerParams).map(([key, value]) => (
@@ -481,6 +531,24 @@ export const ApiPlaygroundPage: React.FC = () => {
                     </button>
                   ))}
                 </div>
+
+                {apiKeyInput.trim() && (
+                  <div className="flex items-center justify-between text-body-xs bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/30">
+                    <span className="text-on-surface-variant flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-primary text-[16px]">verified_user</span>
+                      {insertKeyIntoSnippet
+                        ? t('Mã lệnh đang hiển thị API Key của bạn.')
+                        : t('Mã lệnh đang dùng "YOUR_API_KEY" để an toàn khi chia sẻ.')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setInsertKeyIntoSnippet(!insertKeyIntoSnippet)}
+                      className="text-primary hover:underline font-medium cursor-pointer text-body-xs ml-2"
+                    >
+                      {insertKeyIntoSnippet ? t('Dùng "YOUR_API_KEY"') : t('Chèn API Key thật')}
+                    </button>
+                  </div>
+                )}
 
                 <CodeBlock
                   code={activeSnippet}

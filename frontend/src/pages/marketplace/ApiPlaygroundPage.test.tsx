@@ -130,4 +130,53 @@ describe('ApiPlaygroundPage - Hardened Snippets & Safe SSRF Policy', () => {
       expect(screen.getByRole('button', { name: 'Format JSON' })).toBeDefined();
     });
   });
+
+  it('defaults to YOUR_API_KEY in snippets and requires explicit opt-in to insert entered key', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    // Switch to Headers tab
+    const headersTab = screen.getByRole('button', { name: /Headers/i });
+    fireEvent.click(headersTab);
+
+    // Enter sensitive API key
+    const input = screen.getByPlaceholderText(/Enter API Key/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'super_secret_playground_token' } });
+
+    // Switch to Snippets panel (already visible on right)
+    // Snippet should NOT display super_secret_playground_token without opt-in
+    expect(screen.queryByText(/super_secret_playground_token/)).toBeNull();
+    expect(screen.getAllByText(/YOUR_API_KEY/).length).toBeGreaterThan(0);
+
+    // Click opt-in toggle button in snippet notice banner
+    const optInBtn = screen.getByRole('button', { name: /Chèn API Key thật/i });
+    fireEvent.click(optInBtn);
+
+    // Now snippet displays the real key
+    expect(screen.getByText(/super_secret_playground_token/)).toBeDefined();
+  });
+
+  it('clears API key and headers on session invalidation event', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    // Switch to Headers tab
+    const headersTab = screen.getByRole('button', { name: /Headers/i });
+    fireEvent.click(headersTab);
+
+    const input = screen.getByPlaceholderText(/Enter API Key/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'transient_secret_key' } });
+    expect(input.value).toBe('transient_secret_key');
+
+    // Trigger logout / invalidation event
+    window.dispatchEvent(new Event('apihub:session-invalidated'));
+
+    await waitFor(() => {
+      expect(input.value).toBe('');
+    });
+  });
 });

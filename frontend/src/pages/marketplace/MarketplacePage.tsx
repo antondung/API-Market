@@ -89,6 +89,7 @@ export const MarketplacePage: React.FC = () => {
   const [error, setError] = useState<ApiError | null>(null);
 
   const hasLoadedOnceRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   // Debounced update to URL search params when user types
   const debounceTimerRef = useRef<number | null>(null);
@@ -204,9 +205,10 @@ export const MarketplacePage: React.FC = () => {
     setSearchParams(new URLSearchParams());
   };
 
-  // Fetch data with AbortController
+  // Fetch data with AbortController and request generation tracking
   const fetchData = useCallback(
     async (signal?: AbortSignal) => {
+      const currentRequestId = ++requestIdRef.current;
       try {
         setError(null);
         if (hasLoadedOnceRef.current) {
@@ -224,19 +226,22 @@ export const MarketplacePage: React.FC = () => {
         };
 
         const result = await listMarketplaceApis(query, signal);
+        if (signal?.aborted || currentRequestId !== requestIdRef.current) return;
         hasLoadedOnceRef.current = true;
         setItems(result.items);
         setTotal(result.total);
       } catch (err) {
-        if (signal?.aborted) return;
+        if (signal?.aborted || currentRequestId !== requestIdRef.current) return;
         if (err instanceof ApiError) {
           setError(err);
         } else {
           setError(new ApiError(0, 'UNKNOWN_ERROR', 'Đã xảy ra lỗi không xác định.'));
         }
       } finally {
-        setIsLoading(false);
-        setIsRefetching(false);
+        if (!signal?.aborted && currentRequestId === requestIdRef.current) {
+          setIsLoading(false);
+          setIsRefetching(false);
+        }
       }
     },
     [urlQ, urlCategory, urlTag, urlPricing, urlSort, urlPage, urlPageSize]
@@ -244,7 +249,10 @@ export const MarketplacePage: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchData(controller.signal);
+    const run = async () => {
+      await fetchData(controller.signal);
+    };
+    void run();
 
     return () => {
       controller.abort();

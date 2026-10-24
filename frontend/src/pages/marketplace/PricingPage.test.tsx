@@ -139,5 +139,31 @@ describe('PricingPage - Audit Remediation & Price Immutability', () => {
     // Check for absence of ungrounded technical claims
     expect(screen.queryByText(/99.99% Financial SLA/i)).toBeNull();
     expect(screen.queryByText(/Redis Cluster Caching/i)).toBeNull();
+    expect(screen.queryByText('5 - 10 req/s')).toBeNull();
+    expect(screen.queryByText('50 - 200 req/s')).toBeNull();
+    expect(screen.queryByText(/Email & Ticketing \(24h\)/i)).toBeNull();
+    expect(screen.queryByText(/Dedicated Slack/i)).toBeNull();
+
+    // Verify SLA disclaimer is displayed
+    expect(
+      screen.getByText('Chi tiết SLA và kênh hỗ trợ theo cam kết cụ thể của từng Provider hoặc thỏa thuận riêng.')
+    ).toBeDefined();
+  });
+
+  it('displays deep link filter banner when ?api=<id> is present', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+
+    render(
+      <MemoryRouter initialEntries={['/pricing?api=api-pricing-test-1']}>
+        <PricingPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Cloud Payment Engine')).toBeDefined();
+    });
+
+    expect(screen.getByText(/Đang xem bảng giá cho API được chọn:/i)).toBeDefined();
+    expect(screen.getByText('api-pricing-test-1')).toBeDefined();
   });
 });

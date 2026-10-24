@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Modal } from './Modal';
 
 describe('Modal - Accessibility & Focus Trap', () => {
-  it('renders with full ARIA dialog attributes', () => {
+  it('renders with full ARIA dialog attributes using unique IDs', () => {
     render(
       <Modal
         isOpen={true}
@@ -19,10 +19,49 @@ describe('Modal - Accessibility & Focus Trap', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toBeDefined();
     expect(dialog.getAttribute('aria-modal')).toBe('true');
-    expect(dialog.getAttribute('aria-labelledby')).toBe('modal-title');
-    expect(dialog.getAttribute('aria-describedby')).toBe('modal-description');
-    expect(screen.getByText('Accessible Modal Title')).toBeDefined();
-    expect(screen.getByText('Detailed dialog explanation')).toBeDefined();
+    const titleId = dialog.getAttribute('aria-labelledby');
+    const descId = dialog.getAttribute('aria-describedby');
+    expect(titleId).toBeTruthy();
+    expect(descId).toBeTruthy();
+    expect(document.getElementById(titleId!)?.textContent).toBe('Accessible Modal Title');
+    expect(document.getElementById(descId!)?.textContent).toBe('Detailed dialog explanation');
+  });
+
+  it('generates non-colliding ARIA IDs for multiple modals', () => {
+    render(
+      <div>
+        <Modal isOpen={true} onClose={vi.fn()} title="Modal One">
+          <div>Content 1</div>
+        </Modal>
+        <Modal isOpen={true} onClose={vi.fn()} title="Modal Two">
+          <div>Content 2</div>
+        </Modal>
+      </div>
+    );
+
+    const dialogs = screen.getAllByRole('dialog');
+    expect(dialogs.length).toBe(2);
+    const id1 = dialogs[0].getAttribute('aria-labelledby');
+    const id2 = dialogs[1].getAttribute('aria-labelledby');
+    expect(id1).toBeTruthy();
+    expect(id2).toBeTruthy();
+    expect(id1).not.toBe(id2);
+  });
+
+  it('preserves and restores exact prior body overflow style', async () => {
+    document.body.style.overflow = 'scroll';
+
+    const { unmount } = render(
+      <Modal isOpen={true} onClose={vi.fn()} title="Overflow Test Modal">
+        <div>Content</div>
+      </Modal>
+    );
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    unmount();
+    expect(document.body.style.overflow).toBe('scroll');
+    document.body.style.overflow = '';
   });
 
   it('triggers onClose when Escape key is pressed', () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useId } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 
 interface ModalProps {
@@ -10,6 +10,10 @@ interface ModalProps {
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
 }
 
+// Global active modal counter to safely handle nested modals
+let activeModalCount = 0;
+let initialBodyOverflow = '';
+
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
@@ -19,19 +23,37 @@ export const Modal: React.FC<ModalProps> = ({
   maxWidth = 'lg'
 }) => {
   const shouldReduceMotion = useReducedMotion();
+  const rawId = useId();
+  const cleanId = rawId.replace(/:/g, '');
+  const titleId = `modal-title-${cleanId}`;
+  const descriptionId = `modal-description-${cleanId}`;
+
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const previousOverflowRef = useRef<string>('');
+  const onCloseRef = useRef(onClose);
+
+  // Keep onClose callback ref fresh without re-triggering effects
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (isOpen) {
       previousActiveElementRef.current = document.activeElement as HTMLElement | null;
-      document.body.style.overflow = 'hidden';
+      previousOverflowRef.current = document.body.style.overflow;
+
+      if (activeModalCount === 0) {
+        initialBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+      }
+      activeModalCount++;
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           e.stopPropagation();
-          onClose();
+          onCloseRef.current();
           return;
         }
 
@@ -90,14 +112,19 @@ export const Modal: React.FC<ModalProps> = ({
 
       return () => {
         clearTimeout(timer);
-        document.body.style.overflow = 'unset';
+        activeModalCount = Math.max(0, activeModalCount - 1);
+        if (activeModalCount === 0) {
+          document.body.style.overflow = initialBodyOverflow;
+        } else {
+          document.body.style.overflow = previousOverflowRef.current;
+        }
         window.removeEventListener('keydown', handleKeyDown);
         if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === 'function') {
           previousActiveElementRef.current.focus();
         }
       };
     }
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   const maxWidthClasses = {
     sm: 'max-w-sm',
@@ -118,15 +145,15 @@ export const Modal: React.FC<ModalProps> = ({
           transition={{ duration: shouldReduceMotion ? 0 : 0.15 }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
           onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
+            if (e.target === e.currentTarget) onCloseRef.current();
           }}
         >
           <motion.div
             ref={modalContainerRef}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="modal-title"
-            aria-describedby={description ? 'modal-description' : undefined}
+            aria-labelledby={titleId}
+            aria-describedby={description ? descriptionId : undefined}
             initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.96, y: 8 }}
@@ -135,15 +162,15 @@ export const Modal: React.FC<ModalProps> = ({
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/30 bg-surface-container-low">
               <div>
-                <h3 id="modal-title" className="text-headline-sm font-headline-sm text-on-surface">{title}</h3>
-                {description && <p id="modal-description" className="text-body-sm text-on-surface-variant mt-0.5">{description}</p>}
+                <h3 id={titleId} className="text-headline-sm font-headline-sm text-on-surface">{title}</h3>
+                {description && <p id={descriptionId} className="text-body-sm text-on-surface-variant mt-0.5">{description}</p>}
               </div>
               <button
                 ref={closeButtonRef}
                 type="button"
                 aria-label="Đóng hộp thoại"
-                onClick={onClose}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer"
+                onClick={() => onCloseRef.current()}
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer touch-manipulation"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>

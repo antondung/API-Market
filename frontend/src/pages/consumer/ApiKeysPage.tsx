@@ -41,15 +41,21 @@ export const ApiKeysPage: React.FC = () => {
   const [revokeModalKey, setRevokeModalKey] = useState<DisplayApiKey | null>(null);
   const [rotateModalKey, setRotateModalKey] = useState<DisplayApiKey | null>(null);
 
-  // Security lifecycle: Wipe sensitive state on modal close, unmount, or auth change
+  // Security lifecycle: Wipe sensitive state on modal close, unmount, auth change, or logout
   const handleCloseCreateModal = () => {
     setCreateModalOpen(false);
     setNewKeyName('');
   };
 
   useEffect(() => {
+    const handleLogout = () => {
+      setRevealedKeys({});
+    };
+
+    window.addEventListener('apihub:session-invalidated', handleLogout);
     return () => {
       setRevealedKeys({});
+      window.removeEventListener('apihub:session-invalidated', handleLogout);
     };
   }, [currentUser?.id]);
 

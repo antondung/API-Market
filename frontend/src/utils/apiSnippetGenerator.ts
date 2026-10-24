@@ -16,7 +16,7 @@ export interface SnippetOptions {
 
 const TEMPLATE_NOTICE_TEXT = 'Template — Gateway route not yet configured. Update base URL and credentials before running.';
 const DEFAULT_BASE_URL = 'https://api.apihub.vn/v1';
-const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']);
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'TRACE']);
 
 /**
  * Escapes an arbitrary string for safe usage in POSIX shell (sh/bash).
@@ -42,7 +42,7 @@ export function sanitizeHeaderValue(value: string): string {
 }
 
 /**
- * Normalizes HTTP method to uppercase and validates against allowed verbs.
+ * Normalizes HTTP method to uppercase and validates against allowed backend contract verbs.
  */
 export function normalizeMethod(method: string): string {
   const upper = (method || 'GET').trim().toUpperCase();
@@ -51,6 +51,7 @@ export function normalizeMethod(method: string): string {
 
 /**
  * Builds a sanitized, query-string-encoded full URL.
+ * Preserves pre-existing query strings in urlPath, encodes params, and removes NUL characters.
  */
 export function buildSafeUrl(
   baseUrl: string = DEFAULT_BASE_URL,
@@ -58,20 +59,86 @@ export function buildSafeUrl(
   queryParams?: Record<string, string> | Array<[string, string]>
 ): string {
   const cleanBase = (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
-  const cleanPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
+  let rawPath = (urlPath || '/').trim().replace(/\0/g, '');
+  if (!rawPath.startsWith('/')) {
+    rawPath = `/${rawPath}`;
+  }
 
   const searchParams = new URLSearchParams();
+
+  // If urlPath already contains a query string, parse and preserve existing params
+  let pathOnly = rawPath;
+  if (rawPath.includes('?')) {
+    const [p, existingQs] = rawPath.split('?', 2);
+    pathOnly = p;
+    const existingParams = new URLSearchParams(existingQs);
+    for (const [ek, ev] of existingParams.entries()) {
+      searchParams.append(ek, ev);
+    }
+  }
+
   if (queryParams) {
     const entries = Array.isArray(queryParams) ? queryParams : Object.entries(queryParams);
     for (const [k, v] of entries) {
-      if (k && v !== undefined && v !== null && String(v).trim().length > 0) {
-        searchParams.append(k.trim(), String(v).trim());
+      if (k && v !== undefined && v !== null) {
+        const cleanK = String(k).replace(/\0/g, '').trim();
+        const cleanV = String(v).replace(/\0/g, '').trim();
+        if (cleanK.length > 0) {
+          searchParams.append(cleanK, cleanV);
+        }
       }
     }
   }
 
   const qs = searchParams.toString();
-  return qs ? `${cleanBase}${cleanPath}?${qs}` : `${cleanBase}${cleanPath}`;
+  return qs ? `${cleanBase}${pathOnly}?${qs}` : `${cleanBase}${pathOnly}`;
+}
+
+/**
+ * Recursively serializes a JavaScript/JSON data structure into valid Python literal syntax.
+ * Replaces booleans with True/False, null with None, and safely formats strings, numbers, arrays, and dicts
+ * without regex keyword replacements or string corruption.
+ */
+export function toPythonLiteral(value: unknown, indentLevel = 0): string {
+  const indent = '    '.repeat(indentLevel);
+  const nextIndent = '    '.repeat(indentLevel + 1);
+
+  if (value === null || value === undefined) {
+    return 'None';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'True' : 'False';
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '0';
+  }
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    const items = value
+      .map((item) => `${nextIndent}${toPythonLiteral(item, indentLevel + 1)}`)
+      .join(',\n');
+    return `[\n${items}\n${indent}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return '{}';
+    const lines = entries
+      .map(([k, v]) => `${nextIndent}${JSON.stringify(k)}: ${toPythonLiteral(v, indentLevel + 1)}`)
+      .join(',\n');
+    return `{\n${lines}\n${indent}}`;
+  }
+  return JSON.stringify(String(value));
+}
+
+/**
+ * Formats a valid JSON data structure as a safe Python json.loads(...) expression.
+ */
+export function serializePythonJsonLoads(parsedJson: unknown): string {
+  const serialized = JSON.stringify(parsedJson, null, 2);
+  return `json.loads(${JSON.stringify(serialized)})`;
 }
 
 /**
@@ -111,8 +178,18 @@ export function generateCurlSnippet(opts: SnippetOptions): string {
   const isBodyAllowed = method !== 'GET' && method !== 'DELETE';
   const rawBody = (opts.body || '').trim();
   if (isBodyAllowed && rawBody.length > 0) {
+    let isValidJson = true;
+    try {
+      JSON.parse(rawBody);
+    } catch {
+      isValidJson = false;
+    }
+
     lines[lines.length - 1] += ' \\';
-    lines.push(`  -H ${escapeShellArg('Content-Type: application/json')} \\`);
+    if (!isValidJson) {
+      lines.push('  # Warning: Request body is not valid JSON. Passing as raw data \\');
+    }
+    lines.push(`  -H ${escapeShellArg(isValidJson ? 'Content-Type: application/json' : 'Content-Type: text/plain')} \\`);
     lines.push(`  -d ${escapeShellArg(rawBody)}`);
   }
 
@@ -144,13 +221,17 @@ export function generateFetchSnippet(opts: SnippetOptions): string {
   const isBodyAllowed = method !== 'GET' && method !== 'DELETE';
   const rawBody = (opts.body || '').trim();
   let bodyLiteral: string | null = null;
+  let bodyWarning = '';
 
   if (isBodyAllowed && rawBody.length > 0) {
-    headersObj['Content-Type'] = 'application/json';
     try {
       const parsed = JSON.parse(rawBody);
-      bodyLiteral = JSON.stringify(parsed, null, 2);
+      headersObj['Content-Type'] = 'application/json';
+      bodyLiteral = `JSON.stringify(${JSON.stringify(parsed, null, 2)})`;
     } catch {
+      // Body is not valid JSON - pass as raw text without altering payload semantics or double-stringifying
+      headersObj['Content-Type'] = 'text/plain';
+      bodyWarning = '  // Warning: Request body is not valid JSON. Passing as raw string payload.\n';
       bodyLiteral = JSON.stringify(rawBody);
     }
   }
@@ -169,7 +250,7 @@ export function generateFetchSnippet(opts: SnippetOptions): string {
   headers: ${headersIndent}`;
 
   if (bodyLiteral) {
-    code += `,\n  body: JSON.stringify(${bodyLiteral})`;
+    code += `,\n${bodyWarning}  body: ${bodyLiteral}`;
   }
 
   code += `\n});\nconst data = await response.json();\nconsole.log(data);`;
@@ -204,11 +285,12 @@ export function generatePythonSnippet(opts: SnippetOptions): string {
   let hasValidJsonBody = false;
 
   if (isBodyAllowed && rawBody.length > 0) {
-    headersObj['Content-Type'] = 'application/json';
     try {
       parsedJson = JSON.parse(rawBody);
+      headersObj['Content-Type'] = 'application/json';
       hasValidJsonBody = true;
     } catch {
+      headersObj['Content-Type'] = 'text/plain';
       hasValidJsonBody = false;
     }
   }
@@ -225,27 +307,26 @@ export function generatePythonSnippet(opts: SnippetOptions): string {
 
   if (isBodyAllowed && rawBody.length > 0) {
     if (hasValidJsonBody) {
-      // Convert JSON boolean/null to Python Boolean/None
-      const pyJsonStr = JSON.stringify(parsedJson, null, 4)
-        .replace(/:\s*true\b/g, ': True')
-        .replace(/:\s*false\b/g, ': False')
-        .replace(/:\s*null\b/g, ': None');
+      // Use recursive AST-like serializer to create valid Python dict/list literals without regex keyword replacements
+      const pyJsonStr = toPythonLiteral(parsedJson, 0);
       pyBodySetup = `payload = ${pyJsonStr}\n`;
       requestKwargs += ', json=payload';
     } else {
-      pyBodySetup = `payload = ${JSON.stringify(rawBody)}\n`;
+      pyBodySetup = `# Warning: Request body is not valid JSON. Passing as raw text data.\npayload = ${JSON.stringify(rawBody)}\n`;
       requestKwargs += ', data=payload';
     }
   }
+
+  const methodLower = method.toLowerCase();
+  const requestCall = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'].includes(methodLower)
+    ? `requests.${methodLower}(\n    url,\n    ${requestKwargs}\n)`
+    : `requests.request(\n    ${JSON.stringify(method)},\n    url,\n    ${requestKwargs}\n)`;
 
   return `${notice}import requests
 
 url = ${JSON.stringify(fullUrl)}
 headers = ${pyHeaders}
-${pyBodySetup}response = requests.${method.toLowerCase()}(
-    url,
-    ${requestKwargs}
-)
+${pyBodySetup}response = ${requestCall}
 print(response.status_code)
 print(response.json())`;
 }

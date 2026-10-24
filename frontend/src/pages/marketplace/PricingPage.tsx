@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../../i18n';
 import { Badge } from '../../components/ui/Badge';
@@ -17,14 +17,21 @@ import { ApiError } from '../../services/authApi';
 export const PricingPage: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [apiDetails, setApiDetails] = useState<MarketplaceApiDetail[]>([]);
+  const [totalApis, setTotalApis] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [partialWarning, setPartialWarning] = useState<string | null>(null);
 
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [showFeatureMatrix, setShowFeatureMatrix] = useState<boolean>(false);
+
+  const queryApiId = searchParams.get('api');
+  const pageParam = parseInt(searchParams.get('page') || '1', 10);
+  const currentPage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+  const PAGE_SIZE = 12;
 
   const faqs = [
     {
@@ -54,8 +61,28 @@ export const PricingPage: React.FC = () => {
         setError(null);
         setPartialWarning(null);
 
-        const listRes = await listMarketplaceApis({ pageSize: 50 }, controller.signal);
+        // If deep linked via ?api=<id>, prioritize fetching that specific API
+        if (queryApiId) {
+          try {
+            const singleDetail = await getMarketplaceApiDetail(queryApiId, controller.signal);
+            if (controller.signal.aborted) return;
+            setApiDetails([singleDetail]);
+            setTotalApis(1);
+            setIsLoading(false);
+            return;
+          } catch {
+            // Fall back to general catalog if deep linked API id not found
+          }
+        }
+
+        // Support pagination beyond 50 APIs without bottleneck
+        const listRes = await listMarketplaceApis(
+          { page: currentPage, pageSize: PAGE_SIZE },
+          controller.signal
+        );
         if (controller.signal.aborted) return;
+
+        setTotalApis(listRes.total);
         if (listRes.items.length === 0) {
           setApiDetails([]);
           return;
@@ -108,10 +135,43 @@ export const PricingPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [currentPage, queryApiId]);
+
+  const handlePageChange = (newPage: number) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('page', String(newPage));
+      return next;
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleClearDeepLink = () => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('api');
+      next.set('page', '1');
+      return next;
+    });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalApis / PAGE_SIZE));
 
   return (
     <PageReveal className="pt-20 pb-20 px-4 sm:px-6 lg:px-12 max-w-7xl mx-auto">
+      {/* Deep Link Active Banner */}
+      {queryApiId && (
+        <div className="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-body-sm text-primary font-medium">
+            <span className="material-symbols-outlined text-[20px]">filter_alt</span>
+            <span>{t('Đang xem bảng giá cho API được chọn:')} <strong>{queryApiId}</strong></span>
+          </div>
+          <Button variant="secondary" size="sm" onClick={handleClearDeepLink}>
+            {t('Xem tất cả API')}
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto mb-12">
         <Badge variant="primary" size="md" className="mb-3">{t('Predictable API Economics')}</Badge>
@@ -303,8 +363,45 @@ export const PricingPage: React.FC = () => {
         </div>
       )}
 
+      {/* Catalog Pagination beyond 50 APIs */}
+      {!isLoading && !error && !queryApiId && totalPages > 1 && (
+        <div className="mt-12 flex items-center justify-between gap-4 p-4 bg-surface-container-low border border-outline-variant/30 rounded-2xl">
+          <span className="text-body-sm text-on-surface-variant">
+            {t('Trang')} <strong>{currentPage}</strong> / {totalPages} ({totalApis} {t('APIs công khai')})
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon="chevron_left"
+              disabled={currentPage <= 1}
+              onClick={() => handlePageChange(currentPage - 1)}
+            >
+              {t('Trang trước')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon="chevron_right"
+              disabled={currentPage >= totalPages}
+              onClick={() => handlePageChange(currentPage + 1)}
+            >
+              {t('Trang sau')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Honest SLA & Technical Support Disclaimer */}
+      <div className="mt-8 p-4 bg-surface-container-low border border-outline-variant/30 rounded-2xl flex items-center gap-3 text-body-sm text-on-surface-variant">
+        <span className="material-symbols-outlined text-primary text-[22px] flex-shrink-0">verified_user</span>
+        <span>
+          {t('Chi tiết SLA và kênh hỗ trợ theo cam kết cụ thể của từng Provider hoặc thỏa thuận riêng.')}
+        </span>
+      </div>
+
       {/* Feature Comparison Matrix Collapsible */}
-      <div className="mt-16 bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 lg:p-8">
+      <div className="mt-12 bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 lg:p-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-headline-sm font-bold text-on-surface">{t('Feature Comparison Matrix')}</h2>
@@ -332,7 +429,7 @@ export const PricingPage: React.FC = () => {
               className="overflow-hidden"
             >
               <div className="overflow-x-auto mt-6">
-                <table className="w-full text-left text-body-sm">
+                <table className="w-full text-left text-body-sm min-w-[600px]">
                   <thead className="bg-surface-container text-on-surface-variant text-[11px] uppercase font-semibold border-b border-outline-variant/20">
                     <tr>
                       <th className="p-4">{t('Tính năng / Năng lực')}</th>
@@ -344,9 +441,9 @@ export const PricingPage: React.FC = () => {
                   <tbody className="divide-y divide-outline-variant/15 text-on-surface">
                     <tr>
                       <td className="p-4 font-medium">{t('API Gateway Rate Limiting')}</td>
-                      <td className="p-4 text-on-surface-variant">5 - 10 req/s</td>
-                      <td className="p-4 font-bold text-primary">50 - 200 req/s</td>
-                      <td className="p-4 font-bold text-emerald-600">Dedicated Quota</td>
+                      <td className="p-4 text-on-surface-variant">{t('Theo cấu hình gói')}</td>
+                      <td className="p-4 font-bold text-primary">{t('Theo cấu hình gói')}</td>
+                      <td className="p-4 font-bold text-emerald-600">{t('Dedicated Quota')}</td>
                     </tr>
                     <tr>
                       <td className="p-4 font-medium">{t('Bảo vệ chống SSRF & Proxy trung tâm')}</td>
@@ -356,15 +453,15 @@ export const PricingPage: React.FC = () => {
                     </tr>
                     <tr>
                       <td className="p-4 font-medium">{t('Cam kết dịch vụ (SLA) & Hỗ trợ')}</td>
-                      <td className="p-4 text-on-surface-variant">Best Effort</td>
+                      <td className="p-4 text-on-surface-variant">{t('Best Effort')}</td>
                       <td className="p-4 font-semibold">{t('Theo cam kết Provider')}</td>
                       <td className="p-4 font-semibold text-emerald-600">{t('Thỏa thuận riêng (Enterprise)')}</td>
                     </tr>
                     <tr>
                       <td className="p-4 font-medium">{t('Hỗ trợ kỹ thuật (Support Tier)')}</td>
-                      <td className="p-4 text-on-surface-variant">Community Forum</td>
-                      <td className="p-4">Email & Ticketing (24h)</td>
-                      <td className="p-4 font-semibold text-primary">Dedicated Slack / Priority</td>
+                      <td className="p-4 text-on-surface-variant">{t('Tài liệu & Portal')}</td>
+                      <td className="p-4">{t('Theo chính sách Provider')}</td>
+                      <td className="p-4 font-semibold text-primary">{t('Kênh chuyên biệt theo Hợp đồng')}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -5,6 +5,8 @@ import {
   sanitizeHeaderValue,
   normalizeMethod,
   buildSafeUrl,
+  toPythonLiteral,
+  serializePythonJsonLoads,
   generateCurlSnippet,
   generateFetchSnippet,
   generatePythonSnippet,
@@ -69,6 +71,8 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(normalizeMethod('get')).toBe('GET');
       expect(normalizeMethod('POST')).toBe('POST');
       expect(normalizeMethod('delete')).toBe('DELETE');
+      expect(normalizeMethod('trace')).toBe('TRACE');
+      expect(normalizeMethod('OPTIONS')).toBe('OPTIONS');
     });
 
     it('falls back to GET for unknown methods', () => {
@@ -94,6 +98,51 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
         ['tag', 'second'],
       ]);
       expect(url).toBe('https://api.apihub.vn/v1/search?tag=first&tag=second');
+    });
+
+    it('preserves pre-existing query parameters in path and sanitizes NUL characters', () => {
+      const url = buildSafeUrl('https://api.apihub.vn/v1', '/items?existing=1', {
+        filter: 'active\0clean',
+      });
+      expect(url).toBe('https://api.apihub.vn/v1/items?existing=1&filter=activeclean');
+    });
+  });
+
+  describe('toPythonLiteral & AST JSON Formatting', () => {
+    it('correctly serializes nested arrays with booleans and null without colon prefix', () => {
+      const parsed = [true, false, null, { enabled: true, tags: [false, null] }];
+      const pyLiteral = toPythonLiteral(parsed);
+
+      expect(pyLiteral).toContain('True');
+      expect(pyLiteral).toContain('False');
+      expect(pyLiteral).toContain('None');
+      expect(pyLiteral.startsWith('[\n')).toBe(true);
+      expect(pyLiteral.endsWith(']')).toBe(true);
+    });
+
+    it('does not corrupt strings containing true, false, null or quotes', () => {
+      const data = {
+        message: 'This is true and false and null',
+        quote: 'He said "Hello World"',
+      };
+      const pyLiteral = toPythonLiteral(data);
+
+      expect(pyLiteral).toContain('"message": "This is true and false and null"');
+      expect(pyLiteral).toContain('"quote": "He said \\"Hello World\\""');
+    });
+
+    it('serializes numbers and empty structures accurately', () => {
+      expect(toPythonLiteral([])).toBe('[]');
+      expect(toPythonLiteral({})).toBe('{}');
+      expect(toPythonLiteral(0)).toBe('0');
+      expect(toPythonLiteral(3.1415)).toBe('3.1415');
+      expect(toPythonLiteral(null)).toBe('None');
+    });
+
+    it('serializes python json.loads format', () => {
+      const result = serializePythonJsonLoads({ test: true });
+      expect(result).toContain('json.loads(');
+      expect(result).toContain('true');
     });
   });
 
@@ -123,6 +172,18 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(curl).toContain("-H 'Content-Type: application/json'");
       expect(curl).toContain("-d '{\"name\":\"O'\\''Reilly\",\"action\":\"$HOME\"}'");
     });
+
+    it('adds warning comment and preserves text payload for invalid JSON', () => {
+      const curl = generateCurlSnippet({
+        method: 'POST',
+        urlPath: '/v1/raw',
+        body: 'raw non-json body',
+      });
+
+      expect(curl).toContain('Warning: Request body is not valid JSON');
+      expect(curl).toContain("-H 'Content-Type: text/plain'");
+      expect(curl).toContain("-d 'raw non-json body'");
+    });
   });
 
   describe('generateFetchSnippet', () => {
@@ -139,6 +200,19 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(js).toContain('method: "POST"');
       expect(js).toContain('"X-API-Key": "key-abc"');
       expect(js).toContain('body: JSON.stringify');
+    });
+
+    it('handles non-JSON body with explicit warning comment and no double-stringify', () => {
+      const js = generateFetchSnippet({
+        method: 'POST',
+        urlPath: '/v1/messages',
+        body: 'plain text payload',
+      });
+
+      expect(js).toContain('Warning: Request body is not valid JSON');
+      expect(js).toContain('"Content-Type": "text/plain"');
+      expect(js).toContain('body: "plain text payload"');
+      expect(js).not.toContain('body: JSON.stringify("plain text payload")');
     });
   });
 
@@ -157,6 +231,42 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(py).toContain('"is_deleted": False');
       expect(py).toContain('"count": None');
       expect(py).toContain('response = requests.post(');
+    });
+
+    it('generates valid Python code for arrays with booleans and null without NameError', () => {
+      const py = generatePythonSnippet({
+        method: 'PUT',
+        urlPath: '/v1/tags',
+        body: JSON.stringify({ flags: [true, false, null] }),
+      });
+
+      expect(py).toContain('"flags": [');
+      expect(py).toContain('True');
+      expect(py).toContain('False');
+      expect(py).toContain('None');
+      expect(py).toContain('response = requests.put(');
+    });
+
+    it('handles TRACE method dispatch via requests.request', () => {
+      const py = generatePythonSnippet({
+        method: 'TRACE',
+        urlPath: '/v1/trace',
+      });
+
+      expect(py).toContain('response = requests.request(');
+      expect(py).toContain('"TRACE"');
+    });
+
+    it('handles non-JSON body with explicit warning and raw data kwarg', () => {
+      const py = generatePythonSnippet({
+        method: 'POST',
+        urlPath: '/v1/upload',
+        body: 'invalid json { not_a_json',
+      });
+
+      expect(py).toContain('# Warning: Request body is not valid JSON. Passing as raw text data.');
+      expect(py).toContain('payload = "invalid json { not_a_json"');
+      expect(py).toContain('data=payload');
     });
   });
 });

@@ -146,4 +146,62 @@ describe('TrySandboxPage Security & Credential Hygiene', () => {
     expect(execBtn.hasAttribute('disabled')).toBe(true);
     expect(execBtn.getAttribute('title')).toContain('Sprint 4');
   });
+
+  it('links to /dashboard/keys and never /consumer/keys', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    const keyLink = screen.getByRole('link', { name: /Quản lý API Keys/i });
+    expect(keyLink.getAttribute('href')).toBe('/dashboard/keys');
+    expect(screen.queryByRole('link', { name: /consumer\/keys/i })).toBeNull();
+  });
+
+  it('defaults to placeholder in cURL snippet and requires explicit opt-in to insert real key', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    // Enter real key in step 1
+    const input = screen.getByPlaceholderText(/Nhập API Key của bạn/i);
+    fireEvent.change(input, { target: { value: 'secret_prod_key_777' } });
+
+    // Navigate to step 3 without checking opt-in
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục: Chọn Endpoint/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục: Xem cURL & Chạy thử/i }));
+
+    // Verify snippet has YOUR_API_KEY, NOT the plaintext secret
+    expect(screen.getAllByText(/YOUR_API_KEY/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/secret_prod_key_777/)).toBeNull();
+
+    // Toggle explicit insertion button
+    const toggleBtn = screen.getByRole('button', { name: /Chèn API Key thật/i });
+    fireEvent.click(toggleBtn);
+
+    // Now snippet displays real key
+    expect(screen.getByText(/secret_prod_key_777/)).toBeDefined();
+  });
+
+  it('clears API key state on session invalidation event', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    const input = screen.getByPlaceholderText(/Nhập API Key của bạn/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'transient_key_123' } });
+    expect(input.value).toBe('transient_key_123');
+
+    // Simulate session logout / invalidation
+    window.dispatchEvent(new Event('apihub:session-invalidated'));
+
+    await waitFor(() => {
+      expect(input.value).toBe('');
+    });
+  });
 });

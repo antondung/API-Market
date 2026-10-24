@@ -25,9 +25,27 @@ export const TrySandboxPage: React.FC = () => {
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>('');
   const [customApiKey, setCustomApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [includeRealKeyInSnippet, setIncludeRealKeyInSnippet] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [activePreset, setActivePreset] = useState<'standard' | 'minimal' | 'custom'>('standard');
   const [sandboxModalOpen, setSandboxModalOpen] = useState(false);
+
+  // Security lifecycle: Wipe sensitive credentials on unmount, API switch, or logout
+  useEffect(() => {
+    const handleLogout = () => {
+      setCustomApiKey('');
+      setShowApiKey(false);
+      setIncludeRealKeyInSnippet(false);
+    };
+
+    window.addEventListener('apihub:session-invalidated', handleLogout);
+    return () => {
+      setCustomApiKey('');
+      setShowApiKey(false);
+      setIncludeRealKeyInSnippet(false);
+      window.removeEventListener('apihub:session-invalidated', handleLogout);
+    };
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -83,15 +101,19 @@ export const TrySandboxPage: React.FC = () => {
       ? JSON.stringify({ sandbox: true, preset: activePreset })
       : null;
 
+    const resolvedApiKey = (includeRealKeyInSnippet && customApiKey.trim())
+      ? customApiKey.trim()
+      : 'YOUR_API_KEY';
+
     return generateCurlSnippet({
       method: selectedEndpoint.method,
       urlPath: selectedEndpoint.path,
-      apiKey: customApiKey.trim() || 'YOUR_API_KEY',
+      apiKey: resolvedApiKey,
       queryParams,
       body: bodyPayload,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, customApiKey, activePreset]);
+  }, [api, selectedEndpoint, customApiKey, activePreset, includeRealKeyInSnippet]);
 
   const handleCopyCurl = async () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -233,7 +255,7 @@ export const TrySandboxPage: React.FC = () => {
                   <span className="font-semibold text-on-surface block mb-0.5">{t('Chưa có API Key?')}</span>
                   {t('Quản lý và cấp phát API Key trong tài khoản của bạn (dịch vụ Backend sẽ ra mắt trong Sprint 4).')}
                 </div>
-                <Link to="/consumer/keys">
+                <Link to="/dashboard/keys">
                   <Button variant="outline" size="sm" icon="key">
                     {t('Quản lý API Keys')}
                   </Button>
@@ -268,6 +290,17 @@ export const TrySandboxPage: React.FC = () => {
                     </button>
                   )}
                 </div>
+                {customApiKey && (
+                  <label className="flex items-center gap-2 pt-1 text-body-xs text-on-surface-variant cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeRealKeyInSnippet}
+                      onChange={(e) => setIncludeRealKeyInSnippet(e.target.checked)}
+                      className="rounded border-outline-variant/40 text-primary focus:ring-primary h-3.5 w-3.5"
+                    />
+                    <span>{t('Chèn API Key thật vào snippet (Mặc định tắt: hiển thị "YOUR_API_KEY" để an toàn khi chia sẻ)')}</span>
+                  </label>
+                )}
                 <p className="text-[11px] text-on-surface-variant">
                   {t('Khóa chỉ dùng để điền vào câu lệnh cURL mẫu bên dưới, không gửi đi đâu và không lưu vào bộ nhớ trình duyệt.')}
                 </p>
@@ -390,6 +423,26 @@ export const TrySandboxPage: React.FC = () => {
                 code={generatedCurl}
                 language="bash"
               />
+
+              {customApiKey && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-surface-container-high rounded-xl border border-outline-variant/30 text-body-xs">
+                  <div className="flex items-center gap-2 text-on-surface-variant">
+                    <span className="material-symbols-outlined text-primary text-[18px]">verified_user</span>
+                    <span>
+                      {includeRealKeyInSnippet
+                        ? t('Mã lệnh đang hiển thị API Key cá nhân của bạn.')
+                        : t('Mã lệnh đang dùng "YOUR_API_KEY" để an toàn khi chia sẻ/sao chép.')}
+                    </span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIncludeRealKeyInSnippet(!includeRealKeyInSnippet)}
+                  >
+                    {includeRealKeyInSnippet ? t('Dùng "YOUR_API_KEY"') : t('Chèn API Key thật')}
+                  </Button>
+                </div>
+              )}
 
               <div className="p-4 bg-surface-container-high rounded-xl border border-outline-variant/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-body-xs text-on-surface-variant">

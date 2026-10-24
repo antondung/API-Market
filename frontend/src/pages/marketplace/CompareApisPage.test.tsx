@@ -150,8 +150,11 @@ describe('CompareApisPage - Bounded Concurrency & Differentiated Errors', () => 
       expect(screen.getByText(/Không thể tải chi tiết của API thứ hai/)).toBeDefined();
     });
 
-    // Still renders detail of API 1
-    expect(screen.getByText('Alpha Search Engine')).toBeDefined();
+    // Still renders table and detail of API 1
+    expect(screen.getByText('Specification & Criteria')).toBeDefined();
+    expect(screen.getAllByText('Alpha Search Engine').length).toBeGreaterThan(0);
+    // Shows retry button for API 2
+    expect(screen.getByRole('button', { name: /Thử lại API 2/i })).toBeDefined();
   });
 
   it('differentiates complete error when both API detail requests fail', async () => {
@@ -168,6 +171,28 @@ describe('CompareApisPage - Bounded Concurrency & Differentiated Errors', () => 
 
     await waitFor(() => {
       expect(screen.getByText(/Không thể tải chi tiết của cả 2 API để so sánh/)).toBeDefined();
+    });
+
+    expect(screen.getByRole('button', { name: /Thử lại tất cả/i })).toBeDefined();
+  });
+
+  it('supports deep linking via ?api1=...&api2=...', async () => {
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-cmp-1') return mockDetail1;
+      return mockDetail2;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=api-cmp-1&api2=api-cmp-2']}>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Specification & Criteria')).toBeDefined();
+      expect(screen.getAllByText('Alpha Search Engine').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Beta NLP Engine').length).toBeGreaterThan(0);
     });
   });
 });
