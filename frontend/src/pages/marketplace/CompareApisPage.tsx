@@ -1,28 +1,137 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../i18n';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { CustomSelect } from '../../components/ui/CustomSelect';
+import { PageReveal } from '../../components/motion/PageReveal';
+import {
+  listMarketplaceApis,
+  getMarketplaceApiDetail,
+  formatPrice,
+  formatPublishedDate,
+} from '../../services/marketplaceApi';
+import type {
+  MarketplaceApiSummary,
+  MarketplaceApiDetail,
+} from '../../services/marketplaceTypes';
+import { ApiError } from '../../services/authApi';
 
 export const CompareApisPage: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const { apis: cachedApis } = useApp();
-  const apis = cachedApis.filter(api => api.status === 'Published');
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const initialApiId = searchParams.get('api') || apis[0]?.id;
-  const secondApiId = apis.length > 1 ? apis[1].id : apis[0]?.id;
+  const [availableApis, setAvailableApis] = useState<MarketplaceApiSummary[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
 
-  const [apiId1, setApiId1] = useState(initialApiId);
-  const [apiId2, setApiId2] = useState(secondApiId);
+  const [apiId1, setApiId1] = useState<string>('');
+  const [apiId2, setApiId2] = useState<string>('');
 
-  const api1 = apis.find(a => a.id === apiId1) || apis[0];
-  const api2 = apis.find(a => a.id === apiId2) || apis[1] || apis[0];
+  const [detail1, setDetail1] = useState<MarketplaceApiDetail | null>(null);
+  const [detail2, setDetail2] = useState<MarketplaceApiDetail | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
-  if (apis.length < 2 || !api1 || !api2) {
+  const queryApiId = searchParams.get('api');
+
+  // Load available marketplace APIs
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchApis = async () => {
+      try {
+        setIsLoadingList(true);
+        setListError(null);
+        const res = await listMarketplaceApis({ pageSize: 50 }, controller.signal);
+        setAvailableApis(res.items);
+
+        if (res.items.length > 0) {
+          const firstId = (queryApiId && res.items.some(a => a.id === queryApiId))
+            ? queryApiId
+            : res.items[0].id;
+          const secondId = res.items.length > 1
+            ? (res.items.find(a => a.id !== firstId)?.id || res.items[0].id)
+            : res.items[0].id;
+
+          setApiId1(firstId);
+          setApiId2(secondId);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setListError(err instanceof ApiError ? err.message : 'Không thể tải danh sách API.');
+      } finally {
+        setIsLoadingList(false);
+      }
+    };
+
+    fetchApis();
+
+    return () => {
+      controller.abort();
+    };
+  }, [queryApiId]);
+
+  // Fetch details for both selected APIs
+  useEffect(() => {
+    if (!apiId1 || !apiId2) return;
+    const controller = new AbortController();
+
+    const fetchBothDetails = async () => {
+      try {
+        setIsLoadingDetails(true);
+        setDetailsError(null);
+
+        const [d1, d2] = await Promise.all([
+          getMarketplaceApiDetail(apiId1, controller.signal),
+          getMarketplaceApiDetail(apiId2, controller.signal),
+        ]);
+
+        setDetail1(d1);
+        setDetail2(d2);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setDetailsError(err instanceof ApiError ? err.message : 'Lỗi khi tải dữ liệu so sánh chi tiết.');
+      } finally {
+        setIsLoadingDetails(false);
+      }
+    };
+
+    fetchBothDetails();
+
+    return () => {
+      controller.abort();
+    };
+  }, [apiId1, apiId2]);
+
+  if (isLoadingList) {
+    return (
+      <div className="pt-24 pb-20 px-6 max-w-4xl mx-auto text-center animate-pulse">
+        <div className="h-8 bg-surface-container-high rounded w-64 mx-auto mb-4" />
+        <div className="h-4 bg-surface-container-high rounded w-96 mx-auto mb-12" />
+        <div className="grid grid-cols-2 gap-6">
+          <div className="h-48 bg-surface-container-low rounded-2xl border border-outline-variant/30" />
+          <div className="h-48 bg-surface-container-low rounded-2xl border border-outline-variant/30" />
+        </div>
+      </div>
+    );
+  }
+
+  if (listError) {
+    return (
+      <div className="pt-24 pb-20 px-6 max-w-xl mx-auto text-center">
+        <div className="w-16 h-16 rounded-2xl bg-error/10 text-error flex items-center justify-center mx-auto mb-4">
+          <span className="material-symbols-outlined text-[32px]">cloud_off</span>
+        </div>
+        <h2 className="text-headline-sm font-bold text-on-surface mb-2">{t('Không thể tải API để so sánh')}</h2>
+        <p className="text-body-md text-on-surface-variant mb-6">{listError}</p>
+        <Button variant="primary" onClick={() => navigate(0)}>{t('Thử lại')}</Button>
+      </div>
+    );
+  }
+
+  if (availableApis.length < 2) {
     return (
       <div className="pt-24 pb-20 px-6 lg:px-12 max-w-4xl mx-auto text-center">
         <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-16">
@@ -35,9 +144,6 @@ export const CompareApisPage: React.FC = () => {
             <Button variant="primary" onClick={() => navigate('/marketplace')}>
               {t('Xem Chợ API')}
             </Button>
-            <Button variant="outline" onClick={() => navigate('/provider/create-api')}>
-              {t('Tạo API Mới')}
-            </Button>
           </div>
         </div>
       </div>
@@ -45,7 +151,7 @@ export const CompareApisPage: React.FC = () => {
   }
 
   return (
-    <div className="pt-20 pb-16 px-6 lg:px-12 max-w-7xl mx-auto">
+    <PageReveal className="pt-20 pb-28 px-4 sm:px-6 lg:px-12 max-w-7xl mx-auto">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-body-sm text-on-surface-variant mb-6">
         <Link to="/marketplace" className="hover:text-primary">{t('Marketplace')}</Link>
@@ -59,15 +165,15 @@ export const CompareApisPage: React.FC = () => {
             <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-mono font-semibold">
               {t('STANDARDIZED BENCHMARK')}
             </span>
-            <span className="text-xs text-on-surface-variant">{t('US-02 Spec Aligned')}</span>
+            <span className="text-xs text-on-surface-variant">{t('Real Backend Data')}</span>
           </div>
           <h1 className="text-headline-lg font-bold text-on-surface">{t('API Side-by-Side Comparison')}</h1>
           <p className="text-body-md text-on-surface-variant mt-1">
-            {t('Compare Price, Quota, SLA Uptime, P95 Latency, Error Rate, Authentication, and Trust Score pursuant to project specifications.')}
+            {t('So sánh chi tiết thông số kỹ thuật, gói giá và mức độ xác minh giữa hai API.')}
           </p>
         </div>
         <Link to="/marketplace" className="text-body-sm text-primary font-semibold hover:underline">
-          ← {t('Back to Marketplace') || 'Quay lại Sàn API'}
+          ← {t('Back to Marketplace')}
         </Link>
       </div>
 
@@ -77,12 +183,18 @@ export const CompareApisPage: React.FC = () => {
           <label className="text-body-sm font-semibold text-on-surface block mb-2">{t('Slot 1 API')}</label>
           <CustomSelect
             value={apiId1}
-            onChange={(val) => setApiId1(val)}
-            options={apis.map(a => ({
+            onChange={(val) => {
+              setApiId1(val);
+              setSearchParams(prev => {
+                prev.set('api', val);
+                return prev;
+              });
+            }}
+            options={availableApis.map(a => ({
               value: a.id,
               label: a.name,
               badge: t(a.category) || a.category,
-              icon: 'api'
+              icon: 'api',
             }))}
             className="w-full"
           />
@@ -93,166 +205,222 @@ export const CompareApisPage: React.FC = () => {
           <CustomSelect
             value={apiId2}
             onChange={(val) => setApiId2(val)}
-            options={apis.map(a => ({
+            options={availableApis.map(a => ({
               value: a.id,
               label: a.name,
               badge: t(a.category) || a.category,
-              icon: 'api'
+              icon: 'api',
             }))}
             className="w-full"
           />
         </div>
       </div>
 
+      {/* Details Error Message */}
+      {detailsError && (
+        <div className="p-4 bg-error/10 border border-error/20 rounded-2xl text-error text-body-sm mb-6 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[20px]">error</span>
+          <span>{detailsError}</span>
+        </div>
+      )}
+
       {/* Comparison Table */}
-      <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl overflow-hidden shadow-sm">
-        <table className="w-full text-left">
-          <thead className="bg-surface-container-high border-b border-outline-variant/20 text-on-surface">
-            <tr>
-              <th className="p-5 font-semibold text-body-md w-1/4">{t('Specification & Criteria')}</th>
-              <th className="p-5 font-bold text-headline-sm text-primary w-3/8">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[22px]">{api1.icon}</span>
-                  <span>{api1.name}</span>
-                </div>
-              </th>
-              <th className="p-5 font-bold text-headline-sm text-indigo-700 w-3/8">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[22px]">{api2.icon}</span>
-                  <span>{api2.name}</span>
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-outline-variant/15 text-body-md text-on-surface">
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Provider Identity')}</td>
-              <td className="p-5 font-medium">
-                {api1.providerName}{' '}
-                {api1.providerVerified && <Badge variant="success" size="sm">{t('Verified Provider')}</Badge>}
-              </td>
-              <td className="p-5 font-medium">
-                {api2.providerName}{' '}
-                {api2.providerVerified && <Badge variant="success" size="sm">{t('Verified Provider')}</Badge>}
-              </td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Trust Score')}</td>
-              <td className="p-5">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-xl">verified</span>
-                  <span className="font-bold font-mono text-primary text-base">98 / 100</span>
-                  <Badge variant="success" size="sm">Độ tin cậy cao</Badge>
-                </div>
-              </td>
-              <td className="p-5">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-xl">verified</span>
-                  <span className="font-bold font-mono text-primary text-base">95 / 100</span>
-                  <Badge variant="success" size="sm">Đã xác minh</Badge>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Domain Verification')}</td>
-              <td className="p-5">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-semibold border border-emerald-500/20">
-                  <span className="material-symbols-outlined text-sm">domain_verification</span>
-                  {t('Domain Verified ✓')}
-                </span>
-              </td>
-              <td className="p-5">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-semibold border border-emerald-500/20">
-                  <span className="material-symbols-outlined text-sm">domain_verification</span>
-                  {t('Domain Verified ✓')}
-                </span>
-              </td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Industry Category')}</td>
-              <td className="p-5"><Badge variant="primary">{t(api1.category)}</Badge></td>
-              <td className="p-5"><Badge variant="primary">{t(api2.category)}</Badge></td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('P95 Latency')}</td>
-              <td className="p-5 font-mono font-bold text-emerald-600">{api1.latencyP95Ms} ms</td>
-              <td className="p-5 font-mono font-bold text-emerald-600">{api2.latencyP95Ms} ms</td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Uptime SLA Index')}</td>
-              <td className="p-5 font-mono font-bold text-emerald-600">{api1.uptimePercent}%</td>
-              <td className="p-5 font-mono font-bold text-emerald-600">{api2.uptimePercent}%</td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Error Rate')} (30 ngày)</td>
-              <td className="p-5 font-mono text-emerald-600 font-semibold">0.02%</td>
-              <td className="p-5 font-mono text-emerald-600 font-semibold">0.04%</td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Authentication Method')}</td>
-              <td className="p-5 font-mono text-xs">Bearer Token / Header <code>X-API-Key</code></td>
-              <td className="p-5 font-mono text-xs">Bearer Token / Header <code>X-API-Key</code></td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Data Classification')}</td>
-              <td className="p-5 text-sm">
-                <Badge variant="neutral" size="sm">Dữ liệu công khai phi cá nhân</Badge>
-              </td>
-              <td className="p-5 text-sm">
-                <Badge variant="neutral" size="sm">Vị trí &amp; Tài chính</Badge>
-              </td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Monthly Throughput')}</td>
-              <td className="p-5 font-mono">{api1.totalCallsMonthly} lượt gọi</td>
-              <td className="p-5 font-mono">{api2.totalCallsMonthly} lượt gọi</td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Community Rating')}</td>
-              <td className="p-5 text-amber-600 font-semibold">★ {api1.rating.toFixed(1)} ({api1.reviewCount} đánh giá)</td>
-              <td className="p-5 text-amber-600 font-semibold">★ {api2.rating.toFixed(1)} ({api2.reviewCount} đánh giá)</td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Available Pricing Tiers')}</td>
-              <td className="p-5">
-                <div className="space-y-1.5">
-                  {api1.plans.map(p => (
-                    <div key={p.id} className="text-body-sm flex items-center justify-between bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/20">
-                      <span className="font-semibold">{p.name}:</span>
-                      <span className="font-mono text-primary font-medium">${p.priceMonthly}/tháng ({p.monthlyQuota.toLocaleString()} reqs)</span>
+      {isLoadingDetails || !detail1 || !detail2 ? (
+        <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-12 text-center animate-pulse">
+          <div className="h-6 bg-surface-container-high rounded w-48 mx-auto mb-4" />
+          <div className="h-32 bg-surface-container-high/50 rounded-xl" />
+        </div>
+      ) : (
+        <>
+          <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl overflow-hidden shadow-sm">
+            <table className="w-full text-left">
+              <thead className="sticky top-16 z-20 bg-surface-container-high/95 backdrop-blur-md border-b border-outline-variant/30 text-on-surface shadow-2xs">
+                <tr>
+                  <th className="p-5 font-semibold text-body-md w-1/4">{t('Specification & Criteria')}</th>
+                  <th className="p-5 font-bold text-headline-sm text-primary w-3/8">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[22px]">api</span>
+                        <Link to={`/api/${detail1.id}`} className="hover:underline">{detail1.name}</Link>
+                      </div>
+                      <Link to={`/api/${detail1.id}/playground`}>
+                        <Button variant="secondary" size="sm">{t('Playground')}</Button>
+                      </Link>
                     </div>
-                  ))}
-                </div>
-              </td>
-              <td className="p-5">
-                <div className="space-y-1.5">
-                  {api2.plans.map(p => (
-                    <div key={p.id} className="text-body-sm flex items-center justify-between bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/20">
-                      <span className="font-semibold">{p.name}:</span>
-                      <span className="font-mono text-primary font-medium">${p.priceMonthly}/tháng ({p.monthlyQuota.toLocaleString()} reqs)</span>
+                  </th>
+                  <th className="p-5 font-bold text-headline-sm text-primary w-3/8">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[22px]">api</span>
+                        <Link to={`/api/${detail2.id}`} className="hover:underline">{detail2.name}</Link>
+                      </div>
+                      <Link to={`/api/${detail2.id}/playground`}>
+                        <Button variant="secondary" size="sm">{t('Playground')}</Button>
+                      </Link>
                     </div>
-                  ))}
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td className="p-5 font-medium text-on-surface-variant">{t('Quick Actions')}</td>
-              <td className="p-5">
-                <div className="flex gap-2">
-                  <Button size="sm" variant="primary" onClick={() => navigate(`/api/${api1.id}`)}>{t('View Details')}</Button>
-                  <Button size="sm" variant="secondary" onClick={() => navigate(`/api/${api1.id}/playground`)}>{t('Playground')}</Button>
-                </div>
-              </td>
-              <td className="p-5">
-                <div className="flex gap-2">
-                  <Button size="sm" variant="primary" onClick={() => navigate(`/api/${api2.id}`)}>{t('View Details')}</Button>
-                  <Button size="sm" variant="secondary" onClick={() => navigate(`/api/${api2.id}/playground`)}>{t('Playground')}</Button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/15 text-body-md text-on-surface">
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Provider Identity')}</td>
+                  <td className="p-5 font-medium">
+                    {detail1.providerName}{' '}
+                    {detail1.providerStatus === 'Verified' && (
+                      <Badge variant="success" size="sm">{t('Verified Provider')}</Badge>
+                    )}
+                  </td>
+                  <td className="p-5 font-medium">
+                    {detail2.providerName}{' '}
+                    {detail2.providerStatus === 'Verified' && (
+                      <Badge variant="success" size="sm">{t('Verified Provider')}</Badge>
+                    )}
+                  </td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Category')}</td>
+                  <td className="p-5"><Badge variant="primary">{t(detail1.category)}</Badge></td>
+                  <td className="p-5"><Badge variant="primary">{t(detail2.category)}</Badge></td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Published Date')}</td>
+                  <td className="p-5 font-code-sm">{formatPublishedDate(detail1.publishedAt)}</td>
+                  <td className="p-5 font-code-sm">{formatPublishedDate(detail2.publishedAt)}</td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Versions')}</td>
+                  <td className="p-5 font-code-sm">{detail1.versions?.length || 0}</td>
+                  <td className="p-5 font-code-sm">{detail2.versions?.length || 0}</td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Endpoints')}</td>
+                  <td className="p-5 font-code-sm">{detail1.endpoints?.length || 0} endpoints</td>
+                  <td className="p-5 font-code-sm">{detail2.endpoints?.length || 0} endpoints</td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Authentication')}</td>
+                  <td className="p-5 font-code-sm text-xs">Header <code>X-API-Key</code> qua Gateway</td>
+                  <td className="p-5 font-code-sm text-xs">Header <code>X-API-Key</code> qua Gateway</td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Data Classification')}</td>
+                  <td className="p-5 text-sm">
+                    <Badge variant="neutral" size="sm">
+                      {detail1.legal?.dataClassification || 'Chưa công bố'}
+                    </Badge>
+                  </td>
+                  <td className="p-5 text-sm">
+                    <Badge variant="neutral" size="sm">
+                      {detail2.legal?.dataClassification || 'Chưa công bố'}
+                    </Badge>
+                  </td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Xử lý dữ liệu cá nhân')}</td>
+                  <td className="p-5 text-sm">
+                    {detail1.legal?.processesPersonalData ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-body-xs font-semibold">
+                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                        {t('Có')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-body-xs font-medium">
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                        {t('Không')}
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-5 text-sm">
+                    {detail2.legal?.processesPersonalData ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-body-xs font-semibold">
+                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                        {t('Có')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-body-xs font-medium">
+                        <span className="material-symbols-outlined text-[16px]">cancel</span>
+                        {t('Không')}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('P95 Latency')}</td>
+                  <td className="p-5 text-on-surface-variant text-sm italic">
+                    {t('Đang cập nhật (Theo dõi bởi Gateway)')}
+                  </td>
+                  <td className="p-5 text-on-surface-variant text-sm italic">
+                    {t('Đang cập nhật (Theo dõi bởi Gateway)')}
+                  </td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Uptime SLA')}</td>
+                  <td className="p-5 text-on-surface-variant text-sm italic">
+                    {t('Đang cập nhật (Theo dõi bởi Gateway)')}
+                  </td>
+                  <td className="p-5 text-on-surface-variant text-sm italic">
+                    {t('Đang cập nhật (Theo dõi bởi Gateway)')}
+                  </td>
+                </tr>
+                <tr className="hover:bg-surface-container/60 transition-colors">
+                  <td className="p-5 font-medium text-on-surface-variant">{t('Pricing Plans')}</td>
+                  <td className="p-5">
+                    <div className="space-y-1.5">
+                      {detail1.plans && detail1.plans.length > 0 ? (
+                        detail1.plans.map(p => (
+                          <div key={p.id} className="text-body-sm flex items-center justify-between bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/20">
+                            <span className="font-medium">{p.name}</span>
+                            <span className="font-code-sm text-primary font-bold">
+                              {formatPrice(p.priceMonthly, p.currency)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-body-sm text-on-surface-variant">Chưa có gói cước</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="p-5">
+                    <div className="space-y-1.5">
+                      {detail2.plans && detail2.plans.length > 0 ? (
+                        detail2.plans.map(p => (
+                          <div key={p.id} className="text-body-sm flex items-center justify-between bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/20">
+                            <span className="font-medium">{p.name}</span>
+                            <span className="font-code-sm text-primary font-bold">
+                              {formatPrice(p.priceMonthly, p.currency)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-body-sm text-on-surface-variant">Chưa có gói cước</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Quick Action Dock */}
+          <div className="fixed bottom-6 inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+            <div className="pointer-events-auto bg-surface-container-highest/90 backdrop-blur-lg border border-outline-variant/40 rounded-2xl shadow-xl px-5 py-3 flex items-center gap-4 text-body-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-on-surface truncate max-w-[120px]">{detail1.name}</span>
+                <Link to={`/api/${detail1.id}/try-sandbox`}>
+                  <Button variant="secondary" size="sm" icon="play_arrow">{t('Sandbox')}</Button>
+                </Link>
+              </div>
+              <span className="text-on-surface-variant/40 font-bold">VS</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-on-surface truncate max-w-[120px]">{detail2.name}</span>
+                <Link to={`/api/${detail2.id}/try-sandbox`}>
+                  <Button variant="secondary" size="sm" icon="play_arrow">{t('Sandbox')}</Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </PageReveal>
   );
 };

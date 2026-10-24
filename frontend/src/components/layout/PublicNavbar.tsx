@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import { LanguageSwitcher } from '../ui/LanguageSwitcher';
@@ -49,20 +50,27 @@ export const PublicNavbar: React.FC = () => {
         </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-6 xl:gap-8 flex-1 ml-4 lg:ml-8">
+        <nav className="hidden md:flex items-center gap-1.5 flex-1 ml-4 lg:ml-8">
           {mainLinks.map(link => {
             const isActive = location.pathname === link.path;
             return (
               <Link
                 key={link.path}
                 to={link.path}
-                className={`text-body-md font-medium whitespace-nowrap transition-colors ${
+                className={`relative px-3.5 py-1.5 rounded-lg text-body-md font-medium whitespace-nowrap transition-colors select-none ${
                   isActive
-                    ? 'text-primary font-semibold'
+                    ? 'text-primary font-bold'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                {link.label}
+                {isActive && (
+                  <motion.div
+                    layoutId="navbar-active-pill"
+                    className="absolute inset-0 bg-primary/10 rounded-lg -z-10 border border-primary/20"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span>{link.label}</span>
               </Link>
             );
           })}
