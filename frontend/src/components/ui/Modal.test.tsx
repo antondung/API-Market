@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { Modal } from './Modal';
+import { Modal, resetModalStackForTesting, getModalStack } from './Modal';
 
 describe('Modal - Accessibility & Focus Trap', () => {
+  beforeEach(() => {
+    resetModalStackForTesting();
+  });
   it('renders with full ARIA dialog attributes using unique IDs', () => {
     render(
       <Modal
@@ -153,5 +156,104 @@ describe('Modal - Accessibility & Focus Trap', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(document.activeElement).toBe(triggerBtn);
     });
+  });
+
+  it('only intercepts Escape on the topmost modal in nested/concurrent dialogs (LIFO)', () => {
+    const handleClose1 = vi.fn();
+    const handleClose2 = vi.fn();
+
+    const { rerender } = render(
+      <div>
+        <Modal isOpen={true} onClose={handleClose1} title="Modal One">
+          <p>Modal 1 content</p>
+        </Modal>
+      </div>
+    );
+
+    expect(getModalStack().length).toBe(1);
+
+    // Open second modal on top
+    rerender(
+      <div>
+        <Modal isOpen={true} onClose={handleClose1} title="Modal One">
+          <p>Modal 1 content</p>
+        </Modal>
+        <Modal isOpen={true} onClose={handleClose2} title="Modal Two">
+          <p>Modal 2 content</p>
+        </Modal>
+      </div>
+    );
+
+    expect(getModalStack().length).toBe(2);
+
+    // Press Escape -> only topmost (Modal 2) should receive onClose
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(handleClose2).toHaveBeenCalledTimes(1);
+    expect(handleClose1).toHaveBeenCalledTimes(0);
+  });
+
+  it('isolates focus trap to topmost modal without interference from lower modal', () => {
+    render(
+      <div>
+        <Modal isOpen={true} onClose={vi.fn()} title="Parent Modal">
+          <button type="button" id="parent-btn-1">Parent Btn 1</button>
+          <button type="button" id="parent-btn-2">Parent Btn 2</button>
+        </Modal>
+        <Modal isOpen={true} onClose={vi.fn()} title="Child Modal Topmost">
+          <button type="button" id="child-btn-1">Child Btn 1</button>
+          <button type="button" id="child-btn-2">Child Btn 2</button>
+        </Modal>
+      </div>
+    );
+
+    const childBtn2 = screen.getByRole('button', { name: 'Child Btn 2' });
+    const closeButtons = screen.getAllByRole('button', { name: 'Đóng hộp thoại' });
+    const childCloseBtn = closeButtons[1]; // second modal close button
+
+    childBtn2.focus();
+    expect(document.activeElement).toBe(childBtn2);
+
+    // Tab on last element of child modal wraps to child close button, NOT parent buttons
+    fireEvent.keyDown(window, { key: 'Tab' });
+    expect(document.activeElement).toBe(childCloseBtn);
+  });
+
+  it('preserves initial body overflow when modals close out of order', () => {
+    document.body.style.overflow = 'auto';
+
+    const ParentChildContainer = ({ showParent, showChild }: { showParent: boolean; showChild: boolean }) => (
+      <div>
+        {showParent && (
+          <Modal isOpen={true} onClose={vi.fn()} title="Parent">
+            <div>Parent Content</div>
+          </Modal>
+        )}
+        {showChild && (
+          <Modal isOpen={true} onClose={vi.fn()} title="Child">
+            <div>Child Content</div>
+          </Modal>
+        )}
+      </div>
+    );
+
+    const { rerender } = render(<ParentChildContainer showParent={true} showChild={false} />);
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Child opens
+    rerender(<ParentChildContainer showParent={true} showChild={true} />);
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(getModalStack().length).toBe(2);
+
+    // Parent closes first (out of order!)
+    rerender(<ParentChildContainer showParent={false} showChild={true} />);
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(getModalStack().length).toBe(1);
+
+    // Child closes last
+    rerender(<ParentChildContainer showParent={false} showChild={false} />);
+    expect(getModalStack().length).toBe(0);
+    expect(document.body.style.overflow).toBe('auto');
+
+    document.body.style.overflow = '';
   });
 });

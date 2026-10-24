@@ -149,35 +149,32 @@ export function generateCurlSnippet(opts: SnippetOptions): string {
   const fullUrl = buildSafeUrl(opts.baseUrl, opts.urlPath, opts.queryParams);
   const apiKey = (opts.apiKey || '').trim() || 'YOUR_API_KEY';
 
-  const lines: string[] = [];
+  const preComments: string[] = [];
   if (opts.includeTemplateNotice !== false) {
-    lines.push(`# ${TEMPLATE_NOTICE_TEXT}`);
+    preComments.push(`# ${TEMPLATE_NOTICE_TEXT}`);
   }
 
-  // Shell-escaped URL and method
-  lines.push(`curl -X ${method} ${escapeShellArg(fullUrl)} \\`);
+  const isBodyAllowed = method !== 'GET' && method !== 'DELETE';
+  const rawBody = (opts.body || '').trim();
+  const hasBody = isBodyAllowed && rawBody.length > 0;
 
-  // Essential auth & accept headers
-  lines.push(`  -H ${escapeShellArg(`X-API-Key: ${sanitizeHeaderValue(apiKey)}`)} \\`);
-  lines.push(`  -H ${escapeShellArg('Accept: application/json')}`);
+  // Header map to preserve case while avoiding duplicate header keys
+  const headerMap = new Map<string, { key: string; value: string }>();
 
-  // Custom headers
+  headerMap.set('x-api-key', { key: 'X-API-Key', value: sanitizeHeaderValue(apiKey) });
+  headerMap.set('accept', { key: 'Accept', value: 'application/json' });
+
+  // Custom headers from options
   if (opts.headers) {
     for (const [rawK, rawV] of Object.entries(opts.headers)) {
       const cleanK = sanitizeHeaderKey(rawK);
-      if (!cleanK || cleanK.toLowerCase() === 'x-api-key' || cleanK.toLowerCase() === 'accept') {
-        continue;
-      }
-      const cleanV = sanitizeHeaderValue(rawV);
-      lines[lines.length - 1] += ' \\';
-      lines.push(`  -H ${escapeShellArg(`${cleanK}: ${cleanV}`)}`);
+      if (!cleanK) continue;
+      headerMap.set(cleanK.toLowerCase(), { key: cleanK, value: sanitizeHeaderValue(rawV) });
     }
   }
 
-  // Body handling for non-GET/DELETE
-  const isBodyAllowed = method !== 'GET' && method !== 'DELETE';
-  const rawBody = (opts.body || '').trim();
-  if (isBodyAllowed && rawBody.length > 0) {
+  // Handle body Content-Type and diagnostics
+  if (hasBody) {
     let isValidJson = true;
     try {
       JSON.parse(rawBody);
@@ -185,11 +182,34 @@ export function generateCurlSnippet(opts: SnippetOptions): string {
       isValidJson = false;
     }
 
-    lines[lines.length - 1] += ' \\';
+    // Diagnostics must precede the command, never inside shell continuation lines
     if (!isValidJson) {
-      lines.push('  # Warning: Request body is not valid JSON. Passing as raw data \\');
+      preComments.push('# Warning: Request body is not valid JSON. Passing as raw data.');
     }
-    lines.push(`  -H ${escapeShellArg(isValidJson ? 'Content-Type: application/json' : 'Content-Type: text/plain')} \\`);
+
+    // Preserve user-declared Content-Type; default only if absent
+    if (!headerMap.has('content-type')) {
+      headerMap.set('content-type', {
+        key: 'Content-Type',
+        value: isValidJson ? 'application/json' : 'text/plain',
+      });
+    }
+  }
+
+  const lines: string[] = [...preComments];
+
+  // Shell-escaped URL and method
+  lines.push(`curl -X ${method} ${escapeShellArg(fullUrl)} \\`);
+
+  const headerEntries = Array.from(headerMap.values());
+
+  headerEntries.forEach((h, idx) => {
+    const isLast = idx === headerEntries.length - 1 && !hasBody;
+    const continuation = isLast ? '' : ' \\';
+    lines.push(`  -H ${escapeShellArg(`${h.key}: ${h.value}`)}${continuation}`);
+  });
+
+  if (hasBody) {
     lines.push(`  -d ${escapeShellArg(rawBody)}`);
   }
 
@@ -209,11 +229,15 @@ export function generateFetchSnippet(opts: SnippetOptions): string {
     Accept: 'application/json',
   };
 
+  let hasDeclaredContentType = false;
   if (opts.headers) {
     for (const [k, v] of Object.entries(opts.headers)) {
       const cleanK = sanitizeHeaderKey(k);
       if (cleanK && cleanK.toLowerCase() !== 'x-api-key' && cleanK.toLowerCase() !== 'accept') {
         headersObj[cleanK] = sanitizeHeaderValue(v);
+        if (cleanK.toLowerCase() === 'content-type') {
+          hasDeclaredContentType = true;
+        }
       }
     }
   }
@@ -226,11 +250,15 @@ export function generateFetchSnippet(opts: SnippetOptions): string {
   if (isBodyAllowed && rawBody.length > 0) {
     try {
       const parsed = JSON.parse(rawBody);
-      headersObj['Content-Type'] = 'application/json';
+      if (!hasDeclaredContentType) {
+        headersObj['Content-Type'] = 'application/json';
+      }
       bodyLiteral = `JSON.stringify(${JSON.stringify(parsed, null, 2)})`;
     } catch {
       // Body is not valid JSON - pass as raw text without altering payload semantics or double-stringifying
-      headersObj['Content-Type'] = 'text/plain';
+      if (!hasDeclaredContentType) {
+        headersObj['Content-Type'] = 'text/plain';
+      }
       bodyWarning = '  // Warning: Request body is not valid JSON. Passing as raw string payload.\n';
       bodyLiteral = JSON.stringify(rawBody);
     }
@@ -270,11 +298,15 @@ export function generatePythonSnippet(opts: SnippetOptions): string {
     Accept: 'application/json',
   };
 
+  let declaredContentTypeKey: string | null = null;
   if (opts.headers) {
     for (const [k, v] of Object.entries(opts.headers)) {
       const cleanK = sanitizeHeaderKey(k);
       if (cleanK && cleanK.toLowerCase() !== 'x-api-key' && cleanK.toLowerCase() !== 'accept') {
         headersObj[cleanK] = sanitizeHeaderValue(v);
+        if (cleanK.toLowerCase() === 'content-type') {
+          declaredContentTypeKey = cleanK;
+        }
       }
     }
   }
@@ -287,10 +319,14 @@ export function generatePythonSnippet(opts: SnippetOptions): string {
   if (isBodyAllowed && rawBody.length > 0) {
     try {
       parsedJson = JSON.parse(rawBody);
-      headersObj['Content-Type'] = 'application/json';
+      if (!declaredContentTypeKey) {
+        headersObj['Content-Type'] = 'application/json';
+      }
       hasValidJsonBody = true;
     } catch {
-      headersObj['Content-Type'] = 'text/plain';
+      if (!declaredContentTypeKey) {
+        headersObj['Content-Type'] = 'text/plain';
+      }
       hasValidJsonBody = false;
     }
   }
@@ -306,13 +342,18 @@ export function generatePythonSnippet(opts: SnippetOptions): string {
   let requestKwargs = 'headers=headers';
 
   if (isBodyAllowed && rawBody.length > 0) {
-    if (hasValidJsonBody) {
+    const isExplicitNonJson = declaredContentTypeKey && headersObj[declaredContentTypeKey].toLowerCase() !== 'application/json';
+    if (hasValidJsonBody && !isExplicitNonJson) {
       // Use recursive AST-like serializer to create valid Python dict/list literals without regex keyword replacements
       const pyJsonStr = toPythonLiteral(parsedJson, 0);
       pyBodySetup = `payload = ${pyJsonStr}\n`;
       requestKwargs += ', json=payload';
     } else {
-      pyBodySetup = `# Warning: Request body is not valid JSON. Passing as raw text data.\npayload = ${JSON.stringify(rawBody)}\n`;
+      if (!hasValidJsonBody) {
+        pyBodySetup = `# Warning: Request body is not valid JSON. Passing as raw text data.\npayload = ${JSON.stringify(rawBody)}\n`;
+      } else {
+        pyBodySetup = `payload = ${JSON.stringify(rawBody)}\n`;
+      }
       requestKwargs += ', data=payload';
     }
   }

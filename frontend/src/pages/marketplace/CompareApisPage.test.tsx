@@ -195,4 +195,136 @@ describe('CompareApisPage - Bounded Concurrency & Differentiated Errors', () => 
       expect(screen.getAllByText('Beta NLP Engine').length).toBeGreaterThan(0);
     });
   });
+
+  it('prevents comparing an API with itself and shows clear warning block', async () => {
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockDetail1);
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=api-cmp-1&api2=api-cmp-1']}>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Không thể so sánh một API với chính nó')).toBeDefined();
+      expect(
+        screen.getByText(/Bạn đã chọn cùng một API ở cả hai slot/i)
+      ).toBeDefined();
+    });
+
+    // Comparison matrix table must NOT be rendered when same API is selected
+    expect(screen.queryByText('Specification & Criteria')).toBeNull();
+  });
+
+  it('handles tri-state legal data processing (true -> Có, false -> Không, null -> Chưa công bố)', async () => {
+    const detailWithTrue: MarketplaceApiDetail = {
+      ...mockDetail1,
+      legal: {
+        dataClassification: 'Confidential',
+        processesPersonalData: true,
+        personalDataTypes: ['User ID', 'Email'],
+        dataProcessingPurpose: 'Analytics',
+      },
+    };
+
+    const detailWithFalse: MarketplaceApiDetail = {
+      ...mockDetail2,
+      legal: {
+        dataClassification: 'Public',
+        processesPersonalData: false,
+        personalDataTypes: [],
+        dataProcessingPurpose: null,
+      },
+    };
+
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-cmp-1') return detailWithTrue;
+      return detailWithFalse;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=api-cmp-1&api2=api-cmp-2']}>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Specification & Criteria')).toBeDefined();
+    });
+
+    // Detail 1 has true -> 'Có'
+    expect(screen.getByText('Có')).toBeDefined();
+    // Detail 2 has false -> 'Không'
+    expect(screen.getByText('Không')).toBeDefined();
+  });
+
+  it('renders "Chưa công bố" when legal data or processesPersonalData is null/undefined', async () => {
+    const detailWithNullLegal: MarketplaceApiDetail = {
+      ...mockDetail1,
+      legal: null,
+    };
+
+    const detailWithUndefinedField: MarketplaceApiDetail = {
+      ...mockDetail2,
+      legal: {
+        dataClassification: 'Internal',
+        processesPersonalData: undefined as unknown as boolean,
+        personalDataTypes: [],
+        dataProcessingPurpose: null,
+      },
+    };
+
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-cmp-1') return detailWithNullLegal;
+      return detailWithUndefinedField;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=api-cmp-1&api2=api-cmp-2']}>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Specification & Criteria')).toBeDefined();
+    });
+
+    // Both should render 'Chưa công bố'
+    const unannouncedBadges = screen.getAllByText('Chưa công bố');
+    expect(unannouncedBadges.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('supports catalog pagination and renders Next/Prev pagination controls', async () => {
+    const paginatedCatalog: MarketplacePaginatedResponse = {
+      items: mockListRes.items,
+      total: 30, // 3 pages of 12
+      page: 1,
+      pageSize: 12,
+    };
+
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(paginatedCatalog);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-cmp-1') return mockDetail1;
+      return mockDetail2;
+    });
+
+    render(
+      <MemoryRouter>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Trang\s+1\/3/i)).toBeDefined();
+    });
+
+    const prevBtn = screen.getByRole('button', { name: /Trang trước/i });
+    const nextBtn = screen.getByRole('button', { name: /Trang sau/i });
+
+    expect(prevBtn.hasAttribute('disabled')).toBe(true);
+    expect(nextBtn.hasAttribute('disabled')).toBe(false);
+  });
 });

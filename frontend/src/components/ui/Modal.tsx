@@ -10,9 +10,24 @@ interface ModalProps {
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
 }
 
-// Global active modal counter to safely handle nested modals
-let activeModalCount = 0;
+// Internal LIFO Modal Stack Manager to coordinate topmost modal interactions
+/* oxlint-disable react/only-export-components */
+let modalStack: string[] = [];
 let initialBodyOverflow = '';
+
+export function isTopmostModal(id: string): boolean {
+  return modalStack.length > 0 && modalStack[modalStack.length - 1] === id;
+}
+
+export function getModalStack(): readonly string[] {
+  return modalStack;
+}
+
+export function resetModalStackForTesting(): void {
+  modalStack = [];
+  initialBodyOverflow = '';
+  document.body.style.overflow = '';
+}
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
@@ -31,7 +46,6 @@ export const Modal: React.FC<ModalProps> = ({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
-  const previousOverflowRef = useRef<string>('');
   const onCloseRef = useRef(onClose);
 
   // Keep onClose callback ref fresh without re-triggering effects
@@ -42,17 +56,26 @@ export const Modal: React.FC<ModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       previousActiveElementRef.current = document.activeElement as HTMLElement | null;
-      previousOverflowRef.current = document.body.style.overflow;
 
-      if (activeModalCount === 0) {
+      // Register into modal stack (push to top of LIFO stack)
+      modalStack.push(cleanId);
+
+      // Lock body overflow only on first modal opening (0 -> 1 transition)
+      if (modalStack.length === 1) {
         initialBodyOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
       }
-      activeModalCount++;
 
       const handleKeyDown = (e: KeyboardEvent) => {
+        // Enforce strict topmost-only processing
+        if (!isTopmostModal(cleanId)) {
+          return;
+        }
+
         if (e.key === 'Escape') {
           e.stopPropagation();
+          e.stopImmediatePropagation();
+          e.preventDefault();
           onCloseRef.current();
           return;
         }
@@ -92,8 +115,9 @@ export const Modal: React.FC<ModalProps> = ({
 
       window.addEventListener('keydown', handleKeyDown);
 
-      // Focus first interactive element or close button
+      // Focus first interactive element or close button for topmost modal
       const timer = setTimeout(() => {
+        if (!isTopmostModal(cleanId)) return;
         const container = modalContainerRef.current;
         if (container) {
           const focusable = container.querySelectorAll<HTMLElement>(
@@ -112,19 +136,29 @@ export const Modal: React.FC<ModalProps> = ({
 
       return () => {
         clearTimeout(timer);
-        activeModalCount = Math.max(0, activeModalCount - 1);
-        if (activeModalCount === 0) {
-          document.body.style.overflow = initialBodyOverflow;
-        } else {
-          document.body.style.overflow = previousOverflowRef.current;
+        // Remove this modal from stack
+        const idx = modalStack.indexOf(cleanId);
+        if (idx !== -1) {
+          modalStack.splice(idx, 1);
         }
+
+        // Restore body overflow only when all modals have closed (1 -> 0 transition)
+        if (modalStack.length === 0) {
+          document.body.style.overflow = initialBodyOverflow;
+          initialBodyOverflow = '';
+        }
+
         window.removeEventListener('keydown', handleKeyDown);
-        if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === 'function') {
+        if (
+          previousActiveElementRef.current &&
+          typeof previousActiveElementRef.current.focus === 'function' &&
+          document.body.contains(previousActiveElementRef.current)
+        ) {
           previousActiveElementRef.current.focus();
         }
       };
     }
-  }, [isOpen]);
+  }, [isOpen, cleanId]);
 
   const maxWidthClasses = {
     sm: 'max-w-sm',

@@ -23,11 +23,17 @@ export const CompareApisPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [availableApis, setAvailableApis] = useState<MarketplaceApiSummary[]>([]);
+  const [catalogPage, setCatalogPage] = useState<number>(1);
+  const [catalogTotal, setCatalogTotal] = useState<number>(0);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  const [retryList, setRetryList] = useState(0);
 
-  const [apiId1, setApiId1] = useState<string>('');
-  const [apiId2, setApiId2] = useState<string>('');
+  const queryApiId1 = searchParams.get('api1') || searchParams.get('api');
+  const queryApiId2 = searchParams.get('api2');
+
+  const [apiId1, setApiId1] = useState<string>(() => queryApiId1 || '');
+  const [apiId2, setApiId2] = useState<string>(() => queryApiId2 || '');
 
   const [detail1, setDetail1] = useState<MarketplaceApiDetail | null>(null);
   const [detail2, setDetail2] = useState<MarketplaceApiDetail | null>(null);
@@ -41,11 +47,12 @@ export const CompareApisPage: React.FC = () => {
 
   const reqId1Ref = useRef(0);
   const reqId2Ref = useRef(0);
+  const initialSelectionDoneRef = useRef(false);
 
-  const queryApiId1 = searchParams.get('api1') || searchParams.get('api');
-  const queryApiId2 = searchParams.get('api2');
+  const CATALOG_PAGE_SIZE = 12;
+  const totalCatalogPages = Math.max(1, Math.ceil(catalogTotal / CATALOG_PAGE_SIZE));
 
-  // Load available marketplace APIs with pagination beyond 50
+  // Load available marketplace APIs using server-driven pagination
   useEffect(() => {
     const controller = new AbortController();
 
@@ -54,43 +61,30 @@ export const CompareApisPage: React.FC = () => {
         setIsLoadingList(true);
         setListError(null);
 
-        // Fetch page 1 (pageSize: 50)
-        const res = await listMarketplaceApis({ page: 1, pageSize: 50 }, controller.signal);
+        const res = await listMarketplaceApis(
+          { page: catalogPage, pageSize: CATALOG_PAGE_SIZE },
+          controller.signal
+        );
         if (controller.signal.aborted) return;
 
-        let allItems = res.items;
+        setAvailableApis(res.items);
+        setCatalogTotal(res.total);
 
-        // If total > 50, fetch next page to support large catalogs
-        if (res.total > 50) {
-          try {
-            const page2 = await listMarketplaceApis({ page: 2, pageSize: 50 }, controller.signal);
-            if (!controller.signal.aborted) {
-              allItems = [...allItems, ...page2.items];
+        // Determine initial API selections without || true and preventing self-comparison
+        if (!initialSelectionDoneRef.current) {
+          initialSelectionDoneRef.current = true;
+          const initialId1 = queryApiId1 || (res.items.length > 0 ? res.items[0].id : '');
+          let initialId2 = queryApiId2 || '';
+
+          if (!initialId2 && res.items.length > 1) {
+            const alternate = res.items.find(a => a.id !== initialId1);
+            if (alternate) {
+              initialId2 = alternate.id;
             }
-          } catch {
-            // Ignore page 2 failure if page 1 succeeded
           }
-        }
 
-        setAvailableApis(allItems);
-
-        // Determine initial API selections
-        if (allItems.length > 0) {
-          const firstId = queryApiId1 && (allItems.some(a => a.id === queryApiId1) || true)
-            ? queryApiId1
-            : allItems[0].id;
-
-          const secondId = queryApiId2
-            ? queryApiId2
-            : allItems.length > 1
-              ? (allItems.find(a => a.id !== firstId)?.id || allItems[0].id)
-              : allItems[0].id;
-
-          setApiId1(firstId);
-          setApiId2(secondId);
-        } else if (queryApiId1 || queryApiId2) {
-          if (queryApiId1) setApiId1(queryApiId1);
-          if (queryApiId2) setApiId2(queryApiId2);
+          if (initialId1) setApiId1(prev => (prev !== initialId1 ? initialId1 : prev));
+          if (initialId2) setApiId2(prev => (prev !== initialId2 ? initialId2 : prev));
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -107,7 +101,7 @@ export const CompareApisPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [queryApiId1, queryApiId2]);
+  }, [catalogPage, retryList, queryApiId1, queryApiId2]);
 
   // Independent fetch effect for API 1
   useEffect(() => {
@@ -190,7 +184,68 @@ export const CompareApisPage: React.FC = () => {
     });
   };
 
-  if (isLoadingList) {
+  const renderPersonalDataProcessing = (val: boolean | null | undefined) => {
+    if (val === true) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-body-xs font-semibold">
+          <span className="material-symbols-outlined text-[16px]">check_circle</span>
+          {t('Có')}
+        </span>
+      );
+    }
+    if (val === false) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-body-xs font-medium">
+          <span className="material-symbols-outlined text-[16px]">cancel</span>
+          {t('Không')}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant text-body-xs font-medium">
+        <span className="material-symbols-outlined text-[16px]">help_outline</span>
+        {t('Chưa công bố')}
+      </span>
+    );
+  };
+
+  // Assemble selectable APIs including currently selected APIs from distant pages
+  const selectOptions = (() => {
+    const map = new Map<string, { value: string; label: string; badge?: string; icon?: string }>();
+
+    for (const a of availableApis) {
+      map.set(a.id, {
+        value: a.id,
+        label: a.name,
+        badge: t(a.category) || a.category,
+        icon: 'api',
+      });
+    }
+
+    if (apiId1 && !map.has(apiId1)) {
+      map.set(apiId1, {
+        value: apiId1,
+        label: detail1?.name || (loading1 ? t('Đang tải...') : apiId1),
+        badge: detail1 ? (t(detail1.category) || detail1.category) : undefined,
+        icon: 'api',
+      });
+    }
+
+    if (apiId2 && !map.has(apiId2)) {
+      map.set(apiId2, {
+        value: apiId2,
+        label: detail2?.name || (loading2 ? t('Đang tải...') : apiId2),
+        badge: detail2 ? (t(detail2.category) || detail2.category) : undefined,
+        icon: 'api',
+      });
+    }
+
+    return Array.from(map.values());
+  })();
+
+  const isSameApiSelected = Boolean(apiId1 && apiId2 && apiId1 === apiId2);
+
+  if (isLoadingList && availableApis.length === 0 && !queryApiId1 && !queryApiId2) {
     return (
       <div className="pt-24 pb-20 px-6 max-w-4xl mx-auto text-center animate-pulse">
         <div className="h-8 bg-surface-container-high rounded w-64 mx-auto mb-4" />
@@ -203,7 +258,7 @@ export const CompareApisPage: React.FC = () => {
     );
   }
 
-  if (listError) {
+  if (listError && availableApis.length === 0 && !queryApiId1 && !queryApiId2) {
     return (
       <div className="pt-24 pb-20 px-6 max-w-xl mx-auto text-center">
         <div className="w-16 h-16 rounded-2xl bg-error/10 text-error flex items-center justify-center mx-auto mb-4">
@@ -211,12 +266,31 @@ export const CompareApisPage: React.FC = () => {
         </div>
         <h2 className="text-headline-sm font-bold text-on-surface mb-2">{t('Không thể tải API để so sánh')}</h2>
         <p className="text-body-md text-on-surface-variant mb-6">{listError}</p>
-        <Button variant="primary" onClick={() => navigate(0)}>{t('Thử lại')}</Button>
+        <Button variant="primary" onClick={() => setRetryList(c => c + 1)}>{t('Thử lại')}</Button>
       </div>
     );
   }
 
-  if (availableApis.length < 2 && !queryApiId1 && !queryApiId2) {
+  if (catalogTotal === 0 && !isLoadingList && !listError && !queryApiId1 && !queryApiId2) {
+    return (
+      <div className="pt-24 pb-20 px-6 lg:px-12 max-w-4xl mx-auto text-center">
+        <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-16">
+          <span className="material-symbols-outlined text-[48px] text-outline mb-3">inventory_2</span>
+          <h2 className="text-headline-sm font-bold text-on-surface">{t('Chưa có API nào trên hệ thống')}</h2>
+          <p className="text-body-md text-on-surface-variant mt-2 max-w-md mx-auto">
+            {t('Hiện chưa có API nào được phát hành trên sàn để so sánh.')}
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <Button variant="primary" onClick={() => navigate('/marketplace')}>
+              {t('Xem Chợ API')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (catalogTotal === 1 && !isLoadingList && !listError && !queryApiId1 && !queryApiId2) {
     return (
       <div className="pt-24 pb-20 px-6 lg:px-12 max-w-4xl mx-auto text-center">
         <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-16">
@@ -266,6 +340,38 @@ export const CompareApisPage: React.FC = () => {
         </Link>
       </div>
 
+      {/* Catalog Pagination Info & Navigation */}
+      {totalCatalogPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-1 text-body-sm text-on-surface-variant">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">menu_book</span>
+            <span>
+              {t('Danh mục API')} ({catalogTotal} {t('APIs')}) — {t('Trang')} {catalogPage}/{totalCatalogPages}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={catalogPage <= 1 || isLoadingList}
+              onClick={() => setCatalogPage(p => Math.max(1, p - 1))}
+            >
+              <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+              {t('Trang trước')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={catalogPage >= totalCatalogPages || isLoadingList}
+              onClick={() => setCatalogPage(p => Math.min(totalCatalogPages, p + 1))}
+            >
+              {t('Trang sau')}
+              <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Selectors */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="p-4 bg-surface-container-low border border-outline-variant/40 rounded-2xl shadow-2xs">
@@ -273,12 +379,7 @@ export const CompareApisPage: React.FC = () => {
           <CustomSelect
             value={apiId1}
             onChange={handleSelectApi1}
-            options={availableApis.map(a => ({
-              value: a.id,
-              label: a.name,
-              badge: t(a.category) || a.category,
-              icon: 'api',
-            }))}
+            options={selectOptions}
             className="w-full"
           />
         </div>
@@ -288,16 +389,26 @@ export const CompareApisPage: React.FC = () => {
           <CustomSelect
             value={apiId2}
             onChange={handleSelectApi2}
-            options={availableApis.map(a => ({
-              value: a.id,
-              label: a.name,
-              badge: t(a.category) || a.category,
-              icon: 'api',
-            }))}
+            options={selectOptions}
             className="w-full"
           />
         </div>
       </div>
+
+      {/* Self-comparison warning */}
+      {isSameApiSelected && (
+        <div className="p-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-900 dark:text-amber-200 text-body-sm mb-6 flex items-start gap-3">
+          <span className="material-symbols-outlined text-[24px] text-amber-600 shrink-0">info</span>
+          <div>
+            <h3 className="font-semibold text-amber-900 dark:text-amber-200">
+              {t('Không thể so sánh một API với chính nó')}
+            </h3>
+            <p className="mt-1 text-amber-800/90 dark:text-amber-300">
+              {t('Bạn đã chọn cùng một API ở cả hai slot. Vui lòng chọn một API khác ở Slot 1 hoặc Slot 2 để tiến hành so sánh.')}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Partial error banner if one API fails */}
       {error1 && !error2 && !bothFailed && (
@@ -354,7 +465,7 @@ export const CompareApisPage: React.FC = () => {
           <div className="h-6 bg-surface-container-high rounded w-48 mx-auto mb-4" />
           <div className="h-32 bg-surface-container-high/50 rounded-xl" />
         </div>
-      ) : (
+      ) : !isSameApiSelected ? (
         /* Comparison Table with independent per-slot rendering */
         <>
           <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl overflow-hidden shadow-sm">
@@ -578,17 +689,7 @@ export const CompareApisPage: React.FC = () => {
                     ) : error1 ? (
                       <span className="text-error text-xs italic">—</span>
                     ) : detail1 ? (
-                      detail1.legal?.processesPersonalData ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-body-xs font-semibold">
-                          <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                          {t('Có')}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-body-xs font-medium">
-                          <span className="material-symbols-outlined text-[16px]">cancel</span>
-                          {t('Không')}
-                        </span>
-                      )
+                      renderPersonalDataProcessing(detail1.legal?.processesPersonalData)
                     ) : null}
                   </td>
                   <td className="p-5 text-sm">
@@ -597,17 +698,7 @@ export const CompareApisPage: React.FC = () => {
                     ) : error2 ? (
                       <span className="text-error text-xs italic">—</span>
                     ) : detail2 ? (
-                      detail2.legal?.processesPersonalData ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-body-xs font-semibold">
-                          <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                          {t('Có')}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-body-xs font-medium">
-                          <span className="material-symbols-outlined text-[16px]">cancel</span>
-                          {t('Không')}
-                        </span>
-                      )
+                      renderPersonalDataProcessing(detail2.legal?.processesPersonalData)
                     ) : null}
                   </td>
                 </tr>
@@ -694,7 +785,7 @@ export const CompareApisPage: React.FC = () => {
             </div>
           )}
         </>
-      )}
+      ) : null}
     </PageReveal>
   );
 };

@@ -23,6 +23,12 @@ export const PricingPage: React.FC = () => {
   const [totalApis, setTotalApis] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deepLinkError, setDeepLinkError] = useState<{
+    type: 'not_found' | 'rate_limit' | 'server_error';
+    status?: number;
+    message: string;
+  } | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState(0);
   const [partialWarning, setPartialWarning] = useState<string | null>(null);
 
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -70,8 +76,34 @@ export const PricingPage: React.FC = () => {
             setTotalApis(1);
             setIsLoading(false);
             return;
-          } catch {
-            // Fall back to general catalog if deep linked API id not found
+          } catch (err: unknown) {
+            if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+              return;
+            }
+
+            let errorType: 'not_found' | 'rate_limit' | 'server_error' = 'server_error';
+            let errorMessage = t('Lỗi kết nối máy chủ khi tải thông tin API.');
+            let status: number | undefined;
+
+            if (err instanceof ApiError) {
+              status = err.status;
+              if (err.status === 404) {
+                errorType = 'not_found';
+                errorMessage = t('API không tồn tại hoặc đã ngừng xuất bản trên sàn.');
+              } else if (err.status === 429) {
+                errorType = 'rate_limit';
+                errorMessage = t('Hệ thống đang nhận quá nhiều yêu cầu (Rate Limit). Vui lòng thử lại sau.');
+              } else {
+                errorType = 'server_error';
+                errorMessage = err.message || t('Lỗi máy chủ khi tải thông tin API.');
+              }
+            } else if (err instanceof Error) {
+              errorMessage = err.message || errorMessage;
+            }
+
+            setDeepLinkError({ type: errorType, status, message: errorMessage });
+            setIsLoading(false);
+            return;
           }
         }
 
@@ -135,7 +167,7 @@ export const PricingPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [currentPage, queryApiId]);
+  }, [currentPage, queryApiId, retryTrigger, t]);
 
   const handlePageChange = (newPage: number) => {
     setSearchParams(prev => {
@@ -147,6 +179,7 @@ export const PricingPage: React.FC = () => {
   };
 
   const handleClearDeepLink = () => {
+    setDeepLinkError(null);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
       next.delete('api');
@@ -155,12 +188,16 @@ export const PricingPage: React.FC = () => {
     });
   };
 
+  const handleRetryDeepLink = () => {
+    setRetryTrigger(c => c + 1);
+  };
+
   const totalPages = Math.max(1, Math.ceil(totalApis / PAGE_SIZE));
 
   return (
     <PageReveal className="pt-20 pb-20 px-4 sm:px-6 lg:px-12 max-w-7xl mx-auto">
       {/* Deep Link Active Banner */}
-      {queryApiId && (
+      {queryApiId && !deepLinkError && (
         <div className="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-body-sm text-primary font-medium">
             <span className="material-symbols-outlined text-[20px]">filter_alt</span>
@@ -233,8 +270,55 @@ export const PricingPage: React.FC = () => {
         </div>
       )}
 
+      {/* Deep Link Specific Error State */}
+      {deepLinkError && !isLoading && (
+        <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-8 sm:p-12 text-center max-w-xl mx-auto shadow-sm">
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
+            deepLinkError.type === 'not_found'
+              ? 'bg-amber-500/10 text-amber-600'
+              : deepLinkError.type === 'rate_limit'
+              ? 'bg-amber-500/10 text-amber-600'
+              : 'bg-error/10 text-error'
+          }`}>
+            <span className="material-symbols-outlined text-[32px]">
+              {deepLinkError.type === 'not_found'
+                ? 'search_off'
+                : deepLinkError.type === 'rate_limit'
+                ? 'speed'
+                : 'cloud_off'}
+            </span>
+          </div>
+          <h2 className="text-headline-sm font-bold text-on-surface mb-2">
+            {deepLinkError.type === 'not_found'
+              ? t('API không tìm thấy (404)')
+              : deepLinkError.type === 'rate_limit'
+              ? t('Quá nhiều yêu cầu (429)')
+              : t('Lỗi kết nối máy chủ')}
+          </h2>
+          <p className="text-body-md text-on-surface-variant mb-2">
+            {deepLinkError.message}
+          </p>
+          <p className="text-body-xs font-mono text-outline mb-6">
+            ID: {queryApiId}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {deepLinkError.type !== 'not_found' && (
+              <Button variant="primary" onClick={handleRetryDeepLink}>
+                {t('Thử lại cho API này')}
+              </Button>
+            )}
+            <Button
+              variant={deepLinkError.type === 'not_found' ? 'primary' : 'secondary'}
+              onClick={handleClearDeepLink}
+            >
+              {t('Xem tất cả API')}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Error state */}
-      {error && !isLoading && (
+      {error && !deepLinkError && !isLoading && (
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-12 text-center max-w-xl mx-auto">
           <div className="w-16 h-16 rounded-2xl bg-error/10 text-error flex items-center justify-center mx-auto mb-4">
             <span className="material-symbols-outlined text-[32px]">cloud_off</span>
@@ -246,7 +330,7 @@ export const PricingPage: React.FC = () => {
       )}
 
       {/* Empty State */}
-      {!isLoading && !error && apiDetails.length === 0 && (
+      {!isLoading && !error && !deepLinkError && apiDetails.length === 0 && (
         <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-16 text-center">
           <span className="material-symbols-outlined text-[48px] text-outline mb-3">price_change</span>
           <h3 className="text-headline-sm font-bold text-on-surface">{t('Chưa có gói cước API công khai')}</h3>
@@ -262,7 +346,7 @@ export const PricingPage: React.FC = () => {
       )}
 
       {/* Featured APIs and their plans */}
-      {!isLoading && !error && apiDetails.length > 0 && (
+      {!isLoading && !error && !deepLinkError && apiDetails.length > 0 && (
         <div className="space-y-12">
           {apiDetails.map(api => (
             <div key={api.id} className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 lg:p-8 shadow-sm">
@@ -364,7 +448,7 @@ export const PricingPage: React.FC = () => {
       )}
 
       {/* Catalog Pagination beyond 50 APIs */}
-      {!isLoading && !error && !queryApiId && totalPages > 1 && (
+      {!isLoading && !error && !deepLinkError && !queryApiId && totalPages > 1 && (
         <div className="mt-12 flex items-center justify-between gap-4 p-4 bg-surface-container-low border border-outline-variant/30 rounded-2xl">
           <span className="text-body-sm text-on-surface-variant">
             {t('Trang')} <strong>{currentPage}</strong> / {totalPages} ({totalApis} {t('APIs công khai')})
@@ -440,31 +524,37 @@ export const PricingPage: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-outline-variant/15 text-on-surface">
                     <tr>
-                      <td className="p-4 font-medium">{t('API Gateway Rate Limiting')}</td>
-                      <td className="p-4 text-on-surface-variant">{t('Theo cấu hình gói')}</td>
-                      <td className="p-4 font-bold text-primary">{t('Theo cấu hình gói')}</td>
-                      <td className="p-4 font-bold text-emerald-600">{t('Dedicated Quota')}</td>
+                      <td className="p-4 font-medium">{t('Biểu phí hàng tháng (priceMonthly / currency)')}</td>
+                      <td className="p-4 text-on-surface-variant">{t('0 VND / tháng')}</td>
+                      <td className="p-4 font-bold text-primary">{t('Theo biểu phí nhà phát hành')}</td>
+                      <td className="p-4 font-bold text-emerald-600">{t('Thỏa thuận riêng (Enterprise)')}</td>
                     </tr>
                     <tr>
-                      <td className="p-4 font-medium">{t('Bảo vệ chống SSRF & Proxy trung tâm')}</td>
-                      <td className="p-4"><span className="material-symbols-outlined text-emerald-600 text-[18px]">check</span></td>
-                      <td className="p-4"><span className="material-symbols-outlined text-emerald-600 text-[18px]">check</span></td>
-                      <td className="p-4"><span className="material-symbols-outlined text-emerald-600 text-[18px]">check</span></td>
+                      <td className="p-4 font-medium">{t('Hạn mức lượt gọi hàng tháng (quota)')}</td>
+                      <td className="p-4 text-on-surface-variant">{t('Theo định mức gói Free (quota)')}</td>
+                      <td className="p-4 font-semibold text-primary">{t('Định mức mở rộng theo gói Pro')}</td>
+                      <td className="p-4 font-semibold text-emerald-600">{t('Hạn mức tùy chỉnh theo hợp đồng')}</td>
                     </tr>
                     <tr>
-                      <td className="p-4 font-medium">{t('Cam kết dịch vụ (SLA) & Hỗ trợ')}</td>
-                      <td className="p-4 text-on-surface-variant">{t('Best Effort')}</td>
-                      <td className="p-4 font-semibold">{t('Theo cam kết Provider')}</td>
-                      <td className="p-4 font-semibold text-emerald-600">{t('Thỏa thuận riêng (Enterprise)')}</td>
+                      <td className="p-4 font-medium">{t('Giới hạn tần suất gọi (rateLimit)')}</td>
+                      <td className="p-4 text-on-surface-variant">{t('Kiểm soát theo cấu hình rateLimit')}</td>
+                      <td className="p-4 font-semibold text-primary">{t('Kiểm soát theo cấu hình rateLimit')}</td>
+                      <td className="p-4 font-semibold text-emerald-600">{t('Kiểm soát theo cấu hình rateLimit')}</td>
                     </tr>
                     <tr>
-                      <td className="p-4 font-medium">{t('Hỗ trợ kỹ thuật (Support Tier)')}</td>
-                      <td className="p-4 text-on-surface-variant">{t('Tài liệu & Portal')}</td>
-                      <td className="p-4">{t('Theo chính sách Provider')}</td>
-                      <td className="p-4 font-semibold text-primary">{t('Kênh chuyên biệt theo Hợp đồng')}</td>
+                      <td className="p-4 font-medium">{t('Xác thực API Gateway')}</td>
+                      <td className="p-4 text-on-surface-variant">{t('Khóa API (X-API-Key)')}</td>
+                      <td className="p-4 font-semibold text-primary">{t('Khóa API (X-API-Key)')}</td>
+                      <td className="p-4 font-semibold text-emerald-600">{t('Khóa API (X-API-Key)')}</td>
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div className="mt-4 p-3.5 bg-surface-container rounded-xl text-body-xs text-on-surface-variant flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-[18px] text-primary flex-shrink-0 mt-0.5">info</span>
+                <span>
+                  {t('Bảng so sánh hiển thị các trường dữ liệu thực có trong backend plan model (priceMonthly, currency, quota, rateLimit). Các thông số về SLA hoặc kênh hỗ trợ chuyên biệt do Provider tự công bố theo hợp đồng riêng hoặc đang trong quá trình tích hợp Gateway ở Sprint 4.')}
+                </span>
               </div>
             </motion.div>
           )}

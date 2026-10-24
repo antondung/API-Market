@@ -184,6 +184,78 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(curl).toContain("-H 'Content-Type: text/plain'");
       expect(curl).toContain("-d 'raw non-json body'");
     });
+
+    it('places diagnostic comment before curl command without breaking backslash continuation', () => {
+      const curl = generateCurlSnippet({
+        method: 'POST',
+        urlPath: '/v1/raw-data',
+        body: '<xml>not-json</xml>',
+      });
+
+      const lines = curl.split('\n');
+      const curlStartIdx = lines.findIndex(l => l.startsWith('curl '));
+      expect(curlStartIdx).toBeGreaterThan(0);
+
+      // Verify any comment appears strictly before curl
+      const commentsAfterCurl = lines.slice(curlStartIdx).filter(l => l.trim().startsWith('#'));
+      expect(commentsAfterCurl).toHaveLength(0);
+
+      // Verify every line from curl up to the second-to-last line ends with backslash
+      const commandLines = lines.slice(curlStartIdx);
+      for (let i = 0; i < commandLines.length - 1; i++) {
+        expect(commandLines[i].endsWith(' \\')).toBe(true);
+      }
+      // Last line (-d argument) does NOT end with backslash
+      expect(commandLines[commandLines.length - 1].endsWith(' \\')).toBe(false);
+      expect(commandLines[commandLines.length - 1]).toContain("-d '<xml>not-json</xml>'");
+    });
+
+    it('preserves user-declared Content-Type and avoids duplicates for XML and CSV', () => {
+      const xmlCurl = generateCurlSnippet({
+        method: 'POST',
+        urlPath: '/v1/upload-xml',
+        headers: {
+          'Content-Type': 'application/xml',
+          'X-Client': 'EnterpriseApp',
+        },
+        body: '<?xml version="1.0"?><data id="123"><name>Tấn Dũng</name></data>',
+      });
+
+      // Must retain user-declared application/xml and not duplicate Content-Type
+      expect(xmlCurl).toContain("-H 'Content-Type: application/xml'");
+      expect(xmlCurl).not.toContain("-H 'Content-Type: text/plain'");
+      expect(xmlCurl).not.toContain("-H 'Content-Type: application/json'");
+      const contentTypeMatches = xmlCurl.match(/Content-Type:/g) || [];
+      expect(contentTypeMatches).toHaveLength(1);
+
+      const csvCurl = generateCurlSnippet({
+        method: 'PUT',
+        urlPath: '/v1/data.csv',
+        headers: {
+          'content-type': 'text/csv; charset=utf-8',
+        },
+        body: 'id,name,role\n1,Dũng,admin',
+      });
+
+      expect(csvCurl).toContain("-H 'content-type: text/csv; charset=utf-8'");
+      expect(csvCurl).not.toContain("-H 'Content-Type: text/plain'");
+    });
+
+    it('handles UTF-8, quotes, newlines, and special characters safely in curl body and headers', () => {
+      const complexBody = "Dòng 1: 'Giá trị' có dấu tiếng Việt\nDòng 2: $USER `id` \"quotes\" & <tags>";
+      const curl = generateCurlSnippet({
+        method: 'POST',
+        urlPath: '/v1/unicode',
+        headers: {
+          'X-Note': "Ghi chú: 'Quan trọng'",
+        },
+        body: complexBody,
+      });
+
+      expect(curl).toContain("-H 'X-Note: Ghi chú: '\\''Quan trọng'\\'''");
+      expect(curl).toContain("Dòng 1: '\\''Giá trị'\\'' có dấu tiếng Việt");
+      expect(curl).toContain('$USER `id`');
+    });
   });
 
   describe('generateFetchSnippet', () => {
