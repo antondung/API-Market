@@ -1,10 +1,13 @@
 # API-MARKET — SPRINT 3 FINAL HARDENING & VERIFICATION GATE REPORT
 
 ## 1. Executive Summary
-- **Audit Verdict Being Remediated:** `CHANGES_REQUIRED — FINAL HARDENING`
+
+- **Audit Verdict Being Remediated:** `CHANGES_REQUIRED — FINAL HARDENING & CI UNBLOCK`
 - **Baseline Commit:** `4b5a0a021f781966f174510955fbbf73f08002e2`
+- **Intermediate Hardening Commit:** `d98597b324c6d1cef84df2341878a64df00dd1e2`
+- **Final Delivery Commit:** `9eca06f`
 - **Target Working Branch:** `feature/sprint3-frontend-marketplace`
-- **Audit Gate Scope:** Comprehensive remediation of findings F3-01 through F3-06, behavior-driven test expansion, static analysis validation, production bundling, and CI verification without regressions.
+- **Audit Gate Scope:** Comprehensive remediation of findings F3-01 through F3-06, repository whitespace gate resolution, pricing deep link retry state fix, behavior-driven test expansion (289 tests), static analysis validation, production bundling, and 100% green GitHub Actions CI verification.
 
 ---
 
@@ -72,8 +75,8 @@
 
 - **Unit & Integration Test Suite:**
   - Total test files: **29 passed** (100%)
-  - Total tests: **284 passed** (100%)
-  - Duration: ~97s (full suite with complete mock isolation)
+  - Total tests: **289 passed** (100%)
+  - Duration: ~120s (full suite with complete mock isolation and zero file parallelism)
 - **Static Analysis (oxlint):**
   - Zero warnings or errors in all modified files (`Modal.tsx`, `PricingPage.tsx`, `CompareApisPage.tsx`, `apiSnippetGenerator.ts`, and corresponding tests).
 - **TypeScript & Production Build:**
@@ -108,8 +111,21 @@
 - **Behavior-Driven Test Expansion (`PricingPage.test.tsx`):**
   - Expanded test suite to **13 passing tests**, covering 429 retry recovery, 500 retry recovery, repeated rate limit retention, navigation race conditions with late-resolving responses, and general catalog restoration upon clearing 404 errors.
 
+### 5.3. Final Verification on GitHub Actions Run 40132560984
+
+- **Workflow Run ID:** `40132560984` (triggered on commit `9eca06f`)
+- **Recorded Conclusion:** `SUCCESS` (100% green across all pipeline jobs)
+- **Job Status Breakdown:**
+  - `Phat hien cong nghe`: **SUCCESS** (5s)
+  - `Kiem tra kho ma nguon` (Repository Integrity Gate): **SUCCESS** (13s) — *Unblocked*
+  - `API E2E Sprint 2`: **SUCCESS** (32s)
+  - `Frontend` (Oxlint, Vitest, Vite Build): **SUCCESS** (1m7s)
+  - `Node.js`: **SUCCESS** (38s)
+  - `Frontend Browser E2E Sprint 2`: **SUCCESS** (2m31s)
+  - `Kiem tra nen tang`: **SUCCESS** (3s)
+
 ---
 
-## 6. Quality Gate Completion
+## 6. Quality Gate Completion & Sign-off
 
-All requirements of **API-MARKET — SPRINT 3 FINAL HARDENING & CI UNBLOCK** are verified, tested, and ready for commit and push on branch `feature/sprint3-frontend-marketplace`.
+All requirements of **API-MARKET — SPRINT 3 FINAL HARDENING & CI UNBLOCK** are verified, tested, and green. The branch `feature/sprint3-frontend-marketplace` is officially signed off and ready for Sprint 4 integration.
