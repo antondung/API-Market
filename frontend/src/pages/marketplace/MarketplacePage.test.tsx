@@ -186,4 +186,25 @@ describe('MarketplacePage', () => {
     expect(await screen.findByText('Gửi yêu cầu quá nhanh')).toBeDefined();
     expect(screen.getByText(/Hệ thống đang giới hạn tần suất truy vấn/)).toBeDefined();
   });
+
+  it('keeps server pagination consistent by disabling client-side verified filtering', async () => {
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockResponse);
+
+    renderPage();
+    await screen.findByText('Weather Forecast Global');
+
+    // Verified filter checkbox must be disabled with Sprint 4 notice
+    const verifiedCheckboxes = screen.getAllByRole('checkbox');
+    const verifiedCheckbox = verifiedCheckboxes.find(cb => cb.hasAttribute('disabled'));
+    expect(verifiedCheckbox).toBeDefined();
+    expect(verifiedCheckbox?.hasAttribute('disabled')).toBe(true);
+    expect(screen.getAllByText('Chờ Sprint 4').length).toBeGreaterThan(0);
+
+    // Both items from server are rendered consistently with total count
+    expect(screen.getByText('Weather Forecast Global')).toBeDefined();
+    expect(screen.getByText('FinTech Banking Gateway')).toBeDefined();
+
+    // Provider verified badges remain visible on cards
+    expect(screen.getAllByTitle('Verified Provider').length).toBe(2);
+  });
 });

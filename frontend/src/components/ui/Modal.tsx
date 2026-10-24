@@ -20,20 +20,83 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const shouldReduceMotion = useReducedMotion();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalContainerRef = useRef<HTMLDivElement>(null);
+  const previousActiveElementRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
     if (isOpen) {
+      previousActiveElementRef.current = document.activeElement as HTMLElement | null;
       document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onClose();
+          return;
+        }
+
+        if (e.key === 'Tab') {
+          const container = modalContainerRef.current;
+          if (!container) return;
+
+          const focusableElements = container.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          );
+          const focusable = Array.from(focusableElements).filter(
+            el => !el.hasAttribute('disabled')
+          );
+
+          if (focusable.length === 0) {
+            e.preventDefault();
+            return;
+          }
+
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+
+          if (e.shiftKey) {
+            if (document.activeElement === first || !container.contains(document.activeElement)) {
+              e.preventDefault();
+              last.focus();
+            }
+          } else {
+            if (document.activeElement === last || !container.contains(document.activeElement)) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }
+      };
+
       window.addEventListener('keydown', handleKeyDown);
-      setTimeout(() => closeButtonRef.current?.focus(), 50);
+
+      // Focus first interactive element or close button
+      const timer = setTimeout(() => {
+        const container = modalContainerRef.current;
+        if (container) {
+          const focusable = container.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          );
+          const firstInteractive = Array.from(focusable).find(
+            el => !el.hasAttribute('disabled')
+          );
+          if (firstInteractive) {
+            firstInteractive.focus();
+          } else {
+            closeButtonRef.current?.focus();
+          }
+        }
+      }, 50);
+
+      return () => {
+        clearTimeout(timer);
+        document.body.style.overflow = 'unset';
+        window.removeEventListener('keydown', handleKeyDown);
+        if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === 'function') {
+          previousActiveElementRef.current.focus();
+        }
+      };
     }
-    return () => {
-      document.body.style.overflow = 'unset';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
   }, [isOpen, onClose]);
 
   const maxWidthClasses = {
@@ -59,9 +122,11 @@ export const Modal: React.FC<ModalProps> = ({
           }}
         >
           <motion.div
+            ref={modalContainerRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
+            aria-describedby={description ? 'modal-description' : undefined}
             initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.96, y: 8 }}
@@ -71,7 +136,7 @@ export const Modal: React.FC<ModalProps> = ({
             <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/30 bg-surface-container-low">
               <div>
                 <h3 id="modal-title" className="text-headline-sm font-headline-sm text-on-surface">{title}</h3>
-                {description && <p className="text-body-sm text-on-surface-variant mt-0.5">{description}</p>}
+                {description && <p id="modal-description" className="text-body-sm text-on-surface-variant mt-0.5">{description}</p>}
               </div>
               <button
                 ref={closeButtonRef}

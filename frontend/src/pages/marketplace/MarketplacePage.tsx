@@ -55,7 +55,6 @@ export const MarketplacePage: React.FC = () => {
   const urlSort = (searchParams.get('sort') as 'newest' | 'name' | null) ?? 'newest';
   const urlPage = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const urlPageSize = Math.max(1, Math.min(100, parseInt(searchParams.get('pageSize') ?? '20', 10) || 20));
-  const urlVerified = searchParams.get('verified') === 'true';
 
   // Responsive UI state
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -255,22 +254,9 @@ export const MarketplacePage: React.FC = () => {
     };
   }, [fetchData]);
 
-  const handleToggleVerifiedOnly = (checked: boolean) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      if (checked) {
-        next.set('verified', 'true');
-      } else {
-        next.delete('verified');
-      }
-      next.set('page', '1');
-      return next;
-    });
-  };
-
   const totalPages = Math.max(1, Math.ceil(total / urlPageSize));
-  const hasActiveFilters = Boolean(urlQ || (urlCategory && urlCategory !== 'All') || urlTag || urlPricing || urlVerified);
-  const displayedItems = urlVerified ? items.filter(api => api.providerStatus === 'Verified') : items;
+  const hasActiveFilters = Boolean(urlQ || (urlCategory && urlCategory !== 'All') || urlTag || urlPricing);
+  const displayedItems = items;
 
   return (
     <PageReveal className="pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-[1440px] mx-auto min-h-screen">
@@ -418,16 +404,23 @@ export const MarketplacePage: React.FC = () => {
             <h4 className="text-[11px] font-label-md uppercase tracking-wider text-on-surface-variant/80 mb-2 font-semibold">
               {t('Provider Trust')}
             </h4>
-            <label className="flex items-center gap-2.5 text-body-sm text-on-surface cursor-pointer select-none mb-3">
+            <label
+              className="flex items-center gap-2.5 text-body-sm text-on-surface-variant cursor-not-allowed select-none mb-3 opacity-70"
+              title={t('Tính năng lọc theo Provider Verified sẽ mở cùng backend query param trong Sprint 4')}
+            >
               <input
                 type="checkbox"
-                checked={urlVerified}
-                onChange={(e) => handleToggleVerifiedOnly(e.target.checked)}
-                className="accent-primary w-4 h-4 rounded cursor-pointer"
+                disabled={true}
+                checked={false}
+                readOnly
+                className="accent-primary w-4 h-4 rounded cursor-not-allowed"
               />
               <span className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[16px] text-primary">verified</span>
-                {t('Only Verified Providers')}
+                <span>{t('Only Verified Providers')}</span>
+                <span className="text-[10px] bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded-full font-bold ml-1">
+                  {t('Chờ Sprint 4')}
+                </span>
               </span>
             </label>
             <div className="p-3 rounded-xl bg-surface-container-high/60 border border-outline-variant/20 text-body-xs text-on-surface-variant">
@@ -472,11 +465,6 @@ export const MarketplacePage: React.FC = () => {
               {urlPricing && (
                 <Badge variant="outline" size="sm">
                   {urlPricing === 'free' ? t('Free Tier') : t('Paid Plans')}
-                </Badge>
-              )}
-              {urlVerified && (
-                <Badge variant="secondary" size="sm">
-                  {t('Verified')}
                 </Badge>
               )}
               {isRefetching && (
@@ -902,16 +890,23 @@ export const MarketplacePage: React.FC = () => {
 
           {/* Provider Verification Filter */}
           <div className="pt-4 border-t border-outline-variant/30">
-            <label className="flex items-center gap-2.5 text-body-sm text-on-surface cursor-pointer select-none mb-3">
+            <label
+              className="flex items-center gap-2.5 text-body-sm text-on-surface-variant cursor-not-allowed select-none mb-3 opacity-70"
+              title={t('Tính năng lọc theo Provider Verified sẽ mở cùng backend query param trong Sprint 4')}
+            >
               <input
                 type="checkbox"
-                checked={urlVerified}
-                onChange={(e) => handleToggleVerifiedOnly(e.target.checked)}
-                className="accent-primary w-4 h-4 rounded cursor-pointer"
+                disabled={true}
+                checked={false}
+                readOnly
+                className="accent-primary w-4 h-4 rounded cursor-not-allowed"
               />
               <span className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[16px] text-primary">verified</span>
-                {t('Only Verified Providers')}
+                <span>{t('Only Verified Providers')}</span>
+                <span className="text-[10px] bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded-full font-bold ml-1">
+                  {t('Chờ Sprint 4')}
+                </span>
               </span>
             </label>
           </div>

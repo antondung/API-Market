@@ -10,6 +10,7 @@ import { AnimatedCard } from '../../components/motion/AnimatedCard';
 import { getMarketplaceApiDetail, formatPrice } from '../../services/marketplaceApi';
 import type { MarketplaceApiDetail } from '../../services/marketplaceTypes';
 import { ApiError } from '../../services/authApi';
+import { generateCurlSnippet } from '../../utils/apiSnippetGenerator';
 
 export const TrySandboxPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -22,8 +23,8 @@ export const TrySandboxPage: React.FC = () => {
 
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>('');
-  const [sandboxApiKey] = useState('ak_sand_consumer_demo_test');
-  const [copiedKey, setCopiedKey] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [activePreset, setActivePreset] = useState<'standard' | 'minimal' | 'custom'>('standard');
   const [sandboxModalOpen, setSandboxModalOpen] = useState(false);
@@ -67,44 +68,40 @@ export const TrySandboxPage: React.FC = () => {
 
   const generatedCurl = useMemo(() => {
     if (!api || !selectedEndpoint) return '';
-    const baseUrl = 'https://api.apihub.vn/v1';
 
-    let qStr = '';
+    const queryParams: Record<string, string> = {};
     if (activePreset === 'standard' && Array.isArray(selectedEndpoint.parameters)) {
-      const qParams = selectedEndpoint.parameters
+      selectedEndpoint.parameters
         .filter((p: any) => p.in === 'query')
-        .map((p: any) => `${encodeURIComponent(p.name)}=${encodeURIComponent(p.default ?? 'demo')}`);
-      if (qParams.length > 0) {
-        qStr = `?${qParams.join('&')}`;
-      }
+        .forEach((p: any) => {
+          queryParams[p.name] = String(p.default ?? 'demo');
+        });
     }
-
-    let curl = `curl -X ${selectedEndpoint.method} "${baseUrl}${selectedEndpoint.path}${qStr}" \\\n`;
-    curl += `  -H "X-API-Key: ${sandboxApiKey}" \\\n`;
-    curl += `  -H "Accept: application/json"`;
 
     const isBodyAllowed = selectedEndpoint.method.toUpperCase() !== 'GET' && selectedEndpoint.method.toUpperCase() !== 'DELETE';
-    if (isBodyAllowed) {
-      curl += ` \\\n  -H "Content-Type: application/json" \\\n`;
-      curl += `  -d '{"sandbox": true, "preset": "${activePreset}"}'`;
-    }
+    const bodyPayload = isBodyAllowed
+      ? JSON.stringify({ sandbox: true, preset: activePreset })
+      : null;
 
-    return curl;
-  }, [api, selectedEndpoint, sandboxApiKey, activePreset]);
+    return generateCurlSnippet({
+      method: selectedEndpoint.method,
+      urlPath: selectedEndpoint.path,
+      apiKey: customApiKey.trim() || 'YOUR_API_KEY',
+      queryParams,
+      body: bodyPayload,
+      includeTemplateNotice: true,
+    });
+  }, [api, selectedEndpoint, customApiKey, activePreset]);
 
-  const handleCopyKey = () => {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(sandboxApiKey).catch(() => {});
-      setCopiedKey(true);
-      setTimeout(() => setCopiedKey(false), 2000);
-    }
-  };
-
-  const handleCopyCurl = () => {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(generatedCurl).catch(() => {});
-      setCopiedCurl(true);
-      setTimeout(() => setCopiedCurl(false), 2000);
+  const handleCopyCurl = async () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(generatedCurl);
+        setCopiedCurl(true);
+        setTimeout(() => setCopiedCurl(false), 2000);
+      } catch {
+        // clipboard write failed - no false positive
+      }
     }
   };
 
@@ -213,46 +210,75 @@ export const TrySandboxPage: React.FC = () => {
           })}
         </div>
 
-        {/* Step 1: Sandbox Credentials Info */}
+        {/* Step 1: Sandbox Credentials Requirement */}
         {currentStep === 1 && (
           <div className="space-y-5 animate-fade-in">
             <div className="p-5 bg-surface-container rounded-2xl border border-outline-variant/20 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-body-md font-bold text-on-surface flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-[20px]">badge</span>
-                    <span>{t('Sandbox Demo Key')}</span>
+                    <span className="material-symbols-outlined text-primary text-[20px]">key</span>
+                    <span>{t('Yêu cầu Khóa Xác thực (API Key)')}</span>
                   </h3>
                   <p className="text-body-xs text-on-surface-variant mt-0.5">
-                    {t('Khóa xác thực tạm thời dành cho việc chạy thử nghiệm an toàn trên Sandbox Gateway.')}
+                    {t('Yêu cầu API Key để xác thực các yêu cầu gửi qua Gateway. Hệ thống tuân thủ Zero Mock và không sinh khóa giả định.')}
                   </p>
                 </div>
-                <Badge variant="neutral" size="sm">Sandbox Only</Badge>
+                <Badge variant="neutral" size="sm">Auth Required</Badge>
               </div>
 
-              <div className="flex items-center gap-2 bg-surface-container-high p-2.5 rounded-xl border border-outline-variant/30">
-                <code className="flex-1 font-code-sm text-primary font-bold px-2 select-all">
-                  {sandboxApiKey}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={copiedKey ? 'check' : 'content_copy'}
-                  onClick={handleCopyKey}
-                >
-                  {copiedKey ? t('Copied!') : t('Copy')}
-                </Button>
+              {/* Direct to API Keys page */}
+              <div className="p-4 bg-surface-container-high rounded-xl border border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-body-xs text-on-surface-variant">
+                  <span className="font-semibold text-on-surface block mb-0.5">{t('Chưa có API Key?')}</span>
+                  {t('Quản lý và cấp phát API Key trong tài khoản của bạn (dịch vụ Backend sẽ ra mắt trong Sprint 4).')}
+                </div>
+                <Link to="/consumer/keys">
+                  <Button variant="outline" size="sm" icon="key">
+                    {t('Quản lý API Keys')}
+                  </Button>
+                </Link>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-body-xs text-on-surface-variant">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[18px]">verified_user</span>
-                  <span>{t('Anti-SSRF Gateway Guard: Bật')}</span>
+              {/* Optional personal key input for testing without persisting */}
+              <div className="space-y-1.5">
+                <label className="text-body-sm font-semibold text-on-surface block">
+                  {t('Nhập API Key để tạo snippet lệnh (tùy chọn, không lưu trữ):')}
+                </label>
+                <div className="flex items-center gap-2 bg-surface-container-high p-2 rounded-xl border border-outline-variant/30">
+                  <span className="material-symbols-outlined text-on-surface-variant text-[20px] ml-1">password</span>
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={customApiKey}
+                    onChange={(e) => setCustomApiKey(e.target.value)}
+                    placeholder="Nhập API Key của bạn (mặc định: YOUR_API_KEY)"
+                    autoComplete="off"
+                    className="flex-1 bg-transparent text-on-surface font-code-sm text-body-sm outline-none px-2"
+                  />
+                  {customApiKey && (
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="p-1 rounded text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                      title={showApiKey ? t('Ẩn') : t('Hiện')}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">
+                        {showApiKey ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[18px]">speed</span>
-                  <span>{t('Rate Limit: 5 req/giây (Sandbox Mode)')}</span>
+                <p className="text-[11px] text-on-surface-variant">
+                  {t('Khóa chỉ dùng để điền vào câu lệnh cURL mẫu bên dưới, không gửi đi đâu và không lưu vào bộ nhớ trình duyệt.')}
+                </p>
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-body-xs text-on-surface-variant">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-200 mb-0.5">
+                  <span className="material-symbols-outlined text-[18px]">info</span>
+                  <span>{t('Trạng thái kết nối Gateway')}</span>
                 </div>
+                {t('Gateway proxy trực tiếp từ frontend đang chờ Sprint 4. Sử dụng lệnh cURL ở Step 3 để chạy trực tiếp từ terminal của bạn.')}
               </div>
             </div>
 

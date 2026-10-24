@@ -105,27 +105,38 @@ Toàn bộ dữ liệu hardcode giả lập đã được loại bỏ hoàn toà
 ## 4. KẾT QUẢ KIỂM THỬ (TESTING & VERIFICATION)
 
 ### 4.1. Unit & Integration Test Suites
-Đã bổ sung và hoàn thiện toàn bộ test suite cho các thành phần Sprint 3:
-* **`frontend/src/services/marketplaceApi.test.ts`**: 8/8 tests pass.
-* **`frontend/src/pages/marketplace/MarketplacePage.test.tsx`**: 6/6 tests pass (Skeleton, Danh sách API, Debounce 350ms, Bộ lọc danh mục/giá, Xử lý lỗi 500, Rate limit 429).
-* **`frontend/src/pages/marketplace/ApiDetailPage.test.tsx`**: 7/7 tests pass (Loading skeleton, Chi tiết API, Chuyển tab, Chuyển phiên bản version, OpenAPI viewer, Modal report abuse, 404 Not Found).
-* **`frontend/src/test/IntegrationConnections.test.tsx`**: 23/23 tests pass (Kiểm thử liên kết điều hướng và xác thực an toàn giữa các module).
+
+Đã bổ sung và hoàn thiện toàn diện test suite cho các thành phần Sprint 3 sau đợt Independent Audit Remediation:
+
+* **`frontend/src/utils/apiSnippetGenerator.test.ts`**: 14/14 tests pass (Centralized POSIX snippet generation, shell injection prevention).
+* **`frontend/src/components/ui/Modal.test.tsx`**: 4/4 tests pass (WCAG 2.2 focus trap, Escape key, focus restoration).
+* **`frontend/src/pages/consumer/ApiKeysPage.test.tsx`**: 6/6 tests pass (Honest empty state, locked creation awaiting Sprint 4, RAM secret wiping).
+* **`frontend/src/pages/marketplace/TrySandboxPage.test.tsx`**: 4/4 tests pass (Purged demo keys, required key input, locked execution).
+* **`frontend/src/pages/marketplace/PricingPage.test.tsx`**: 3/3 tests pass (Price immutability, locked annual toggle, sanitized SLA/Redis claims).
+* **`frontend/src/pages/marketplace/CompareApisPage.test.tsx`**: 3/3 tests pass (Side-by-side comparison, chunked execution, differentiated errors).
+* **`frontend/src/pages/marketplace/ApiPlaygroundPage.test.tsx`**: 4/4 tests pass (Hardened snippets, safe anti-SSRF notice, tab switching).
+* **`frontend/src/pages/checkout/CheckoutPage.test.tsx`**: 2/2 tests pass (Accurate pricing, sanitized egress claims).
+* **`frontend/src/services/marketplaceApi.test.ts`**: 14/14 tests pass (Parameter building, NUL filtering, error handling).
+* **`frontend/src/pages/marketplace/MarketplacePage.test.tsx`**: 7/7 tests pass (Pagination consistency, debounced search, status displays).
+* **`frontend/src/pages/marketplace/ApiDetailPage.test.tsx`**: 8/8 tests pass (Version isolation, OpenAPI viewer, abuse modal).
+* **`frontend/src/test/IntegrationConnections.test.tsx`**: 23/23 tests pass (Cross-route workflows, authentication guards).
 
 ### 4.2. Kết Quả Tổng Thể
-Toàn bộ test suite của frontend:
+Toàn bộ test suite của frontend sau đợt khắc phục kiểm toán độc lập:
 ```bash
-Test Files  20 passed (20)
-Tests       205 passed (205)
-Duration    23.84s
+Test Files  29 passed (29)
+Tests       251 passed (251)
+Duration    231.81s
 ```
+Tỉ lệ đạt: **100% PASS (251/251 tests)**.
 
 ### 4.3. Kiểm Tra Biên Dịch & Đóng Gói (TypeScript & Vite Build)
 ```bash
 > tsc -b && vite build
-✓ 86 modules transformed.
-✓ built in 2.90s
+✓ 521 modules transformed.
+✓ built in 4.51s
 ```
-Không có bất kỳ lỗi biên dịch TypeScript (zero compile errors) hay bundle warning nghiêm trọng nào.
+Không có bất kỳ lỗi biên dịch TypeScript (0 compile errors) và oxlint đạt 0 errors trên toàn bộ các file sửa đổi.
 
 ---
 
@@ -135,7 +146,14 @@ Sprint 3 đã chuẩn bị nền tảng giao diện và hợp đồng dữ liệ
 
 | Tính năng | Trạng thái hiện tại (Sprint 3) | Kế hoạch tích hợp (Sprint 4) |
 | :--- | :--- | :--- |
-| **Backend Subscriptions & Billing** | Giao diện Checkout hiển thị gói thực tế từ backend; nút kích hoạt tạm khóa với thông báo rõ ràng. | Kết nối endpoint `POST /api/subscriptions` và cổng thanh toán VNPay/Stripe. |
+| **Backend Subscriptions & Billing** | Giao diện Checkout hiển thị gói thực tế từ backend; nút kích hoạt tạm khóa với thông báo rõ ràng; không tự tính giảm giá 20% client-side. | Kết nối endpoint `POST /api/subscriptions` và cổng thanh toán VNPay/Stripe. |
 | **Gateway SSRF Proxy** | Playground tạo script cURL để chạy ở máy khách; chặn browser fetch trực tiếp tới nhà cung cấp. | Kết nối endpoint backend `POST /api/gateway/proxy-sandbox` có server-side IP filtering. |
-| **Consumer API Key Issuance** | ApiKeysPage hiển thị danh sách khóa an toàn; chặn sinh khóa ngẫu nhiên từ client. | Kết nối endpoint `POST /api/consumer/api-keys` (sử dụng crypto backend CSPRNG). |
+| **Consumer API Key Issuance** | ApiKeysPage hiển thị empty state trung thực; chặn sinh khóa ngẫu nhiên từ client; xóa sensitive memory khi unmount. | Kết nối endpoint `POST /api/consumer/api-keys` (sử dụng crypto backend CSPRNG). |
 | **Abuse / Security Report** | Modal báo cáo vi phạm hiển thị đầy đủ form nhập liệu và hướng dẫn. | Kết nối endpoint `POST /api/marketplace/apis/:id/reports`. |
+
+---
+
+## 6. PHỤ LỤC: AUDIT REMEDIATION NOTES
+
+Tất cả các phát hiện từ đợt kiểm tra độc lập (CHANGES_REQUIRED trên commit `b5ca899f6aefe8314483c950ee83a55016ba5c29`) đã được khắc phục hoàn toàn. Chi tiết kỹ thuật, bảng đối chiếu Before/After, nguyên nhân gốc rễ và bằng chứng kiểm thử được lưu trữ đầy đủ tại:
+👉 **`SPRINT3_INDEPENDENT_AUDIT_REMEDIATION.md`**

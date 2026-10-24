@@ -14,6 +14,11 @@ import type {
   MarketplaceEndpoint,
 } from '../../services/marketplaceTypes';
 import { ApiError } from '../../services/authApi';
+import {
+  generateCurlSnippet,
+  generateFetchSnippet,
+  generatePythonSnippet,
+} from '../../utils/apiSnippetGenerator';
 
 export const ApiPlaygroundPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -28,7 +33,7 @@ export const ApiPlaygroundPage: React.FC = () => {
   const queryMethod = searchParams.get('method');
 
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>('');
-  const [apiKeyInput, setApiKeyInput] = useState('ak_sand_consumer_demo_test');
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [queryParams, setQueryParams] = useState<Record<string, string>>({});
   const [headerParams, setHeaderParams] = useState<Record<string, string>>({});
   const [requestBody, setRequestBody] = useState('{\n  "query": "test"\n}');
@@ -80,6 +85,7 @@ export const ApiPlaygroundPage: React.FC = () => {
         setIsLoading(true);
         setError(null);
         const data = await getMarketplaceApiDetail(id, controller.signal);
+        if (controller.signal.aborted) return;
         setApi(data);
 
         if (data.endpoints && data.endpoints.length > 0) {
@@ -121,86 +127,50 @@ export const ApiPlaygroundPage: React.FC = () => {
     }
   };
 
-  // Generate dynamic cURL command
+  // Generate dynamic cURL command via hardened generator
   const generatedCurl = useMemo(() => {
     if (!api || !selectedEndpoint) return '';
-    const baseUrl = 'https://api.apihub.vn/v1';
 
-    const queryEntries = Object.entries(queryParams).filter(([, v]) => v.trim().length > 0);
-    const qs = queryEntries.length > 0
-      ? `?${new URLSearchParams(queryEntries).toString()}`
-      : '';
-
-    const path = `${selectedEndpoint.path}${qs}`;
-    let curl = `curl -X ${selectedEndpoint.method} "${baseUrl}${path}" \\\n`;
-    curl += `  -H "X-API-Key: ${apiKeyInput || 'YOUR_API_KEY'}" \\\n`;
-
-    Object.entries(headerParams).forEach(([k, v]) => {
-      if (v.trim()) {
-        curl += `  -H "${k}: ${v.trim()}" \\\n`;
-      }
+    return generateCurlSnippet({
+      method: selectedEndpoint.method,
+      urlPath: selectedEndpoint.path,
+      apiKey: apiKeyInput.trim() || 'YOUR_API_KEY',
+      queryParams,
+      headers: headerParams,
+      body: requestBody,
+      includeTemplateNotice: true,
     });
-
-    const isBodyAllowed = selectedEndpoint.method.toUpperCase() !== 'GET' && selectedEndpoint.method.toUpperCase() !== 'DELETE';
-    if (isBodyAllowed && requestBody.trim().length > 0) {
-      curl += `  -H "Content-Type: application/json" \\\n`;
-      curl += `  -d '${requestBody.replace(/'/g, "'\\''")}'`;
-    } else {
-      curl = curl.slice(0, -3);
-    }
-
-    return curl;
   }, [api, selectedEndpoint, apiKeyInput, queryParams, headerParams, requestBody]);
 
-  // Generate JavaScript fetch
+  // Generate JavaScript fetch via hardened generator
   const generatedJs = useMemo(() => {
     if (!api || !selectedEndpoint) return '';
-    const baseUrl = 'https://api.apihub.vn/v1';
-    const queryEntries = Object.entries(queryParams).filter(([, v]) => v.trim().length > 0);
-    const qs = queryEntries.length > 0 ? `?${new URLSearchParams(queryEntries).toString()}` : '';
-    const path = `${selectedEndpoint.path}${qs}`;
-    const headersObj: Record<string, string> = {
-      'X-API-Key': apiKeyInput || 'YOUR_API_KEY',
-    };
-    Object.entries(headerParams).forEach(([k, v]) => {
-      if (v.trim()) headersObj[k] = v.trim();
-    });
-    const isBodyAllowed = selectedEndpoint.method.toUpperCase() !== 'GET' && selectedEndpoint.method.toUpperCase() !== 'DELETE';
-    if (isBodyAllowed && requestBody.trim()) {
-      headersObj['Content-Type'] = 'application/json';
-    }
 
-    return `const response = await fetch("${baseUrl}${path}", {
-  method: "${selectedEndpoint.method}",
-  headers: ${JSON.stringify(headersObj, null, 4)}${isBodyAllowed && requestBody.trim() ? `,\n  body: JSON.stringify(${requestBody.trim()})` : ''}
-});
-const data = await response.json();
-console.log(data);`;
+    return generateFetchSnippet({
+      method: selectedEndpoint.method,
+      urlPath: selectedEndpoint.path,
+      apiKey: apiKeyInput.trim() || 'YOUR_API_KEY',
+      queryParams,
+      headers: headerParams,
+      body: requestBody,
+      includeTemplateNotice: true,
+    });
   }, [api, selectedEndpoint, apiKeyInput, queryParams, headerParams, requestBody]);
 
-  // Generate Python requests
+  // Generate Python requests via hardened generator
   const generatedPython = useMemo(() => {
     if (!api || !selectedEndpoint) return '';
-    const baseUrl = 'https://api.apihub.vn/v1';
-    const queryEntries = Object.entries(queryParams).filter(([, v]) => v.trim().length > 0);
-    const qs = queryEntries.length > 0 ? `?${new URLSearchParams(queryEntries).toString()}` : '';
-    const path = `${selectedEndpoint.path}${qs}`;
-    const isBodyAllowed = selectedEndpoint.method.toUpperCase() !== 'GET' && selectedEndpoint.method.toUpperCase() !== 'DELETE';
 
-    return `import requests
-
-url = "${baseUrl}${path}"
-headers = {
-    "X-API-Key": "${apiKeyInput || 'YOUR_API_KEY'}"${isBodyAllowed && requestBody.trim() ? ',\n    "Content-Type": "application/json"' : ''}
-}
-${isBodyAllowed && requestBody.trim() ? `payload = ${requestBody.trim()}\n` : ''}
-response = requests.${selectedEndpoint.method.toLowerCase()}(
-    url,
-    headers=headers${isBodyAllowed && requestBody.trim() ? ',\n    json=payload' : ''}
-)
-print(response.status_code)
-print(response.json())`;
-  }, [api, selectedEndpoint, apiKeyInput, queryParams, requestBody]);
+    return generatePythonSnippet({
+      method: selectedEndpoint.method,
+      urlPath: selectedEndpoint.path,
+      apiKey: apiKeyInput.trim() || 'YOUR_API_KEY',
+      queryParams,
+      headers: headerParams,
+      body: requestBody,
+      includeTemplateNotice: true,
+    });
+  }, [api, selectedEndpoint, apiKeyInput, queryParams, headerParams, requestBody]);
 
   const activeSnippet = useMemo(() => {
     if (codeLang === 'curl') return generatedCurl;
@@ -208,11 +178,15 @@ print(response.json())`;
     return generatedPython;
   }, [codeLang, generatedCurl, generatedJs, generatedPython]);
 
-  const copyToClipboard = () => {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(activeSnippet).catch(() => {});
-      setCopiedSnippet(true);
-      setTimeout(() => setCopiedSnippet(false), 2000);
+  const copyToClipboard = async () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(activeSnippet);
+        setCopiedSnippet(true);
+        setTimeout(() => setCopiedSnippet(false), 2000);
+      } catch {
+        // clipboard access denied - do not show false positive copy success
+      }
     }
   };
 

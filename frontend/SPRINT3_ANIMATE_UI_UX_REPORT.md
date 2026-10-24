@@ -45,8 +45,8 @@ To guarantee long-term maintainability, avoid layout shifts (CLS < 0.05), and re
 | **Try Sandbox** | `TrySandboxPage.tsx` | Single long form with confusing parameters and mock execution. | Guided 3-step sequence (Credentials -> Parameters & Presets -> Terminal cURL Execution), copyable safe cURL commands, and upgrade tier callout. |
 | **Consumer API Keys** | `ApiKeysPage.tsx` | Flat HTML table with plain text prefixes. | Dual view mode (Card grid vs Table view), secret key blur/reveal toggle with smooth transitions, quick copy microinteractions, and backend advisory notice. |
 | **API Comparison** | `CompareApisPage.tsx` | Basic side-by-side table without visual cues. | Sticky table header with backdrop blur (`backdrop-blur-md`), hover row highlights, pop diff badges for boolean capabilities, and bottom floating comparison dock. |
-| **Pricing Matrix** | `PricingPage.tsx` | Plain cards with basic billing toggle. | Spring-animated Monthly vs Annual billing toggle (with 'Save 20%' badge), `AnimatedCard` plan tiers, collapsible Feature Comparison Matrix, and animated FAQ accordion. |
-| **Checkout & Provisioning** | `CheckoutPage.tsx` | Basic form with local mock subscription temptation. | `PageReveal` wrapper, highlighted order summary card, interactive payment method selector, security standard badges, and honest Sprint 4 backend provisioning banner. |
+| **Pricing Matrix** | `PricingPage.tsx` | Plain cards with basic billing toggle. | Spring-animated Monthly billing active; Annual toggle disabled with Sprint 4 notice; ungrounded 'Save 20%' badge eliminated to preserve price immutability. |
+| **Checkout & Provisioning** | `CheckoutPage.tsx` | Basic form with local mock subscription temptation. | `PageReveal` wrapper, highlighted order summary card, interactive payment method selector, security standard badges, and honest Sprint 4 backend provisioning banner with disabled activation button. |
 
 ---
 
@@ -55,7 +55,12 @@ To guarantee long-term maintainability, avoid layout shifts (CLS < 0.05), and re
 - **Reduced Motion:** Integrated `useReducedMotion()` across all motion abstractions. When the user enables "Reduce Motion" in their operating system or browser, all transforms and transitions collapse to instantaneous state updates.
 - **Contrast Ratios:** All text, badges, and interactive controls satisfy WCAG AA contrast requirements (≥ 4.5:1 for normal body text, ≥ 3.0:1 for large headers and graphical UI indicators).
 - **Keyboard Navigation:** Native `<button>` elements and `aria-pressed` attributes are preserved in `AnimatedTabs`, avoiding non-standard ARIA tablist traps and ensuring screen reader compatibility.
-- **Form Controls & Modals:** Fully accessible keyboard focus trapping, Esc key dismissal, and backdrop click handling implemented in `Modal.tsx`.
+- **Modal Accessibility (WCAG 2.2 Compliant):**
+  - **Focus Trap:** Active modal traps keyboard navigation, cycling `Tab` and `Shift+Tab` strictly among focusable elements inside the dialog container.
+  - **Escape Dismissal:** Global keyboard handler intercepts `Escape` to close the dialog with event propagation stopped.
+  - **Focus Restoration:** `document.activeElement` is saved to `previousActiveElementRef` upon modal mount and restored to the opener trigger upon modal unmount.
+  - **ARIA Dialog Attributes:** Explicit `role="dialog"`, `aria-modal="true"`, `aria-labelledby="modal-title"`, and conditional `aria-describedby="modal-description"`.
+- **Honest Disabled States & Tooltips:** Action buttons for features awaiting Sprint 4 backend services (Playground Send Request, Try Sandbox Run, Checkout Subscription Activation, API Keys New Key creation, Pricing Annual Billing toggle) are explicitly `disabled` with informative tooltips and badges, rather than allowing users to enter deceptive simulated mock flows.
 
 ---
 
@@ -63,7 +68,7 @@ To guarantee long-term maintainability, avoid layout shifts (CLS < 0.05), and re
 
 To prevent client-side Server-Side Request Forgery (SSRF), token leakage, and URL injection:
 1. **Centralized Gateway Routing:** The frontend prohibits raw browser `fetch` calls to third-party endpoints. All traffic is architected to route through the central API Gateway (`https://api.apihub.vn/v1/...`).
-2. **Safe Code Generation:** The Playground and Try Sandbox generate sanitized cURL, JavaScript fetch, and Python requests for developers to execute in terminal environments.
+2. **Safe Code Generation:** The centralized `apiSnippetGenerator` generates sanitized cURL, JavaScript fetch, and Python requests with POSIX single-quote escaping (`'\''`) and CRLF header validation for developers to execute in terminal environments.
 3. **Zero Plaintext Secrets:** API keys are never generated via pseudo-random browser math (`Math.random()`). All keys follow cryptographic masking patterns, awaiting the backend API Key service in Sprint 4.
 
 ---
@@ -75,21 +80,32 @@ All automated tests pass cleanly with zero failures and zero skipped tests:
 ```text
  RUN  v5.0.4 C:/Users/duwn/Documents/api-hub/frontend
 
- Test Files  21 passed (21)
-      Tests  209 passed (209)
-   Duration  60.03s
+ Test Files  29 passed (29)
+      Tests  251 passed (251)
+   Start at  00:30:04
+   Duration  231.81s
 ```
 
-### Verified Test Suites:
+### Verified Test Suites (Remediated & Expanded)
+
+- `src/utils/apiSnippetGenerator.test.ts` (14 tests) — POSIX shell escaping, command injection defense, header sanitation.
+- `src/components/ui/Modal.test.tsx` (4 tests) — ARIA dialog semantics, Escape key dismiss, focus trap cycle, opener focus restoration.
+- `src/pages/consumer/ApiKeysPage.test.tsx` (6 tests) — Honest empty state, locked creation awaiting Sprint 4, RAM secret wiping.
+- `src/pages/marketplace/TrySandboxPage.test.tsx` (4 tests) — Purged demo credentials, required key input, locked execution.
+- `src/pages/marketplace/PricingPage.test.tsx` (3 tests) — Price immutability, locked annual toggle, sanitized SLA/Redis claims.
+- `src/pages/marketplace/CompareApisPage.test.tsx` (3 tests) — Side-by-side comparison, chunked execution, differentiated errors.
+- `src/pages/marketplace/ApiPlaygroundPage.test.tsx` (4 tests) — Hardened snippets, safe anti-SSRF notice, tab switching.
+- `src/pages/checkout/CheckoutPage.test.tsx` (2 tests) — Accurate pricing, sanitized egress claims.
 - `src/components/motion/MotionComponents.test.tsx` (4 tests) — Motion abstraction unit tests.
-- `src/pages/marketplace/MarketplacePage.test.tsx` (9 tests) — Discovery, filtering, and real API rendering.
-- `src/pages/marketplace/ApiDetailPage.test.tsx` (7 tests) — Specification tabs, plan selection, and error states.
+- `src/pages/marketplace/MarketplacePage.test.tsx` (7 tests) — Discovery, filtering, and real API rendering.
+- `src/pages/marketplace/ApiDetailPage.test.tsx` (8 tests) — Specification tabs, plan selection, and error states.
 - `src/services/marketplaceApi.test.ts` (14 tests) — Endpoint mapping, sorting, and error handling.
 - `src/test/IntegrationConnections.test.tsx` (23 tests) — Cross-route workflows, authentication guards, and contract integrity.
-- Other Provider, Admin, and Auth suites (152 tests) — 100% regression-free.
+- Other Provider, Admin, and Auth suites (154 tests) — 100% regression-free.
 
-### Build & Lint Status:
-- `npm run build`: `tsc -b && vite build` succeeded in **6.18s** with **0 TypeScript errors**.
+### Build & Lint Status
+
+- `npm run build`: `tsc -b && vite build` succeeded in **4.51s** with **0 TypeScript errors** (521 modules transformed).
 - `npm run lint`: `oxlint` reported **0 errors** across all modified files.
 
 ---

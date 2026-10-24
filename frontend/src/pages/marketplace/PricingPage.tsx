@@ -18,10 +18,10 @@ export const PricingPage: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [apiDetails, setApiDetails] = useState<MarketplaceApiDetail[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [partialWarning, setPartialWarning] = useState<string | null>(null);
 
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [showFeatureMatrix, setShowFeatureMatrix] = useState<boolean>(false);
@@ -29,19 +29,19 @@ export const PricingPage: React.FC = () => {
   const faqs = [
     {
       q: 'Làm thế nào để chuyển đổi giữa gói Sandbox và Production?',
-      a: 'Bạn có thể bắt đầu với gói Free Sandbox để kiểm thử API trong Playground hoặc ứng dụng thử nghiệm. Khi sẵn sàng ra mắt ứng dụng thực tế, nâng cấp lên gói Production để nhận khóa API với hạn mức băng thông cao và SLA ổn định.',
+      a: 'Bạn có thể bắt đầu với gói Free Sandbox để kiểm thử API trong Playground hoặc ứng dụng thử nghiệm. Khi sẵn sàng ra mắt ứng dụng thực tế, nâng cấp lên gói Production để nhận khóa API với hạn mức băng thông cao và dịch vụ ổn định.',
     },
     {
       q: 'Cách API Gateway kiểm soát Rate Limit và Quota?',
-      a: 'Hạ tầng Gateway sử dụng cụm Redis phân tán và thuật toán Sliding Window Counter để bảo vệ API khỏi lưu lượng đột biến và đảm bảo tính công bằng tài nguyên cho từng người dùng.',
+      a: 'Hạ tầng Gateway kiểm soát lưu lượng dựa trên thuật toán giới hạn tần suất yêu cầu trên từng API Key và từng gói cước để đảm bảo tính sẵn sàng của dịch vụ.',
     },
     {
       q: 'API HUB hỗ trợ các hình thức thanh toán nào?',
       a: 'Trong phiên bản xem trước Sprint 3, hệ thống cung cấp môi trường Sandbox mô phỏng. Cổng thanh toán chính thức qua Thẻ quốc tế (Visa/Mastercard) và VNPay sẽ kích hoạt trong Sprint 4.',
     },
     {
-      q: 'Chính sách SLA và hoàn tiền khi xảy ra sự cố gián đoạn?',
-      a: 'Các API đạt chứng nhận Verified Provider cam kết thời gian hoạt động tối thiểu 99.9%. Thông số độ trễ P95 và lịch sử uptime được Gateway ghi nhận và công khai minh bạch.',
+      q: 'Chính sách cam kết dịch vụ và hỗ trợ khi xảy ra sự cố?',
+      a: 'Nhà phát hành API cung cấp cam kết chất lượng dịch vụ theo thông tin mô tả chi tiết trên từng trang API. Thông số kết nối được Gateway theo dõi và đối soát khi có sự cố.',
     },
   ];
 
@@ -52,22 +52,46 @@ export const PricingPage: React.FC = () => {
       try {
         setIsLoading(true);
         setError(null);
+        setPartialWarning(null);
 
         const listRes = await listMarketplaceApis({ pageSize: 50 }, controller.signal);
+        if (controller.signal.aborted) return;
         if (listRes.items.length === 0) {
           setApiDetails([]);
           return;
         }
 
-        // Fetch detail for APIs to retrieve their active plans
-        const details = await Promise.all(
-          listRes.items.map(item =>
-            getMarketplaceApiDetail(item.id, controller.signal).catch(() => null)
-          )
-        );
+        // Bounded concurrency (chunks of 4) to prevent N+1 request flooding
+        const items = listRes.items;
+        const details: MarketplaceApiDetail[] = [];
+        let failedCount = 0;
+        const CHUNK_SIZE = 4;
+
+        for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+          if (controller.signal.aborted) return;
+          const chunk = items.slice(i, i + CHUNK_SIZE);
+          const chunkResults = await Promise.allSettled(
+            chunk.map(item => getMarketplaceApiDetail(item.id, controller.signal))
+          );
+
+          for (const res of chunkResults) {
+            if (res.status === 'fulfilled') {
+              details.push(res.value);
+            } else {
+              failedCount++;
+            }
+          }
+        }
 
         if (!controller.signal.aborted) {
-          setApiDetails(details.filter((d): d is MarketplaceApiDetail => d !== null));
+          if (details.length === 0 && failedCount > 0) {
+            setError('Không thể tải chi tiết bảng giá API từ máy chủ.');
+          } else {
+            setApiDetails(details);
+            if (failedCount > 0) {
+              setPartialWarning(`Một số API (${failedCount}) tạm thời không thể tải chi tiết bảng giá.`);
+            }
+          }
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -102,43 +126,38 @@ export const PricingPage: React.FC = () => {
         <div className="inline-flex items-center gap-1.5 p-1.5 bg-surface-container rounded-xl border border-outline-variant/30 mt-6 relative">
           <button
             type="button"
-            onClick={() => setBillingCycle('monthly')}
-            className={`relative px-4 py-2 rounded-lg text-body-sm font-medium transition-colors cursor-pointer select-none ${
-              billingCycle === 'monthly' ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-on-surface'
-            }`}
+            className="relative px-4 py-2 rounded-lg text-body-sm font-medium transition-colors cursor-pointer select-none text-primary font-bold"
           >
-            {billingCycle === 'monthly' && (
-              <motion.div
-                layoutId="pricing-billing-cycle"
-                className="absolute inset-0 bg-surface-container-lowest rounded-lg shadow-2xs border border-outline-variant/20"
-                transition={{ type: 'spring', stiffness: 450, damping: 35 }}
-              />
-            )}
+            <motion.div
+              layoutId="pricing-billing-cycle"
+              className="absolute inset-0 bg-surface-container-lowest rounded-lg shadow-2xs border border-outline-variant/20"
+              transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+            />
             <span className="relative z-10">{t('Monthly Billing')}</span>
           </button>
           <button
             type="button"
-            onClick={() => setBillingCycle('yearly')}
-            className={`relative px-4 py-2 rounded-lg text-body-sm font-medium transition-colors cursor-pointer select-none flex items-center gap-1.5 ${
-              billingCycle === 'yearly' ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-on-surface'
-            }`}
+            disabled={true}
+            title={t('Chính sách thanh toán năm sẽ mở cùng Backend Billing Service trong Sprint 4')}
+            className="relative px-4 py-2 rounded-lg text-body-sm font-medium transition-colors cursor-not-allowed opacity-60 text-on-surface-variant flex items-center gap-1.5 select-none"
           >
-            {billingCycle === 'yearly' && (
-              <motion.div
-                layoutId="pricing-billing-cycle"
-                className="absolute inset-0 bg-surface-container-lowest rounded-lg shadow-2xs border border-outline-variant/20"
-                transition={{ type: 'spring', stiffness: 450, damping: 35 }}
-              />
-            )}
             <span className="relative z-10 flex items-center gap-1.5">
               <span>{t('Annual Billing')}</span>
-              <span className="text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">
-                {t('Save 20%')}
+              <span className="text-[10px] bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded-full font-bold">
+                {t('Chờ Sprint 4')}
               </span>
             </span>
           </button>
         </div>
       </div>
+
+      {/* Partial failure notice if some API details could not be loaded */}
+      {partialWarning && !isLoading && (
+        <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-body-xs text-amber-800 dark:text-amber-200 mb-6 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">warning</span>
+          <span>{partialWarning}</span>
+        </div>
+      )}
 
       {/* Loading Skeleton */}
       {isLoading && (
@@ -207,9 +226,7 @@ export const PricingPage: React.FC = () => {
               {api.plans && api.plans.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {api.plans.map(plan => {
-                    const priceAmount = billingCycle === 'yearly' && plan.priceMonthly > 0
-                      ? Math.round(plan.priceMonthly * 0.8)
-                      : plan.priceMonthly;
+                    const priceAmount = plan.priceMonthly;
 
                     return (
                       <AnimatedCard
@@ -224,9 +241,16 @@ export const PricingPage: React.FC = () => {
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <h3 className="text-headline-sm font-bold text-on-surface">{plan.name}</h3>
-                            <Badge variant={plan.priceMonthly === 0 ? 'neutral' : 'primary'}>
-                              {plan.priceMonthly === 0 ? 'Free' : 'Paid'}
-                            </Badge>
+                            <div className="flex items-center gap-1.5">
+                              {Boolean((plan as { recommended?: boolean }).recommended) && (
+                                <Badge variant="primary" size="sm">
+                                  {t('Recommended')}
+                                </Badge>
+                              )}
+                              <Badge variant={plan.priceMonthly === 0 ? 'neutral' : 'primary'}>
+                                {plan.priceMonthly === 0 ? 'Free' : 'Paid'}
+                              </Badge>
+                            </div>
                           </div>
 
                           <div className="flex items-baseline gap-1 mb-5">
@@ -331,10 +355,10 @@ export const PricingPage: React.FC = () => {
                       <td className="p-4"><span className="material-symbols-outlined text-emerald-600 text-[18px]">check</span></td>
                     </tr>
                     <tr>
-                      <td className="p-4 font-medium">{t('Uptime SLA Guarantee')}</td>
+                      <td className="p-4 font-medium">{t('Cam kết dịch vụ (SLA) & Hỗ trợ')}</td>
                       <td className="p-4 text-on-surface-variant">Best Effort</td>
-                      <td className="p-4 font-semibold">99.9% Uptime</td>
-                      <td className="p-4 font-semibold text-emerald-600">99.99% Financial SLA</td>
+                      <td className="p-4 font-semibold">{t('Theo cam kết Provider')}</td>
+                      <td className="p-4 font-semibold text-emerald-600">{t('Thỏa thuận riêng (Enterprise)')}</td>
                     </tr>
                     <tr>
                       <td className="p-4 font-medium">{t('Hỗ trợ kỹ thuật (Support Tier)')}</td>

@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { useLanguage } from '../../i18n';
+import { useAuth } from '../../context/AuthContext';
 import { PageReveal } from '../../components/motion/PageReveal';
 import { AnimatedCard } from '../../components/motion/AnimatedCard';
 
-interface DisplayApiKey {
+export interface DisplayApiKey {
   id: string;
   name: string;
   keyPrefix: string;
@@ -22,35 +23,10 @@ interface DisplayApiKey {
 
 export const ApiKeysPage: React.FC = () => {
   const { t } = useLanguage();
+  const { currentUser } = useAuth();
 
-  const [keys] = useState<DisplayApiKey[]>([
-    {
-      id: 'key_sand_demo_01',
-      name: 'Sandbox Development Key',
-      keyPrefix: 'ak_sand_9f8a...3b21',
-      fullKeySecret: 'ak_sand_9f8a42c18d993b210fec17',
-      environment: 'Sandbox',
-      apiScope: 'Universal / All Marketplace APIs',
-      rateLimitPerSec: 10,
-      monthlyQuota: 1000,
-      createdAt: '2026-10-21T08:00:00.000Z',
-      lastUsedAt: '2026-10-24T10:30:00.000Z',
-      isRevoked: false,
-    },
-    {
-      id: 'key_prod_demo_02',
-      name: 'Production Primary Gateway Key',
-      keyPrefix: 'ak_live_7c1d...e842',
-      fullKeySecret: 'ak_live_7c1d88203fbb45e842aa19',
-      environment: 'Production',
-      apiScope: 'Weather & Financial Datasets',
-      rateLimitPerSec: 50,
-      monthlyQuota: 500000,
-      createdAt: '2026-10-22T14:15:00.000Z',
-      lastUsedAt: '2026-10-24T21:40:00.000Z',
-      isRevoked: false,
-    },
-  ]);
+  // Zero mock/fake keys in production runtime - awaits Backend API Keys Service in Sprint 4
+  const [keys] = useState<DisplayApiKey[]>([]);
 
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
@@ -65,16 +41,32 @@ export const ApiKeysPage: React.FC = () => {
   const [revokeModalKey, setRevokeModalKey] = useState<DisplayApiKey | null>(null);
   const [rotateModalKey, setRotateModalKey] = useState<DisplayApiKey | null>(null);
 
+  // Security lifecycle: Wipe sensitive state on modal close, unmount, or auth change
+  const handleCloseCreateModal = () => {
+    setCreateModalOpen(false);
+    setNewKeyName('');
+  };
+
+  useEffect(() => {
+    return () => {
+      setRevealedKeys({});
+    };
+  }, [currentUser?.id]);
+
   const toggleReveal = (keyId: string) => {
     setRevealedKeys(prev => ({ ...prev, [keyId]: !prev[keyId] }));
   };
 
-  const handleCopyKey = (key: DisplayApiKey) => {
+  const handleCopyKey = async (key: DisplayApiKey) => {
     const textToCopy = key.fullKeySecret || key.keyPrefix;
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(textToCopy).catch(() => {});
-      setCopiedKeyId(key.id);
-      setTimeout(() => setCopiedKeyId(null), 2000);
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        setCopiedKeyId(key.id);
+        setTimeout(() => setCopiedKeyId(null), 2000);
+      } catch {
+        // clipboard access denied - do not show false positive copy success
+      }
     }
   };
 
@@ -132,8 +124,28 @@ export const ApiKeysPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Card View */}
-      {viewMode === 'card' ? (
+      {/* Card / Table View or Honest Empty State */}
+      {keys.length === 0 ? (
+        <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-12 text-center shadow-sm">
+          <div className="w-14 h-14 rounded-2xl bg-surface-container text-on-surface-variant/60 flex items-center justify-center mx-auto mb-3">
+            <span className="material-symbols-outlined text-[32px]">key_off</span>
+          </div>
+          <h3 className="text-body-lg font-bold text-on-surface mb-1">
+            {t('Chưa có API key nào được cấp phát')}
+          </h3>
+          <p className="text-body-sm text-on-surface-variant max-w-md mx-auto mb-6">
+            {t('Dịch vụ quản trị API Keys trên Backend đang được hoàn thiện trong Sprint 4. Hệ thống tuân thủ chính sách Zero Plaintext và không sinh khóa giả trên trình duyệt.')}
+          </p>
+          <Button
+            variant="primary"
+            icon="add"
+            disabled={true}
+            title={t('Tính năng sẽ kích hoạt cùng Backend API Keys Service trong Sprint 4')}
+          >
+            {t('Create New API Key (Chờ Sprint 4)')}
+          </Button>
+        </div>
+      ) : viewMode === 'card' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {keys.map(k => {
             const isRevealed = Boolean(revealedKeys[k.id]);
@@ -417,7 +429,7 @@ export const ApiKeysPage: React.FC = () => {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setCreateModalOpen(false)}
+              onClick={handleCloseCreateModal}
             >
               {t('Hủy')}
             </Button>

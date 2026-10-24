@@ -20,6 +20,11 @@ import type {
 } from '../../services/marketplaceTypes';
 import { ApiError } from '../../services/authApi';
 import type { ProviderDocumentation } from '../../services/providerTypes';
+import {
+  generateCurlSnippet,
+  generateFetchSnippet,
+  generatePythonSnippet,
+} from '../../utils/apiSnippetGenerator';
 
 export const ApiDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +64,7 @@ export const ApiDetailPage: React.FC = () => {
         setApi(null);
 
         const data = await getMarketplaceApiDetail(id, controller.signal);
+        if (controller.signal.aborted) return;
         setApi(data);
         if (data.versions && data.versions.length > 0) {
           setSelectedVersionId(data.versions[0].id);
@@ -71,7 +77,9 @@ export const ApiDetailPage: React.FC = () => {
           setError(new ApiError(0, 'UNKNOWN_ERROR', 'Đã xảy ra sự cố khi tải chi tiết API.'));
         }
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -82,18 +90,19 @@ export const ApiDetailPage: React.FC = () => {
     };
   }, [id]);
 
-  // Filter endpoints for selected version
+  // Filter endpoints for selected version strictly without cross-version fallback
   const currentEndpoints = useMemo(() => {
     if (!api || !api.endpoints) return [];
     if (!selectedVersionId) return api.endpoints;
-    const filtered = api.endpoints.filter(ep => ep.versionId === selectedVersionId);
-    return filtered.length > 0 ? filtered : api.endpoints;
+    return api.endpoints.filter(ep => ep.versionId === selectedVersionId);
   }, [api, selectedVersionId]);
 
-  // Filter documentation for selected version
+  // Filter documentation for selected version strictly without cross-version fallback
   const currentDoc = useMemo<ProviderDocumentation | null>(() => {
     if (!api || !api.documentation || api.documentation.length === 0) return null;
-    const matched = api.documentation.find(doc => doc.versionId === selectedVersionId) || api.documentation[0];
+    const matched = selectedVersionId
+      ? api.documentation.find(doc => doc.versionId === selectedVersionId)
+      : api.documentation[0];
     if (!matched) return null;
 
     let parsedContent: any = {};
@@ -445,7 +454,7 @@ export const ApiDetailPage: React.FC = () => {
               variant="primary"
               size="sm"
               icon="terminal"
-              onClick={() => navigate(`/api/${api.id}/playground`)}
+              onClick={() => navigate(`/api/${api.id}/playground${selectedVersionId ? `?versionId=${encodeURIComponent(selectedVersionId)}` : ''}`)}
             >
               {t('Open Full Interactive Playground')}
             </Button>
@@ -454,9 +463,11 @@ export const ApiDetailPage: React.FC = () => {
           {currentEndpoints.length === 0 ? (
             <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-12 text-center">
               <span className="material-symbols-outlined text-[48px] text-outline mb-2">alt_route</span>
-              <h4 className="text-headline-sm font-bold text-on-surface">{t('Chưa có endpoint nào')}</h4>
-              <p className="text-body-sm text-on-surface-variant mt-1">
-                {t('Phiên bản này chưa có endpoint nào được đăng ký công khai.')}
+              <h4 className="text-headline-sm font-bold text-on-surface">
+                {t('Phiên bản')} {selectedVersionObj ? `v${selectedVersionObj.version}` : ''} {t('chưa có tài liệu endpoint công bố')}
+              </h4>
+              <p className="text-body-sm text-on-surface-variant mt-1 max-w-md mx-auto">
+                {t('Vui lòng chọn phiên bản khác hoặc liên hệ nhà cung cấp API để yêu cầu thông tin.')}
               </p>
             </div>
           ) : (
@@ -565,9 +576,11 @@ export const ApiDetailPage: React.FC = () => {
           ) : (
             <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-16 text-center">
               <span className="material-symbols-outlined text-[48px] text-outline mb-2">description</span>
-              <h3 className="text-headline-sm font-bold text-on-surface">{t('Chưa có tài liệu OpenAPI')}</h3>
+              <h3 className="text-headline-sm font-bold text-on-surface">
+                {t('Phiên bản')} {selectedVersionObj ? `v${selectedVersionObj.version}` : ''} {t('chưa có OpenAPI spec công bố')}
+              </h3>
               <p className="text-body-md text-on-surface-variant mt-2 max-w-md mx-auto">
-                {t('Nhà cung cấp chưa tải lên tài liệu OpenAPI cho phiên bản này.')}
+                {t('Vui lòng chọn phiên bản khác hoặc liên hệ nhà cung cấp để yêu cầu đặc tả API.')}
               </p>
             </div>
           )}
@@ -742,8 +755,12 @@ export const ApiDetailPage: React.FC = () => {
             <h4 className="text-body-md font-bold text-on-surface mb-2">cURL</h4>
             <CodeBlock
               language="bash"
-              code={`curl -X ${currentEndpoints[0]?.method || 'GET'} "https://api.apihub.vn/v1${currentEndpoints[0]?.path || '/endpoint'}" \\
-  -H "X-API-Key: YOUR_API_KEY_HERE"`}
+              code={generateCurlSnippet({
+                method: currentEndpoints[0]?.method || 'GET',
+                urlPath: currentEndpoints[0]?.path || '/endpoint',
+                apiKey: 'YOUR_API_KEY_HERE',
+                includeTemplateNotice: true,
+              })}
             />
           </div>
 
@@ -751,14 +768,12 @@ export const ApiDetailPage: React.FC = () => {
             <h4 className="text-body-md font-bold text-on-surface mb-2">JavaScript (fetch)</h4>
             <CodeBlock
               language="javascript"
-              code={`const response = await fetch("https://api.apihub.vn/v1${currentEndpoints[0]?.path || '/endpoint'}", {
-  method: "${currentEndpoints[0]?.method || 'GET'}",
-  headers: {
-    "X-API-Key": "YOUR_API_KEY_HERE"
-  }
-});
-const data = await response.json();
-console.log(data);`}
+              code={generateFetchSnippet({
+                method: currentEndpoints[0]?.method || 'GET',
+                urlPath: currentEndpoints[0]?.path || '/endpoint',
+                apiKey: 'YOUR_API_KEY_HERE',
+                includeTemplateNotice: true,
+              })}
             />
           </div>
 
@@ -766,13 +781,12 @@ console.log(data);`}
             <h4 className="text-body-md font-bold text-on-surface mb-2">Python (requests)</h4>
             <CodeBlock
               language="python"
-              code={`import requests
-
-response = requests.${(currentEndpoints[0]?.method || 'get').toLowerCase()}(
-    "https://api.apihub.vn/v1${currentEndpoints[0]?.path || '/endpoint'}",
-    headers={"X-API-Key": "YOUR_API_KEY_HERE"}
-)
-print(response.json())`}
+              code={generatePythonSnippet({
+                method: currentEndpoints[0]?.method || 'GET',
+                urlPath: currentEndpoints[0]?.path || '/endpoint',
+                apiKey: 'YOUR_API_KEY_HERE',
+                includeTemplateNotice: true,
+              })}
             />
           </div>
         </div>

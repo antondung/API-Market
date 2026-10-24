@@ -45,6 +45,7 @@ export const CompareApisPage: React.FC = () => {
         setIsLoadingList(true);
         setListError(null);
         const res = await listMarketplaceApis({ pageSize: 50 }, controller.signal);
+        if (controller.signal.aborted) return;
         setAvailableApis(res.items);
 
         if (res.items.length > 0) {
@@ -62,7 +63,9 @@ export const CompareApisPage: React.FC = () => {
         if (controller.signal.aborted) return;
         setListError(err instanceof ApiError ? err.message : 'Không thể tải danh sách API.');
       } finally {
-        setIsLoadingList(false);
+        if (!controller.signal.aborted) {
+          setIsLoadingList(false);
+        }
       }
     };
 
@@ -73,7 +76,7 @@ export const CompareApisPage: React.FC = () => {
     };
   }, [queryApiId]);
 
-  // Fetch details for both selected APIs
+  // Fetch details for both selected APIs with differentiated error states
   useEffect(() => {
     if (!apiId1 || !apiId2) return;
     const controller = new AbortController();
@@ -83,18 +86,30 @@ export const CompareApisPage: React.FC = () => {
         setIsLoadingDetails(true);
         setDetailsError(null);
 
-        const [d1, d2] = await Promise.all([
+        const [d1Res, d2Res] = await Promise.allSettled([
           getMarketplaceApiDetail(apiId1, controller.signal),
           getMarketplaceApiDetail(apiId2, controller.signal),
         ]);
+        if (controller.signal.aborted) return;
+
+        const d1 = d1Res.status === 'fulfilled' ? d1Res.value : null;
+        const d2 = d2Res.status === 'fulfilled' ? d2Res.value : null;
 
         setDetail1(d1);
         setDetail2(d2);
+
+        if (!d1 && !d2) {
+          setDetailsError('Không thể tải chi tiết của cả 2 API để so sánh.');
+        } else if (!d1 || !d2) {
+          setDetailsError(`Không thể tải chi tiết của ${!d1 ? 'API thứ nhất' : 'API thứ hai'}.`);
+        }
       } catch (err) {
         if (controller.signal.aborted) return;
         setDetailsError(err instanceof ApiError ? err.message : 'Lỗi khi tải dữ liệu so sánh chi tiết.');
       } finally {
-        setIsLoadingDetails(false);
+        if (!controller.signal.aborted) {
+          setIsLoadingDetails(false);
+        }
       }
     };
 

@@ -152,7 +152,7 @@ export const CheckoutPage: React.FC = () => {
                 </span>
               </div>
               <div className="flex justify-between text-on-surface-variant">
-                <span>{t('API Gateway Egress (Redis Guard)')}</span>
+                <span>{t('API Gateway Egress')}</span>
                 <span className="font-semibold text-emerald-600">Miễn phí (Đã bao gồm)</span>
               </div>
               <div className="flex justify-between text-on-surface-variant">

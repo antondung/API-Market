@@ -44,6 +44,7 @@ export interface MarketplacePricingPlan {
   currency: string;
   quota: number;
   rateLimit: number;
+  recommended?: boolean;
 }
 
 export interface MarketplaceLegal {

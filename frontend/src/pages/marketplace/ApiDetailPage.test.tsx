@@ -231,4 +231,40 @@ describe('ApiDetailPage', () => {
     expect(screen.getByText(/API này không tồn tại, chưa được xuất bản công khai/)).toBeDefined();
     expect(screen.getByRole('button', { name: /Browse Marketplace/ })).toBeDefined();
   });
+
+  it('enforces strict version isolation without cross-version fallback for empty endpoints/docs', async () => {
+    const detailWithEmptyVersion: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      versions: [
+        ...mockApiDetail.versions,
+        { id: 'ver-3', version: '3.0.0-beta', changelog: 'Draft version' },
+      ],
+    };
+
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(detailWithEmptyVersion);
+
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Global Climate Metrics API' });
+
+    // Select version 3.0.0-beta
+    const v3Button = screen.getByRole('button', { name: 'v3.0.0-beta' });
+    fireEvent.click(v3Button);
+
+    // Switch to Endpoints tab
+    const endpointsTab = screen.getByRole('button', { name: /Endpoints/ });
+    fireEvent.click(endpointsTab);
+
+    // Must show honest empty state for v3.0.0-beta, NOT fall back to v1 or v2 endpoints
+    expect(await screen.findByText(/chưa có tài liệu endpoint công bố/)).toBeDefined();
+    expect(screen.queryByText('/v2/observations/current')).toBeNull();
+    expect(screen.queryByText('/v1/observations/legacy')).toBeNull();
+
+    // Switch to Documentation tab
+    const docTab = screen.getByRole('button', { name: /OpenAPI Documentation/ });
+    fireEvent.click(docTab);
+
+    // Must show honest empty state for v3.0.0-beta, NOT fall back to v2 documentation
+    expect(await screen.findByText(/chưa có OpenAPI spec công bố/)).toBeDefined();
+    expect(screen.queryByText(/1\. Tổng quan \(Overview\)/)).toBeNull();
+  });
 });
