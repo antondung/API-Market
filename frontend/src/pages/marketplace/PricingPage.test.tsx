@@ -1,14 +1,15 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { PricingPage } from './PricingPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
 import { ApiError } from '../../services/authApi';
 import type { MarketplaceApiDetail, MarketplacePaginatedResponse } from '../../services/marketplaceTypes';
 
+const mockT = (key: string) => key;
 vi.mock('../../i18n', () => ({
-  useLanguage: () => ({ t: (key: string) => key }),
+  useLanguage: () => ({ t: mockT }),
 }));
 
 const mockApiListResponse: MarketplacePaginatedResponse = {
@@ -274,5 +275,192 @@ describe('PricingPage - Audit Remediation & Price Immutability', () => {
     expect(
       screen.getByText(/Bảng so sánh hiển thị các trường dữ liệu thực có trong backend plan model/i)
     ).toBeDefined();
+  });
+
+  it('recovers from 429 rate limit on retry: first 429 -> retry -> 200 -> pricing visible and error hidden', async () => {
+    let callCount = 0;
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new ApiError(429, 'RATE_LIMITED', 'Too many requests');
+      }
+      return mockApiDetail;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/pricing?api=api-pricing-test-1']}>
+        <PricingPage />
+      </MemoryRouter>
+    );
+
+    // Initial 429 error card is visible
+    await waitFor(() => {
+      expect(screen.getByText(/Quá nhiều yêu cầu \(429\)/i)).toBeDefined();
+    });
+    expect(screen.queryByText('Cloud Payment Engine')).toBeNull();
+
+    // Click retry button
+    const retryBtn = screen.getByRole('button', { name: /Thử lại cho API này/i });
+    fireEvent.click(retryBtn);
+
+    // After successful retry, pricing details are visible and error card is completely hidden
+    await waitFor(() => {
+      expect(screen.getByText('Cloud Payment Engine')).toBeDefined();
+      expect(screen.getByText('500.000 ₫')).toBeDefined();
+    });
+    expect(screen.queryByText(/Quá nhiều yêu cầu \(429\)/i)).toBeNull();
+  });
+
+  it('recovers from 500 server error on retry: first 500 -> retry -> 200 -> pricing visible and error hidden', async () => {
+    let callCount = 0;
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new ApiError(500, 'INTERNAL_ERROR', 'Service temporarily down');
+      }
+      return mockApiDetail;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/pricing?api=api-pricing-test-1']}>
+        <PricingPage />
+      </MemoryRouter>
+    );
+
+    // Initial 500 error card is visible
+    await waitFor(() => {
+      expect(screen.getByText(/Lỗi kết nối máy chủ/i)).toBeDefined();
+    });
+    expect(screen.queryByText('Cloud Payment Engine')).toBeNull();
+
+    // Click retry
+    const retryBtn = screen.getByRole('button', { name: /Thử lại cho API này/i });
+    fireEvent.click(retryBtn);
+
+    // Successful retry clears error and shows pricing
+    await waitFor(() => {
+      expect(screen.getByText('Cloud Payment Engine')).toBeDefined();
+      expect(screen.getByText('500.000 ₫')).toBeDefined();
+    });
+    expect(screen.queryByText(/Lỗi kết nối máy chủ/i)).toBeNull();
+  });
+
+  it('retains latest error on repeated failure: call 1 429 -> retry -> call 2 still 429 -> latest error visible', async () => {
+    let callCount = 0;
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new ApiError(429, 'RATE_LIMITED', 'Rate limit initial hit');
+      }
+      throw new ApiError(429, 'RATE_LIMITED', 'Rate limit subsequent hit');
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/pricing?api=api-pricing-test-1']}>
+        <PricingPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quá nhiều yêu cầu \(429\)/i)).toBeDefined();
+    });
+
+    // Click retry
+    const retryBtn = screen.getByRole('button', { name: /Thử lại cho API này/i });
+    fireEvent.click(retryBtn);
+
+    // Second failure keeps error card visible and pricing hidden
+    await waitFor(() => {
+      expect(screen.getByText(/Quá nhiều yêu cầu \(429\)/i)).toBeDefined();
+    });
+    expect(screen.queryByText('Cloud Payment Engine')).toBeNull();
+  });
+
+  it('prevents stale response overwrite when navigating between two API IDs with first request resolving late', async () => {
+    let resolveFirst: ((val: MarketplaceApiDetail) => void) | null = null;
+    const firstPromise = new Promise<MarketplaceApiDetail>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const secondApiDetail: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      id: 'api-pricing-test-2',
+      name: 'Second API Service',
+    };
+
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-pricing-test-1') {
+        return firstPromise;
+      }
+      return secondApiDetail;
+    });
+
+    const NavTestHarness = () => {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button onClick={() => navigate('/pricing?api=api-pricing-test-2')}>Switch API</button>
+          <PricingPage />
+        </>
+      );
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/pricing?api=api-pricing-test-1']}>
+        <NavTestHarness />
+      </MemoryRouter>
+    );
+
+    // Switch to second API before first resolves
+    fireEvent.click(screen.getByRole('button', { name: 'Switch API' }));
+
+    // Second API resolves immediately
+    await waitFor(() => {
+      expect(screen.getByText('Second API Service')).toBeDefined();
+    });
+
+    // Now first API resolves late
+    if (resolveFirst) {
+      (resolveFirst as (val: MarketplaceApiDetail) => void)(mockApiDetail);
+    }
+
+    // Second API must remain active; late first response must not overwrite
+    await waitFor(() => {
+      expect(screen.getByText('Second API Service')).toBeDefined();
+    });
+    expect(screen.queryByText('Cloud Payment Engine')).toBeNull();
+  });
+
+  it('loads general catalog and clears deep link error after clicking clear on 404', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'missing-api') {
+        throw new ApiError(404, 'NOT_FOUND', 'API not found');
+      }
+      return mockApiDetail;
+    });
+    const listSpy = vi
+      .spyOn(marketplaceApi, 'listMarketplaceApis')
+      .mockResolvedValue(mockApiListResponse);
+
+    render(
+      <MemoryRouter initialEntries={['/pricing?api=missing-api']}>
+        <PricingPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/API không tìm thấy \(404\)/i)).toBeDefined();
+    });
+
+    // Click "Xem tất cả API" to clear deep link
+    const clearBtn = screen.getByRole('button', { name: /Xem tất cả API/i });
+    fireEvent.click(clearBtn);
+
+    // General catalog is loaded and error is hidden
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalled();
+      expect(screen.getByText('Cloud Payment Engine')).toBeDefined();
+    });
+    expect(screen.queryByText(/API không tìm thấy \(404\)/i)).toBeNull();
   });
 });

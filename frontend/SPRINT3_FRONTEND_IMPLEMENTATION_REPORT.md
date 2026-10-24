@@ -1,15 +1,15 @@
 # API HUB — BÁO CÁO HOÀN THÀNH SPRINT 3 (FRONTEND PUBLIC MARKETPLACE & CONSUMER EXPERIENCE)
 
-**Branch:** `feature/sprint3-frontend-marketplace`  
-**Ngày hoàn thành:** 24/10/2026  
-**Tác giả:** Engineering Team  
-**Môi trường:** React 19 + TypeScript + Vite + Tailwind CSS + Vitest + React Testing Library  
+- **Branch:** `feature/sprint3-frontend-marketplace`
+- **Ngày hoàn thành:** 24/10/2026
+- **Tác giả:** Engineering Team
+- **Môi trường:** React 19 + TypeScript + Vite + Tailwind CSS + Vitest + React Testing Library
 
 ---
 
 ## 1. TỔNG QUAN SPRINT 3
 
-Sprint 3 tập trung chuyển đổi toàn bộ trải nghiệm người tiêu dùng công khai (Public Marketplace & Consumer Portal) từ mô hình mock/demo sang tầng Control Plane tích hợp trực tiếp với backend REST API (`/api/marketplace/apis`, `/api/marketplace/apis/:id`). 
+Sprint 3 tập trung chuyển đổi toàn bộ trải nghiệm người tiêu dùng công khai (Public Marketplace & Consumer Portal) từ mô hình mock/demo sang tầng Control Plane tích hợp trực tiếp với backend REST API (`/api/marketplace/apis`, `/api/marketplace/apis/:id`).
 
 Toàn bộ dữ liệu hardcode giả lập đã được loại bỏ hoàn toàn khỏi các luồng giao diện chính. Mọi tương tác đều tuân thủ các nguyên tắc an ninh cấp enterprise:
 - **Loại bỏ hoàn toàn mock data:** Không còn fallback mảng tĩnh che giấu lỗi máy chủ.

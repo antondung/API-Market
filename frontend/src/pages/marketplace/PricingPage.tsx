@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../../i18n';
@@ -16,6 +16,10 @@ import { ApiError } from '../../services/authApi';
 
 export const PricingPage: React.FC = () => {
   const { t } = useLanguage();
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -38,6 +42,7 @@ export const PricingPage: React.FC = () => {
   const pageParam = parseInt(searchParams.get('page') || '1', 10);
   const currentPage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
   const PAGE_SIZE = 12;
+  const lastFetchedApiIdRef = useRef<string | null>(null);
 
   const faqs = [
     {
@@ -69,9 +74,17 @@ export const PricingPage: React.FC = () => {
 
         // If deep linked via ?api=<id>, prioritize fetching that specific API
         if (queryApiId) {
+          // If navigating between different API IDs, clear prior details immediately to avoid stale pricing
+          if (lastFetchedApiIdRef.current !== queryApiId) {
+            setApiDetails([]);
+          }
+
           try {
             const singleDetail = await getMarketplaceApiDetail(queryApiId, controller.signal);
             if (controller.signal.aborted) return;
+            lastFetchedApiIdRef.current = queryApiId;
+            setDeepLinkError(null);
+            setError(null);
             setApiDetails([singleDetail]);
             setTotalApis(1);
             setIsLoading(false);
@@ -82,30 +95,36 @@ export const PricingPage: React.FC = () => {
             }
 
             let errorType: 'not_found' | 'rate_limit' | 'server_error' = 'server_error';
-            let errorMessage = t('Lỗi kết nối máy chủ khi tải thông tin API.');
+            let errorMessage = tRef.current('Lỗi kết nối máy chủ khi tải thông tin API.');
             let status: number | undefined;
 
             if (err instanceof ApiError) {
               status = err.status;
               if (err.status === 404) {
                 errorType = 'not_found';
-                errorMessage = t('API không tồn tại hoặc đã ngừng xuất bản trên sàn.');
+                errorMessage = tRef.current('API không tồn tại hoặc đã ngừng xuất bản trên sàn.');
               } else if (err.status === 429) {
                 errorType = 'rate_limit';
-                errorMessage = t('Hệ thống đang nhận quá nhiều yêu cầu (Rate Limit). Vui lòng thử lại sau.');
+                errorMessage = tRef.current('Hệ thống đang nhận quá nhiều yêu cầu (Rate Limit). Vui lòng thử lại sau.');
               } else {
                 errorType = 'server_error';
-                errorMessage = err.message || t('Lỗi máy chủ khi tải thông tin API.');
+                errorMessage = err.message || tRef.current('Lỗi máy chủ khi tải thông tin API.');
               }
             } else if (err instanceof Error) {
               errorMessage = err.message || errorMessage;
             }
 
+            // Stale pricing of another API must never be displayed alongside error
+            setApiDetails([]);
             setDeepLinkError({ type: errorType, status, message: errorMessage });
             setIsLoading(false);
             return;
           }
         }
+
+        // Not deep linked: clear deepLinkError and fetch general catalog
+        setDeepLinkError(null);
+        lastFetchedApiIdRef.current = null;
 
         // Support pagination beyond 50 APIs without bottleneck
         const listRes = await listMarketplaceApis(
@@ -167,7 +186,7 @@ export const PricingPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [currentPage, queryApiId, retryTrigger, t]);
+  }, [currentPage, queryApiId, retryTrigger]);
 
   const handlePageChange = (newPage: number) => {
     setSearchParams(prev => {
@@ -180,6 +199,9 @@ export const PricingPage: React.FC = () => {
 
   const handleClearDeepLink = () => {
     setDeepLinkError(null);
+    setError(null);
+    setApiDetails([]);
+    lastFetchedApiIdRef.current = null;
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
       next.delete('api');
@@ -189,6 +211,8 @@ export const PricingPage: React.FC = () => {
   };
 
   const handleRetryDeepLink = () => {
+    setDeepLinkError(null);
+    setError(null);
     setRetryTrigger(c => c + 1);
   };
 

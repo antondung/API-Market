@@ -1,12 +1,12 @@
 # SPRINT 3 FRONTEND — INDEPENDENT AUDIT REMEDIATION REPORT
 
-**Repository:** `https://github.com/antondung/API-Market`  
-**Working Branch:** `feature/sprint3-frontend-marketplace`  
-**Audited Commit:** `b5ca899f6aefe8314483c950ee83a55016ba5c29`  
-**Audit Outcome:** `CHANGES_REQUIRED` → **`RESOLVED / ALL GATES PASSED`**  
-**Remediation Date:** 25/10/2026  
-**Test Suite:** Vitest 5 + React Testing Library (29 test files, 251 tests passed, 100% green)  
-**TypeScript & Bundle:** `tsc -b && vite build` (0 compile errors, 521 modules transformed)  
+- **Repository:** `https://github.com/antondung/API-Market`
+- **Working Branch:** `feature/sprint3-frontend-marketplace`
+- **Audited Commit:** `b5ca899f6aefe8314483c950ee83a55016ba5c29`
+- **Audit Outcome:** `CHANGES_REQUIRED` → **`RESOLVED / ALL GATES PASSED`**
+- **Remediation Date:** 25/10/2026
+- **Test Suite:** Vitest 5 + React Testing Library (29 test files, 251 tests passed, 100% green)
+- **TypeScript & Bundle:** `tsc -b && vite build` (0 compile errors, 521 modules transformed)
 
 ---
 
