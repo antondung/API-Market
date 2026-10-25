@@ -339,6 +339,8 @@ export const TrySandboxPage: React.FC = () => {
                 <div className="flex items-center gap-2 p-2 bg-surface-container-high rounded-xl border border-outline-variant/30">
                   <MethodBadge method={selectedEndpoint?.method as any || 'GET'} />
                   <select
+                    id="sandbox-endpoint-select"
+                    aria-label={t('1. Chọn Endpoint kiểm thử:') || 'Chọn Endpoint kiểm thử'}
                     value={selectedEndpointId}
                     onChange={(e) => setSelectedEndpointId(e.target.value)}
                     className="bg-transparent flex-1 text-on-surface font-code-md text-body-sm outline-none cursor-pointer"

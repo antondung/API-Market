@@ -187,7 +187,17 @@ export const ApiDetailPage: React.FC = () => {
             onClick={() => {
               if (id) {
                 setIsLoading(true);
-                getMarketplaceApiDetail(id).then(setApi).catch(setError).finally(() => setIsLoading(false));
+                setError(null);
+                getMarketplaceApiDetail(id)
+                  .then((data) => {
+                    setError(null);
+                    setApi(data);
+                    if (data.versions && data.versions.length > 0) {
+                      setSelectedVersionId(data.versions[0].id);
+                    }
+                  })
+                  .catch(setError)
+                  .finally(() => setIsLoading(false));
               }
             }}
           >
@@ -281,7 +291,7 @@ export const ApiDetailPage: React.FC = () => {
           </div>
 
           {/* Quick Actions */}
-          <div className="flex flex-row lg:flex-col gap-3 flex-shrink-0">
+          <div className="flex flex-wrap lg:flex-col gap-3 flex-shrink-0">
             <Button
               variant="primary"
               size="md"
@@ -809,8 +819,10 @@ export const ApiDetailPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-body-sm font-medium text-on-surface block mb-1">{t('Phân loại vi phạm')}</label>
+            <label htmlFor="report-category-select" className="text-body-sm font-medium text-on-surface block mb-1">{t('Phân loại vi phạm')}</label>
             <select
+              id="report-category-select"
+              aria-label={t('Phân loại vi phạm') || 'Phân loại vi phạm'}
               value={reportCategory}
               onChange={(e) => setReportCategory(e.target.value)}
               className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-on-surface text-body-sm outline-none"

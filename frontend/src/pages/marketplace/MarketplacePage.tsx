@@ -803,6 +803,7 @@ export const MarketplacePage: React.FC = () => {
                 <select
                   value={urlPageSize}
                   onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  aria-label={t('Số mục mỗi trang') || 'Số mục mỗi trang'}
                   className="bg-surface-container-high border border-outline-variant/40 rounded-lg px-2 py-1 text-on-surface text-body-sm focus:outline-none"
                 >
                   <option value={12}>12</option>

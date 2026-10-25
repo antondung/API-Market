@@ -310,10 +310,12 @@ export const ApiPlaygroundPage: React.FC = () => {
 
             {/* Endpoint Selector Bar */}
             <div>
-              <label className="text-body-sm font-medium text-on-surface block mb-1.5">{t('Select Endpoint')}</label>
+              <label htmlFor="playground-endpoint-select" className="text-body-sm font-medium text-on-surface block mb-1.5">{t('Select Endpoint')}</label>
               <div className="flex items-center gap-2 p-2 bg-surface-container rounded-xl border border-outline-variant/30">
                 <MethodBadge method={selectedEndpoint?.method as any || 'GET'} />
                 <select
+                  id="playground-endpoint-select"
+                  aria-label={t('Select Endpoint') || 'Select Endpoint'}
                   value={selectedEndpointId}
                   onChange={(e) => handleEndpointSelect(e.target.value)}
                   className="bg-transparent flex-1 text-on-surface font-code-md text-body-sm outline-none cursor-pointer"

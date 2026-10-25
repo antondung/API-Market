@@ -169,7 +169,13 @@ export function generateCurlSnippet(opts: SnippetOptions): string {
     for (const [rawK, rawV] of Object.entries(opts.headers)) {
       const cleanK = sanitizeHeaderKey(rawK);
       if (!cleanK) continue;
-      headerMap.set(cleanK.toLowerCase(), { key: cleanK, value: sanitizeHeaderValue(rawV) });
+      const lowerK = cleanK.toLowerCase();
+      if (lowerK === 'x-api-key') {
+        const val = rawV.trim() ? sanitizeHeaderValue(rawV) : sanitizeHeaderValue(apiKey);
+        headerMap.set('x-api-key', { key: cleanK, value: val });
+      } else {
+        headerMap.set(lowerK, { key: cleanK, value: sanitizeHeaderValue(rawV) });
+      }
     }
   }
 
