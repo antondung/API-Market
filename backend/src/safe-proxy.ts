@@ -27,7 +27,8 @@ const maxResponseBytes = 2 * 1024 * 1024;
 function safePath(path: string, params: Record<string, string>) {
   if (!path.startsWith('/') || path.startsWith('//') || /[%\\?#\x00-\x20\x7f]/.test(path)) throw invalidPath();
   const used = new Set<string>();
-  const expanded = path.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_all, name: string) => {
+  const expanded = path.replace(/\{([^{}]+)\}/g, (_all, name: string) => {
+    if (!Object.hasOwn(params, name)) throw invalidPath();
     const value = params[name]; used.add(name);
     if (typeof value !== 'string' || !value || value.length > 500 || value === '.' || value === '..' || /[%/\\\x00-\x1f\x7f]/.test(value)) throw invalidPath();
     try { return encodeURIComponent(value); } catch { throw invalidPath(); }

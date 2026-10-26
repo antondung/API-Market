@@ -52,6 +52,14 @@ test('proxy rejects malformed Unicode path values as client errors', async () =>
   await assert.rejects(() => proxy.prepare('https://api.example', '/weather/{city}', { pathParams: { city: '\ud800' } }, 1000), { status: 400 });
 });
 
+test('proxy supports registered OpenAPI parameter names containing hyphens and dots', async () => {
+  const proxy = new SafeProxy({ lookup: async () => publicAddress, request: transport().factory });
+  const target = await proxy.prepare('https://api.example', '/users/{user-id}/files/{file.name}', { pathParams: { 'user-id': 'abc', 'file.name': 'report.json' } }, 1000);
+  const response = await proxy.execute(target);
+  assert.equal(response.status, 200);
+  assert.equal(target.url.pathname, '/users/abc/files/report.json');
+});
+
 test('proxy preserves upstream errors as responses and bounds content-length and binary bodies', async () => {
   const binary = new SafeProxy({ lookup: async () => publicAddress, request: transport(500, Buffer.from([0, 255, 128]), { 'content-type': 'application/octet-stream' }).factory });
   const response = await binary.execute(await binary.prepare('https://api.example', '/weather', {}, 1000));
