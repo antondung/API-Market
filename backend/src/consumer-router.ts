@@ -5,7 +5,7 @@ import { ApiError } from './auth.js';
 import { marketplaceId } from './marketplace-service.js';
 import { ApiKeyService, SandboxService } from './consumer-service.js';
 
-const keyId = z.string().regex(/^[1-9][0-9]{0,18}$/).refine(value => BigInt(value) <= 9223372036854775807n);
+const keyId = z.string().regex(/^[1-9][0-9]{0,18}$/).refine(value => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n);
 const empty = z.object({}).strict();
 const createKey = z.object({ apiId: marketplaceId, label: z.string().trim().min(1).max(100).refine(s => !/[\x00-\x1f\x7f]/.test(s)).optional() }).strict();
 const pagination = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20) }).strict();
