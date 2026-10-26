@@ -8,6 +8,9 @@ erDiagram
     apis ||--o{ api_keys : authorizes
     apis ||--|| gateway_routes : routes_through
     api_providers ||--o{ apis : publishes
+    users ||--o{ reports : files
+    users ||--o{ reports : reviews
+    apis ||--o{ reports : receives
 ```
 
 - Một Consumer có nhiều Sandbox Grant, nhưng chỉ có một grant cho mỗi API (`UNIQUE (consumer_id, api_id)`).
