@@ -20,6 +20,8 @@ import { adminReviewPaths } from './admin-review-contract.js';
 import type { MarketplaceService } from './marketplace-service.js';
 import { marketplaceRouter } from './marketplace-router.js';
 import { marketplacePaths } from './marketplace-contract.js';
+import { ApiKeyService, SandboxService } from './consumer-service.js';
+import { consumerRouter } from './consumer-router.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -101,6 +103,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   };
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
+  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
   app.post('/api/auth/register', async (req, res) => {
     const input = registerSchema.parse(req.body);
     res.status(201).json({ data: await auth.register(input.email, input.password, input.role, input.name) });
