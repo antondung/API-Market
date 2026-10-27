@@ -4,7 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { PostgresAuthStore } from '../src/postgres-store.js';
-import { AuthService } from '../src/auth.js';
+import { ApiError, AuthService } from '../src/auth.js';
 import { MarketplaceService } from '../src/marketplace-service.js';
 import { createApp } from '../src/app.js';
 import { ApiKeyService, SandboxService } from '../src/consumer-service.js';
@@ -245,5 +245,65 @@ test('Swagger documents authenticated Sandbox, API Key lifecycle and registered 
       assert.ok(operation.responses['401']); assert.ok(operation.responses['403']);
     }
     await SwaggerParser.validate(structuredClone(spec));
+  } finally { await f.close(); }
+});
+
+test('HTTP Playground permits exactly one concurrent request when only one sandbox request remains', async () => {
+  const f = await fixture();
+  try {
+    let sent = 0;
+    const proxy = new SafeProxy({ lookup: async () => [{ address: '93.184.216.34', family: 4 }], request: (_options, callback) => {
+      const req: any = new EventEmitter();
+      req.destroy = () => {};
+      req.end = () => {
+        sent++;
+        queueMicrotask(() => {
+          const res: any = Readable.from(['ok']);
+          res.statusCode = 200; res.headers = { 'content-type': 'text/plain' }; callback(res);
+        });
+      };
+      return req;
+    } });
+    const sandbox = new SandboxService(f.store.pool), user = f.identities[0]!.user.id;
+    await sandbox.grant(user, f.api);
+    await f.store.pool.query('UPDATE sandbox_grants SET used_requests=4 WHERE consumer_id=$1 AND api_id=$2', [user, f.api]);
+    const app = f.makeApp({ playground: new PlaygroundService(f.store.pool, sandbox, new RoutingRegistry(f.store.pool), proxy) });
+    const responses = await Promise.all(Array.from({ length: 5 }, () => request(app)
+      .post(`/api/marketplace/apis/${f.api}/playground`)
+      .set('Authorization', `Bearer ${f.identities[0]!.accessToken}`)
+      .send({ endpointId: f.endpoint, pathParams: { city: 'Hanoi' } })));
+    assert.equal(responses.filter(result => result.status === 200).length, 1);
+    assert.equal(responses.filter(result => result.status === 403 && result.body.error.code === 'SANDBOX_EXHAUSTED').length, 4);
+    assert.equal(sent, 1);
+    const grant = await sandbox.get(user, f.api);
+    assert.equal(grant.usedRequests, 5); assert.equal(grant.remainingRequests, 0);
+    assert.equal((await sandbox.grant(user, f.api)).data.remainingRequests, 0);
+  } finally { await f.close(); }
+});
+
+test('HTTP Playground counts an upstream timeout once and retains quota on the next invalid input', async () => {
+  const f = await fixture();
+  try {
+    class TimingOutProxy extends SafeProxy {
+      attempts = 0;
+      override async execute(_target: Parameters<SafeProxy['execute']>[0]): ReturnType<SafeProxy['execute']> {
+        this.attempts++;
+        throw new ApiError(504, 'UPSTREAM_TIMEOUT', 'Upstream request timed out');
+      }
+    }
+    const proxy = new TimingOutProxy({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] });
+    const sandbox = new SandboxService(f.store.pool), user = f.identities[0]!.user.id;
+    await sandbox.grant(user, f.api);
+    const app = f.makeApp({ playground: new PlaygroundService(f.store.pool, sandbox, new RoutingRegistry(f.store.pool), proxy) });
+    const route = `/api/marketplace/apis/${f.api}/playground`, token = `Bearer ${f.identities[0]!.accessToken}`;
+    const failed = await request(app).post(route).set('Authorization', token)
+      .send({ endpointId: f.endpoint, pathParams: { city: 'Hanoi' } }).expect(504);
+    assert.equal(failed.body.error.code, 'UPSTREAM_TIMEOUT');
+    assert.equal((await sandbox.get(user, f.api)).usedRequests, 1);
+    await request(app).post(route).set('Authorization', token)
+      .send({ endpointId: f.endpoint, pathParams: { city: '../secret' } }).expect(400);
+    assert.equal((await sandbox.get(user, f.api)).usedRequests, 1);
+    assert.equal(proxy.attempts, 1);
+    assert.equal((await sandbox.grant(user, f.api)).data.remainingRequests, 4);
   } finally { await f.close(); }
 });
