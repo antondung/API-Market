@@ -474,14 +474,16 @@ export const ApiPlaygroundPage: React.FC = () => {
     return 'ACTIVE';
   }, [isConsumer, isGrantLoading, grantError, grant, isGrantExpiredByTimer]);
 
-  // Strict eligibility: grant must be active and user must be Consumer
-  const isGrantEligible = isConsumer && grantStatus === 'ACTIVE';
+  // Strict eligibility: grant must be active, user must be Consumer, and quota must not be unverified
+  const isGrantEligible = isConsumer && grantStatus === 'ACTIVE' && !isQuotaReconciling && !reconciliationFailed;
 
-  const sendButtonDisabled = !isGrantEligible || isExecuting || !selectedEndpoint;
+  const sendButtonDisabled = !isGrantEligible || isExecuting || !selectedEndpoint || isQuotaReconciling || reconciliationFailed;
 
   const sendButtonTooltip = useMemo(() => {
     if (!isAuthenticated) return t('Yêu cầu đăng nhập tài khoản Consumer để thực thi');
     if (!isConsumer) return t('Chỉ tài khoản Consumer mới có quyền sử dụng Playground');
+    if (isQuotaReconciling) return t('Đang xác minh lại hạn mức Sandbox với máy chủ...');
+    if (reconciliationFailed) return t('Hạn ngạch Sandbox chưa được xác minh. Vui lòng bấm "Xác minh lại quota".');
     if (grantStatus === 'LOADING') return t('Đang kiểm tra quyền Sandbox...');
     if (grantStatus === 'NOT_CLAIMED') return t('Chưa kích hoạt Sandbox Grant. Vui lòng nhận grant trước khi thử nghiệm.');
     if (grantStatus === 'EXHAUSTED') return t('Hạn mức Sandbox đã hết (0/5 lượt còn lại trong chu kỳ 24h).');
@@ -489,11 +491,48 @@ export const ApiPlaygroundPage: React.FC = () => {
     if (grantStatus === 'REVOKED') return t('Sandbox Grant đã bị thu hồi.');
     if (grantStatus === 'ERROR') return t('Lỗi kiểm tra quyền Sandbox.');
     return undefined;
-  }, [isAuthenticated, isConsumer, grantStatus, t]);
+  }, [isAuthenticated, isConsumer, isQuotaReconciling, reconciliationFailed, grantStatus, t]);
+
+  // Re-verify Quota handler
+  const handleReconcileQuota = async () => {
+    if (!api?.id || !isConsumer || isQuotaReconciling) return;
+    const requestingApiId = api.id;
+    const requestingUserId = currentUser?.id;
+    const reconcileSeq = ++quotaSeqRef.current;
+
+    setIsQuotaReconciling(true);
+    try {
+      const reconciledGrant = await getSandboxGrant(requestingApiId);
+      if (
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId &&
+        reconcileSeq >= quotaSeqRef.current
+      ) {
+        setGrant(reconciledGrant);
+        setReconciliationFailed(false);
+      }
+    } catch {
+      if (
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId &&
+        reconcileSeq >= quotaSeqRef.current
+      ) {
+        setReconciliationFailed(true);
+      }
+    } finally {
+      if (
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId &&
+        reconcileSeq >= quotaSeqRef.current
+      ) {
+        setIsQuotaReconciling(false);
+      }
+    }
+  };
 
   // Execute Playground Request
   const handleSendRequest = async () => {
-    if (!api || !selectedEndpoint || !isGrantEligible) return;
+    if (!api || !selectedEndpoint || !isGrantEligible || isQuotaReconciling || reconciliationFailed) return;
 
     // Validate body if non-GET
     let parsedBody: unknown = undefined;
@@ -517,8 +556,6 @@ export const ApiPlaygroundPage: React.FC = () => {
     try {
       setIsExecuting(true);
       setExecutionError(null);
-      setReconciliationFailed(false);
-      setIsQuotaReconciling(false);
 
       // Clean query params (drop empty values)
       const cleanQuery: Record<string, string> = {};
@@ -1015,8 +1052,17 @@ export const ApiPlaygroundPage: React.FC = () => {
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-body-xs text-red-600 dark:text-red-400">
                 <div>{executionError}</div>
                 {reconciliationFailed && (
-                  <div className="mt-1.5 text-amber-700 dark:text-amber-300 font-medium">
-                    {t('Không thể đối soát hạn ngạch sau lỗi kết nối. Hạn ngạch hiển thị cần xác minh lại.')}
+                  <div className="mt-2 pt-2 border-t border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-amber-800 dark:text-amber-200 font-medium">
+                    <span>{t('Không thể đối soát hạn ngạch sau lỗi kết nối. Hạn ngạch hiển thị cần xác minh lại.')}</span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="refresh"
+                      disabled={isQuotaReconciling}
+                      onClick={handleReconcileQuota}
+                    >
+                      {isQuotaReconciling ? t('Đang xác minh...') : t('Xác minh lại quota')}
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1025,25 +1071,38 @@ export const ApiPlaygroundPage: React.FC = () => {
 
           {/* Action Trigger */}
           <div className="pt-4 mt-6 border-t border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <span className="text-body-xs text-on-surface-variant">
-              {reconciliationFailed
-                ? t('Hạn ngạch chưa thể xác minh sau lỗi kết nối')
-                : isQuotaReconciling
-                  ? t('Đang đối soát hạn ngạch...')
-                  : grantStatus === 'ACTIVE' && grant
-                    ? `${t('Lượt gọi còn lại:')} ${grant.remainingRequests}/${grant.maxRequests}`
-                    : grantStatus === 'EXHAUSTED'
-                      ? t('Hạn mức Sandbox đã hết (0 lượt còn lại)')
-                      : grantStatus === 'NOT_CLAIMED'
-                        ? t('Chưa kích hoạt Sandbox Grant')
-                        : grantStatus === 'EXPIRED'
-                          ? t('Sandbox Grant đã hết hạn')
-                          : grantStatus === 'REVOKED'
-                            ? t('Sandbox Grant đã bị thu hồi')
-                            : grantStatus === 'LOADING'
-                              ? t('Đang tải thông tin Sandbox...')
-                              : t('Định tuyến kiểm thử qua SafeProxy')}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-body-xs text-on-surface-variant">
+                {reconciliationFailed
+                  ? t('Hạn ngạch chưa thể xác minh sau lỗi kết nối')
+                  : isQuotaReconciling
+                    ? t('Đang đối soát hạn ngạch...')
+                    : grantStatus === 'ACTIVE' && grant
+                      ? `${t('Lượt gọi còn lại:')} ${grant.remainingRequests}/${grant.maxRequests}`
+                      : grantStatus === 'EXHAUSTED'
+                        ? t('Hạn mức Sandbox đã hết (0 lượt còn lại)')
+                        : grantStatus === 'NOT_CLAIMED'
+                          ? t('Chưa kích hoạt Sandbox Grant')
+                          : grantStatus === 'EXPIRED'
+                            ? t('Sandbox Grant đã hết hạn')
+                            : grantStatus === 'REVOKED'
+                              ? t('Sandbox Grant đã bị thu hồi')
+                              : grantStatus === 'LOADING'
+                                ? t('Đang tải thông tin Sandbox...')
+                                : t('Định tuyến kiểm thử qua SafeProxy')}
+              </span>
+              {reconciliationFailed && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="refresh"
+                  disabled={isQuotaReconciling}
+                  onClick={handleReconcileQuota}
+                >
+                  {isQuotaReconciling ? t('Đang xác minh...') : t('Xác minh lại quota')}
+                </Button>
+              )}
+            </div>
             <Button
               variant="primary"
               size="md"

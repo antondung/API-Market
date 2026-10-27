@@ -20,6 +20,7 @@ Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (P
 4. **Bảo mật bí mật một lần (Zero Plaintext Secret Principle):** Khóa bí mật API Key (`ak_live_...`) chỉ tồn tại trong bộ nhớ ngắn hạn và hiển thị một lần duy nhất trong Modal. Khóa bị tiêu hủy hoàn toàn khỏi DOM và bộ nhớ khi đóng modal hoặc khi xảy ra sự kiện đăng xuất `apihub:session-invalidated`.
 5. **Điều hướng an toàn sau đăng nhập (Safe Redirect Return Navigation):** Hỗ trợ tham số truy vấn `?redirect=...` từ `CheckoutPage` sang `LoginPage`, đồng thời thẩm định nghiêm ngặt tính an toàn của URL (chỉ chấp nhận đường dẫn tương đối nội bộ hợp lệ, chặn open redirect).
 6. **Đồng bộ trạng thái Sandbox & Quota thời gian thực:** Đồng bộ hạn ngạch kiểm thử với PostgreSQL backend, xử lý triệt để race condition bằng `quotaSeqRef`, đối soát hạn ngạch sau lỗi 502/504 và tự động cập nhật trạng thái hết hạn thông qua bộ đếm thời gian thực trên giao diện.
+7. **Khóa đa tầng an toàn thực thi Playground khi Quota chưa xác minh:** Khi `isQuotaReconciling === true` hoặc `reconciliationFailed === true`, nút Send Request bị vô hiệu hóa cả ở giao diện lẫn chặn cứng tại điểm vào của `handleSendRequest`. Bổ sung nút hành động "Xác minh lại quota" xác thực định danh session/user/API và ngăn phản hồi cũ ghi đè dữ liệu mới.
 
 ---
 
@@ -27,13 +28,16 @@ Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (P
 
 | Hạng mục kiểm định | Tiêu chuẩn chất lượng | Kết quả thực tế | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **Unit & Integration Test (Vitest)** | 100% pass | **325 / 325 tests PASS** (31 test files) | **ĐẠT** |
+| **Unit & Integration Test (Vitest)** | 100% pass | **327 / 327 tests PASS** (31 test files) | **ĐẠT** |
 | **E2E Playwright Suite (Chromium)** | 100% pass | **109 / 109 tests PASS** (15 spec files) | **ĐẠT** |
-| **Production Build (`vite build`)** | Không lỗi TypeScript / Bundler | **Thành công (1.81s, 522 modules)** | **ĐẠT** |
+| **Cross-Browser Smoke (7 Projects)** | 100% pass | **98 / 98 tests PASS** (Chromium, Firefox, WebKit, Mobile, Tablet, Reduced-Motion, Dark-Theme) | **ĐẠT** |
+| **Production Build (`vite build`)** | Không lỗi TypeScript / Bundler | **Thành công (2.88s, 522 modules)** | **ĐẠT** |
 | **Tiếp cận người dùng (WCAG 2.2 AA)** | Không lỗi nghiêm trọng | **0 Critical, 0 Serious violations** (7/7 a11y tests pass) | **ĐẠT** |
 | **Độ tương phản màu sắc (Contrast Ratio)** | >= 4.5:1 với văn bản thường | **Đạt từ 4.6:1 đến 7.2:1** | **ĐẠT** |
 | **Tương thích Responsive (10 Viewports)** | 0px tràn ngang (320px - 1920px) | **0px overflow trên 10 viewports** (31/31 tests pass) | **ĐẠT** |
 | **Vệ sinh kho mã nguồn (`kiem-tra`)** | Không ký tự BOM, trailing spaces | **0 lỗi / 338 tệp kiểm tra** | **ĐẠT** |
+| **Real FE-BE Verification** | Khởi động Backend & DB độc lập | **NOT_RUN / BLOCKED** (Môi trường local thiếu Docker/Postgres daemon, tuân thủ không sửa BE và không dùng prod DB) | **BLOCKED** |
+| **CI Verification** | GitHub Actions Workflow | **DISPATCH_REQUIRED** (Workflow `ci.yml` chỉ chạy tự động trên main/develop; feature cần `workflow_dispatch`) | **CONDITIONAL** |
 
 ---
 
@@ -46,12 +50,15 @@ Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (P
 5. `frontend/src/pages/consumer/UsageQuotaPage.tsx`: Loại bỏ phụ thuộc mock state từ AppContext; giải thích kiến trúc phân biệt Quota và Rate Limit.
 6. `frontend/src/pages/consumer/CostGuardPage.tsx`: Loại bỏ phụ thuộc mock state từ AppContext; vô hiệu hóa các nút kích hoạt giả lập.
 7. `frontend/src/pages/consumer/RequestHistoryPage.tsx`: Loại bỏ phụ thuộc mock state từ AppContext; bảo đảm tính toàn vẹn dữ liệu.
-8. `frontend/src/pages/marketplace/ApiPlaygroundPage.tsx`: Bổ sung thế hệ bảo vệ định danh `activeClaimSeqRef` ngăn race condition khi đổi API trong lúc claim, chặn microtask double-click, và hiển thị trạng thái `Quota: Cần xác minh` khi đối soát thất bại sau 502/504 timeout.
+8. `frontend/src/pages/marketplace/ApiPlaygroundPage.tsx`: Khóa hai tầng (UI disabled + handler guard) khi đang đối soát quota hoặc đối soát thất bại; bổ sung nút "Xác minh lại quota" với kiểm định định danh phiên/request; giữ nguyên cảnh báo quota unverified khi người dùng cố gửi request mới; dọn dẹp race condition bằng `quotaSeqRef`.
 9. `frontend/src/pages/marketplace/CompareApisPage.tsx`: Xóa tham số URL khi bỏ chọn API so sánh, ngăn chặn lỗi trạng thái so sánh thừa.
 10. `frontend/src/pages/marketplace/MarketplacePage.tsx`: Cô lập dọn dẹp timer debounce tìm kiếm vào unmount lifecycle của component.
-11. `frontend/src/pages/marketplace/ApiPlaygroundPage.test.tsx`: Bổ sung 5 deferred-promise regression tests kiểm chứng race condition đổi API, hoàn thành muộn, double-click lock, và unverified quota state (21/21 tests pass).
-12. `qa-scripts/sprint3-frontend/tests/04-try-sandbox.spec.ts`: Tái cấu trúc bộ kiểm thử wizard 3 bước, loại bỏ kiểm tra có điều kiện mềm, kết nối trực tiếp với Playground bridge.
-13. `qa-scripts/sprint3-frontend/tests/15-consumer-api-keys.spec.ts`: Bổ sung 4 ca kiểm thử tiêu cực (409 Conflict, 403 Forbidden, phục hồi lỗi làm mới danh sách, dọn dẹp bộ nhớ khi hủy phiên).
+11. `frontend/src/pages/marketplace/TrySandboxPage.tsx`: Bổ sung `data-testid="wizard-steps"` và `role="tablist"` ngăn ngừa lỗi va chạm selector trên viewport mobile.
+12. `frontend/src/components/motion/AnimatedCard.tsx`: Hỗ trợ `testId` rõ ràng (`data-testid="animated-card"`) ngăn va chạm selector ẩn trên mobile viewports.
+13. `frontend/src/pages/marketplace/ApiPlaygroundPage.test.tsx`: Bổ sung 3 regression tests kiểm chứng Send bị khóa khi quota đối soát lỗi, thử lại thất bại vẫn khóa, thử lại thành công mở khóa Send, và chống stale retry khi đổi API/tài khoản (23/23 tests pass).
+14. `qa-scripts/sprint3-frontend/tests/04-try-sandbox.spec.ts`: Tối ưu hóa locator với độ ưu tiên `data-testid="wizard-steps"` giúp kiểm thử pass 100% trên tất cả 7 browser/viewport projects.
+15. `qa-scripts/sprint3-frontend/tests/10-motion-animation.spec.ts`: Tối ưu hóa locator với độ ưu tiên `data-testid="animated-card"` giúp kiểm thử pass 100% trên tất cả 7 browser/viewport projects.
+16. `qa-scripts/sprint3-frontend/tests/15-consumer-api-keys.spec.ts`: Bổ sung 4 ca kiểm thử tiêu cực (409 Conflict, 403 Forbidden, phục hồi lỗi làm mới danh sách, dọn dẹp bộ nhớ khi hủy phiên).
 
 ---
 

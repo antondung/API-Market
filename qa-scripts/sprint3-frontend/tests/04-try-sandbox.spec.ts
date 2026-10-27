@@ -15,7 +15,7 @@ test.describe('Phase 5 — Try Sandbox & Guided Testing', () => {
     await expect(page.getByRole('link', { name: 'Cloud Payment Engine' })).toBeVisible();
 
     // Verify step wizard is visible
-    const steps = page.locator('ol, ul, nav, [role="tablist"], [data-testid="wizard-steps"]');
+    const steps = page.locator('[data-testid="wizard-steps"], [role="tablist"], ol, ul');
     await expect(steps.first()).toBeVisible();
 
     // Verify Step 1 content is active

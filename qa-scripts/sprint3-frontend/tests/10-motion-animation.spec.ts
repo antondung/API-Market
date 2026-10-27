@@ -9,7 +9,7 @@ test.describe('Phase 9 — Animation, Motion & Reduced Motion', () => {
     await page.goto('/marketplace');
 
     // Cards should become visible and interactive
-    const cards = page.locator('.bg-surface-container-low.rounded-2xl, .bg-surface-container-low.p-6');
+    const cards = page.locator('[data-testid="animated-card"], .grid .bg-surface-container-low.rounded-2xl');
     await expect(cards.first()).toBeVisible();
 
     // Verify opacity is not stuck at 0
@@ -52,7 +52,7 @@ test.describe('Phase 9 — Animation, Motion & Reduced Motion', () => {
     await page.goto('/marketplace');
 
     // Cards are immediately visible without waiting for 1s transition
-    const firstCard = page.locator('.bg-surface-container-low.rounded-2xl, .bg-surface-container-low.p-6').first();
+    const firstCard = page.locator('[data-testid="animated-card"], .grid .bg-surface-container-low.rounded-2xl').first();
     await expect(firstCard).toBeVisible();
 
     const opacity = await firstCard.evaluate((el) => window.getComputedStyle(el).opacity);

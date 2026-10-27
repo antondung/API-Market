@@ -858,7 +858,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
     expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
   });
 
-  it('displays unverified quota badge and notice when post-timeout reconciliation fails', async () => {
+  it('displays unverified quota badge and notice when post-timeout reconciliation fails and disables Send', async () => {
     let grantCallCount = 0;
     vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
       grantCallCount++;
@@ -877,7 +877,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       throw new ApiError(500, 'RECONCILE_FAILED', 'Cannot connect to control plane');
     });
 
-    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
       new ApiError(504, 'GATEWAY_TIMEOUT', 'Gateway Timeout')
     );
 
@@ -894,7 +894,198 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
     // Verify unverified status is rendered instead of assuming quota is 5/5
     await waitFor(() => {
       expect(screen.getByText(/Quota: Cần xác minh/i)).toBeDefined();
-      expect(screen.getByText(/Không thể đối soát hạn ngạch sau lỗi kết nối/i)).toBeDefined();
+      expect(screen.getAllByText(/Không thể đối soát hạn ngạch sau lỗi kết nối/i).length).toBeGreaterThan(0);
+      expect((sendButton as HTMLButtonElement).disabled).toBe(true);
     });
+
+    // Attempt to click disabled Send button — executePlayground must not be called a second time
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    fireEvent.click(sendButton);
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-verifies quota with retry button: remains disabled on failure, re-enables Send on success', async () => {
+    let grantCallCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCallCount++;
+      if (grantCallCount === 1) {
+        return {
+          id: 'g-initial',
+          apiId: 'api-pg-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: '2026-10-28T00:00:00.000Z',
+          revokedAt: null,
+        };
+      }
+      if (grantCallCount === 2) {
+        // First reconciliation after 504 fails
+        throw new ApiError(502, 'BAD_GATEWAY', 'Upstream error');
+      }
+      if (grantCallCount === 3) {
+        // User clicks "Xác minh lại quota", retry fails
+        throw new ApiError(500, 'RETRY_FAIL', 'Control plane still down');
+      }
+      // grantCallCount >= 4: User clicks "Xác minh lại quota", retry succeeds with remaining quota
+      return {
+        id: 'g-initial',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      };
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(504, 'GATEWAY_TIMEOUT', 'Gateway Timeout')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*5\/5/)).toBeDefined();
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Wait for reconciliation to fail
+    await waitFor(() => {
+      expect(screen.getByText(/Quota: Cần xác minh/i)).toBeDefined();
+      expect((sendButton as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // Click retry button (call #3 -> fails)
+    const retryButtons = screen.getAllByRole('button', { name: /Xác minh lại quota/i });
+    fireEvent.click(retryButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quota: Cần xác minh/i)).toBeDefined();
+      expect((sendButton as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // Click retry button again (call #4 -> succeeds with 4 remaining)
+    const retryButtons2 = screen.getAllByRole('button', { name: /Xác minh lại quota/i });
+    fireEvent.click(retryButtons2[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
+      expect(screen.queryByText(/Quota: Cần xác minh/i)).toBeNull();
+      expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  it('discards pending quota reconciliation retry when switching API, preventing stale grant leakage', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (apiId) => {
+      if (apiId === 'api-pg-1') return mockApiDetail;
+      return { ...mockApiDetail, id: 'api-pg-2', name: 'API Two' };
+    });
+
+    let resolveRetryA: any;
+    let grantCallCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async (apiId) => {
+      grantCallCount++;
+      if (apiId === 'api-pg-1') {
+        if (grantCallCount === 1) {
+          return {
+            id: 'g-initial-1',
+            apiId: 'api-pg-1',
+            maxRequests: 5,
+            usedRequests: 0,
+            remainingRequests: 5,
+            available: true,
+            expiresAt: '2026-10-28T00:00:00.000Z',
+            revokedAt: null,
+          };
+        }
+        if (grantCallCount === 2) {
+          // Automatic 504 reconciliation fails
+          throw new ApiError(504, 'TIMEOUT', 'Timeout');
+        }
+        // Manual retry on API 1 is deferred
+        return new Promise((resolve) => {
+          resolveRetryA = resolve;
+        });
+      }
+
+      // API 2 grant
+      return {
+        id: 'g-initial-2',
+        apiId: 'api-pg-2',
+        maxRequests: 5,
+        usedRequests: 2,
+        remainingRequests: 3,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      };
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(504, 'GATEWAY_TIMEOUT', 'Gateway Timeout')
+    );
+
+    let navigateFn: any;
+    const TestNavigator: React.FC = () => {
+      const navigate = useNavigate();
+      navigateFn = navigate;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-pg-1/playground']}>
+        <TestNavigator />
+        <Routes>
+          <Route path="/api/:id/playground" element={<ApiPlaygroundPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*5\/5/)).toBeDefined();
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Wait for reconciliation to fail
+    await waitFor(() => {
+      expect(screen.getByText(/Quota: Cần xác minh/i)).toBeDefined();
+    });
+
+    // Start manual re-verification on API 1 (promise is pending)
+    const retryBtn = screen.getAllByRole('button', { name: /Xác minh lại quota/i })[0];
+    fireEvent.click(retryBtn);
+
+    // Navigate to API 2 before API 1 retry resolves
+    act(() => {
+      navigateFn('/api/api-pg-2/playground');
+    });
+
+    await screen.findByText('API Two');
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*3\/5/)).toBeDefined();
+    });
+
+    // Now resolve API 1 retry late
+    act(() => {
+      resolveRetryA({
+        id: 'g-initial-1-reconciled',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      });
+    });
+
+    // Ensure API 2 still has Quota: 3/5 and not overwritten by API 1's resolved grant
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByText(/Quota:\s*3\/5/)).toBeDefined();
+    expect(screen.queryByText(/Quota:\s*5\/5/)).toBeNull();
   });
 });

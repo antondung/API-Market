@@ -6,6 +6,7 @@ export interface AnimatedCardProps {
   className?: string;
   hoverLift?: boolean;
   onClick?: () => void;
+  testId?: string;
 }
 
 export const AnimatedCard: React.FC<AnimatedCardProps> = ({
@@ -13,6 +14,7 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   className = '',
   hoverLift = true,
   onClick,
+  testId,
 }) => {
   const shouldReduceMotion = useReducedMotion();
 
@@ -28,6 +30,7 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   if (shouldReduceMotion || !hoverLift) {
     return (
       <div
+        data-testid={testId || 'animated-card'}
         onClick={onClick}
         role={onClick ? 'button' : undefined}
         tabIndex={onClick ? 0 : undefined}
@@ -41,6 +44,7 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
 
   return (
     <motion.div
+      data-testid={testId || 'animated-card'}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}

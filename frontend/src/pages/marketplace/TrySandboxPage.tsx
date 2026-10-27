@@ -320,7 +320,7 @@ export const TrySandboxPage: React.FC = () => {
         </div>
 
         {/* Guided Step Progress Indicator */}
-        <div className="grid grid-cols-3 gap-3 mb-8">
+        <div data-testid="wizard-steps" role="tablist" aria-label="Wizard Steps" className="grid grid-cols-3 gap-3 mb-8">
           {[
             { step: 1, title: 'Step 1: Sandbox Grant & Quota', icon: 'key' },
             { step: 2, title: 'Step 2: Endpoint & Presets', icon: 'tune' },
