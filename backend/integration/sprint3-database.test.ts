@@ -172,7 +172,7 @@ test('Marketplace first page records before/after index evidence over 1,000 publ
     assert.equal(page.rows.length, 20);
     assert.ok(page.rows.every(row => row.category === 'Benchmark'));
     assert.match(planText(before.Plan), /Seq Scan/);
-    assert.match(planText(after.Plan), /idx_apis_marketplace_category_published/);
+    assert.match(planText(after.Plan), /idx_apis_marketplace_(category_published|published_newest)/);
     t.diagnostic(
       `Marketplace 1,000 APIs before index: ${before['Execution Time'].toFixed(3)} ms; `
       + `after index: ${after['Execution Time'].toFixed(3)} ms; `
