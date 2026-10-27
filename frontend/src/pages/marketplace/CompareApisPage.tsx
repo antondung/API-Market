@@ -29,18 +29,19 @@ export const CompareApisPage: React.FC = () => {
   const [listError, setListError] = useState<string | null>(null);
   const [retryList, setRetryList] = useState(0);
 
-  const queryApiId1 = searchParams.get('api1') || searchParams.get('api');
-  const queryApiId2 = searchParams.get('api2');
+  const queryApiId1 = searchParams.get('api1') || searchParams.get('api') || '';
+  const queryApiId2 = searchParams.get('api2') || '';
 
-  const [apiId1, setApiId1] = useState<string>(() => queryApiId1 || '');
-  const [apiId2, setApiId2] = useState<string>(() => queryApiId2 || '');
+  const [apiId1, setApiId1] = useState<string>(() => queryApiId1);
+  const [apiId2, setApiId2] = useState<string>(() => queryApiId2);
 
+  // Synchronize state when URL search params change (Back/Forward or query param removal)
   useEffect(() => {
-    if (queryApiId1 && queryApiId1 !== apiId1) setApiId1(queryApiId1);
+    setApiId1(queryApiId1);
   }, [queryApiId1]);
 
   useEffect(() => {
-    if (queryApiId2 && queryApiId2 !== apiId2) setApiId2(queryApiId2);
+    setApiId2(queryApiId2);
   }, [queryApiId2]);
 
   const [detail1, setDetail1] = useState<MarketplaceApiDetail | null>(null);
@@ -78,21 +79,29 @@ export const CompareApisPage: React.FC = () => {
         setAvailableApis(res.items);
         setCatalogTotal(res.total);
 
-        // Determine initial API selections without || true and preventing self-comparison
+        // Determine initial API selections when no query parameters are present
+        const hasExplicitQueryParams = searchParams.has('api1') || searchParams.has('api2') || searchParams.has('api');
         if (!initialSelectionDoneRef.current) {
           initialSelectionDoneRef.current = true;
-          const initialId1 = queryApiId1 || (res.items.length > 0 ? res.items[0].id : '');
-          let initialId2 = queryApiId2 || '';
-
-          if (!initialId2 && res.items.length > 1) {
-            const alternate = res.items.find(a => a.id !== initialId1);
-            if (alternate) {
-              initialId2 = alternate.id;
+          if (!hasExplicitQueryParams && !queryApiId1 && !queryApiId2 && res.items.length > 0) {
+            const initialId1 = res.items[0].id;
+            let initialId2 = '';
+            if (res.items.length > 1) {
+              const alternate = res.items.find(a => a.id !== initialId1);
+              if (alternate) initialId2 = alternate.id;
+            }
+            if (initialId1) {
+              setApiId1(initialId1);
+              setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('api1', initialId1);
+                next.set('api', initialId1);
+                if (initialId2) next.set('api2', initialId2);
+                return next;
+              }, { replace: true });
+              if (initialId2) setApiId2(initialId2);
             }
           }
-
-          if (initialId1) setApiId1(prev => (prev !== initialId1 ? initialId1 : prev));
-          if (initialId2) setApiId2(prev => (prev !== initialId2 ? initialId2 : prev));
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -113,7 +122,12 @@ export const CompareApisPage: React.FC = () => {
 
   // Independent fetch effect for API 1
   useEffect(() => {
-    if (!apiId1) return;
+    if (!apiId1) {
+      setDetail1(null);
+      setError1(null);
+      setLoading1(false);
+      return;
+    }
     const reqId = ++reqId1Ref.current;
     const controller = new AbortController();
 
@@ -144,7 +158,12 @@ export const CompareApisPage: React.FC = () => {
 
   // Independent fetch effect for API 2
   useEffect(() => {
-    if (!apiId2) return;
+    if (!apiId2) {
+      setDetail2(null);
+      setError2(null);
+      setLoading2(false);
+      return;
+    }
     const reqId = ++reqId2Ref.current;
     const controller = new AbortController();
 
@@ -228,6 +247,11 @@ export const CompareApisPage: React.FC = () => {
 
   // Assemble selectable APIs including currently selected APIs from distant pages
   const selectOptions = (() => {
+    const emptyOption = {
+      value: '',
+      label: t('-- Để trống ô này --'),
+      icon: 'remove_circle_outline',
+    };
     const map = new Map<string, { value: string; label: string; badge?: string; icon?: string }>();
 
     for (const a of availableApis) {
@@ -257,10 +281,11 @@ export const CompareApisPage: React.FC = () => {
       });
     }
 
-    return Array.from(map.values());
+    return [emptyOption, ...Array.from(map.values())];
   })();
 
   const isSameApiSelected = Boolean(apiId1 && apiId2 && apiId1 === apiId2);
+  const bothEmpty = !apiId1 && !apiId2;
 
   if (isLoadingList && availableApis.length === 0 && !queryApiId1 && !queryApiId2) {
     return (
@@ -482,6 +507,30 @@ export const CompareApisPage: React.FC = () => {
           <div className="h-6 bg-surface-container-high rounded w-48 mx-auto mb-4" />
           <div className="h-32 bg-surface-container-high/50 rounded-xl" />
         </div>
+      ) : bothEmpty ? (
+        /* Both slots are unselected */
+        <div className="bg-surface-container-low border border-dashed border-outline-variant/60 rounded-2xl p-12 text-center max-w-xl mx-auto shadow-2xs">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+            <span className="material-symbols-outlined text-[32px]">compare_arrows</span>
+          </div>
+          <h2 className="text-headline-sm font-bold text-on-surface mb-2">
+            {t('Chưa chọn API để so sánh')}
+          </h2>
+          <p className="text-body-md text-on-surface-variant mb-6">
+            {t('Vui lòng chọn ít nhất một hoặc hai API từ danh sách phía trên để bắt đầu so sánh chi tiết thông số, tính năng và gói cước.')}
+          </p>
+          {availableApis.length >= 2 && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                handleSelectApi1(availableApis[0].id);
+                handleSelectApi2(availableApis[1].id);
+              }}
+            >
+              {t('Chọn 2 API đầu tiên')}
+            </Button>
+          )}
+        </div>
       ) : !isSameApiSelected ? (
         /* Comparison Table with independent per-slot rendering */
         <>
@@ -511,7 +560,11 @@ export const CompareApisPage: React.FC = () => {
                           <Button variant="secondary" size="sm">{t('Playground')}</Button>
                         </Link>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="text-on-surface-variant/60 italic text-body-sm font-normal py-1">
+                        {t('Chưa chọn API')}
+                      </div>
+                    )}
                   </th>
                   <th className="p-5 font-bold text-headline-sm text-primary w-3/8">
                     {loading2 ? (
@@ -533,7 +586,11 @@ export const CompareApisPage: React.FC = () => {
                           <Button variant="secondary" size="sm">{t('Playground')}</Button>
                         </Link>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="text-on-surface-variant/60 italic text-body-sm font-normal py-1">
+                        {t('Chưa chọn API')}
+                      </div>
+                    )}
                   </th>
                 </tr>
               </thead>
@@ -553,7 +610,9 @@ export const CompareApisPage: React.FC = () => {
                           <Badge variant="success" size="sm">{t('Verified Provider')}</Badge>
                         )}
                       </>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5 font-medium">
                     {loading2 ? (
@@ -567,7 +626,9 @@ export const CompareApisPage: React.FC = () => {
                           <Badge variant="success" size="sm">{t('Verified Provider')}</Badge>
                         )}
                       </>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
@@ -581,7 +642,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail1 ? (
                       <Badge variant="primary">{t(detail1.category)}</Badge>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5">
                     {loading2 ? (
@@ -590,7 +653,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail2 ? (
                       <Badge variant="primary">{t(detail2.category)}</Badge>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
@@ -604,7 +669,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail1 ? (
                       formatPublishedDate(detail1.publishedAt)
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5 font-code-sm">
                     {loading2 ? (
@@ -613,7 +680,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail2 ? (
                       formatPublishedDate(detail2.publishedAt)
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
@@ -627,7 +696,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail1 ? (
                       detail1.versions?.length || 0
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5 font-code-sm">
                     {loading2 ? (
@@ -636,7 +707,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail2 ? (
                       detail2.versions?.length || 0
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
@@ -650,7 +723,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail1 ? (
                       `${detail1.endpoints?.length || 0} endpoints`
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5 font-code-sm">
                     {loading2 ? (
@@ -659,15 +734,33 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail2 ? (
                       `${detail2.endpoints?.length || 0} endpoints`
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
                 {/* Authentication */}
                 <tr className="hover:bg-surface-container/60 transition-colors">
                   <td className="p-5 font-medium text-on-surface-variant">{t('Authentication')}</td>
-                  <td className="p-5 font-code-sm text-xs">Header <code>X-API-Key</code> qua Gateway</td>
-                  <td className="p-5 font-code-sm text-xs">Header <code>X-API-Key</code> qua Gateway</td>
+                  <td className="p-5 font-code-sm text-xs">
+                    {loading1 ? (
+                      <div className="h-5 bg-surface-container rounded w-32 animate-pulse" />
+                    ) : detail1 ? (
+                      <>Header <code>X-API-Key</code> qua Gateway</>
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
+                  </td>
+                  <td className="p-5 font-code-sm text-xs">
+                    {loading2 ? (
+                      <div className="h-5 bg-surface-container rounded w-32 animate-pulse" />
+                    ) : detail2 ? (
+                      <>Header <code>X-API-Key</code> qua Gateway</>
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
+                  </td>
                 </tr>
 
                 {/* Data Classification */}
@@ -682,7 +775,9 @@ export const CompareApisPage: React.FC = () => {
                       <Badge variant="neutral" size="sm">
                         {detail1.legal?.dataClassification || 'Chưa công bố'}
                       </Badge>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5 text-sm">
                     {loading2 ? (
@@ -693,7 +788,9 @@ export const CompareApisPage: React.FC = () => {
                       <Badge variant="neutral" size="sm">
                         {detail2.legal?.dataClassification || 'Chưa công bố'}
                       </Badge>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
@@ -707,7 +804,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail1 ? (
                       renderPersonalDataProcessing(detail1.legal?.processesPersonalData)
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5 text-sm">
                     {loading2 ? (
@@ -716,7 +815,9 @@ export const CompareApisPage: React.FC = () => {
                       <span className="text-error text-xs italic">—</span>
                     ) : detail2 ? (
                       renderPersonalDataProcessing(detail2.legal?.processesPersonalData)
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
 
@@ -743,7 +844,9 @@ export const CompareApisPage: React.FC = () => {
                           <span className="text-body-sm text-on-surface-variant">{t('Chưa có gói cước')}</span>
                         )}
                       </div>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                   <td className="p-5">
                     {loading2 ? (
@@ -765,7 +868,9 @@ export const CompareApisPage: React.FC = () => {
                           <span className="text-body-sm text-on-surface-variant">{t('Chưa có gói cước')}</span>
                         )}
                       </div>
-                    ) : null}
+                    ) : (
+                      <span className="text-on-surface-variant/40">—</span>
+                    )}
                   </td>
                 </tr>
               </tbody>
@@ -785,7 +890,7 @@ export const CompareApisPage: React.FC = () => {
                     </Link>
                   </div>
                 ) : (
-                  <span className="text-xs text-on-surface-variant italic">{t('API 1 chưa tải')}</span>
+                  <span className="text-xs text-on-surface-variant italic">{t('API 1 chưa chọn')}</span>
                 )}
                 <span className="text-on-surface font-black px-2 py-0.5 rounded bg-surface-container-high text-xs">VS</span>
                 {detail2 ? (
@@ -796,7 +901,7 @@ export const CompareApisPage: React.FC = () => {
                     </Link>
                   </div>
                 ) : (
-                  <span className="text-xs text-on-surface-variant italic">{t('API 2 chưa tải')}</span>
+                  <span className="text-xs text-on-surface-variant italic">{t('API 2 chưa chọn')}</span>
                 )}
               </div>
             </div>

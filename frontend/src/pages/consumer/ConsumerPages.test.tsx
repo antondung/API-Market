@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppProvider } from '../../context/AppContext';
 import { ConsumerDashboardPage } from './ConsumerDashboardPage';
@@ -10,6 +10,7 @@ import { CostGuardPage } from './CostGuardPage';
 import { RequestHistoryPage } from './RequestHistoryPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
 import * as consumerApi from '../../services/consumerApi';
+import { ApiError } from '../../services/authApi';
 
 let mockCurrentUser: { id: string; email: string; name: string; role: string } | null = {
   id: 'usr_consumer_99',
@@ -69,6 +70,58 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
       expect(await screen.findByText('1 Keys')).toBeDefined();
       expect(screen.getByText('5 req / API')).toBeDefined();
       expect(screen.getByText('Chưa có lịch sử gọi API')).toBeDefined();
+    });
+
+    it('differentiates genuinely 0 keys account with helpful generation prompt', async () => {
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 100,
+      });
+
+      render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText('0 Keys')).toBeDefined();
+      expect(screen.getByText(/Chưa có API key nào được tạo/i)).toBeDefined();
+    });
+
+    it('differentiates API key network loading error from zero keys account with retry action', async () => {
+      let callCount = 0;
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new ApiError(500, 'FAIL', 'Database query failed');
+        }
+        return {
+          items: [],
+          total: 0,
+          page: 1,
+          pageSize: 100,
+        };
+      });
+
+      render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      // Must display 'Không thể tải', NOT '0 Keys'
+      expect(await screen.findByText('Không thể tải')).toBeDefined();
+      expect(screen.queryByText('0 Keys')).toBeNull();
+      expect(screen.getByText('Database query failed')).toBeDefined();
+
+      // Click retry
+      const retryBtn = screen.getByRole('button', { name: /Thử lại/i });
+      fireEvent.click(retryBtn);
+
+      // After retry succeeds, shows 0 Keys
+      expect(await screen.findByText('0 Keys')).toBeDefined();
     });
   });
 

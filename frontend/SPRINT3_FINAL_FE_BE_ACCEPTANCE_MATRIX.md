@@ -14,14 +14,15 @@
 | :--- | :---: | :--- | :---: | :--- | :---: |
 | **Marketplace Catalog** | `GET` | `/api/marketplace/apis` | `200 OK` | Debounce 300ms, hiển thị Skeleton, phân trang an toàn | **ĐẠT** |
 | **API Detail & Version** | `GET` | `/api/marketplace/apis/:id` | `200 OK`, `404 Not Found` | Xử lý 404 thân thiện, cô lập phiên bản không fallback | **ĐẠT** |
-| **Sandbox Grant Status** | `GET` | `/api/marketplace/apis/:id/sandbox-grant` | `200 OK`, `401 Unauthorized` | Không polling dồn dập, tự đếm ngược thời gian hết hạn | **ĐẠT** |
-| **Sandbox Execution** | `POST` | `/api/marketplace/apis/:id/sandbox-run` | `200 OK`, `429 Rate Limit` | Dual AbortController, `quotaSeqRef` chống out-of-order | **ĐẠT** |
-| **Consumer API Keys List**| `GET` | `/api/consumer/api-keys` | `200 OK`, `401 Unauthorized` | Phân trang 20 mục, hiển thị tiền tố `ak_live_...`, che dấu bí mật | **ĐẠT** |
+| **Sandbox Grant Status** | `GET` | `/api/consumer/apis/:apiId/sandbox` | `200 OK`, `401 Unauthorized`, `404 Not Found` | Không polling dồn dập, tự đếm ngược thời gian hết hạn | **ĐẠT** |
+| **Sandbox Claim Grant** | `POST` | `/api/consumer/apis/:apiId/sandbox` | `200 OK`, `201 Created`, `400 Bad Request` | Unconditional claim reset, sequence guard `quotaSeqRef` | **ĐẠT** |
+| **Playground Execution** | `POST` | `/api/marketplace/apis/:id/playground` | `200 OK`, `429 Rate Limit`, `502/504 Timeout` | Dual AbortController, `quotaSeqRef`, đối soát quota sau 502/504 | **ĐẠT** |
+| **Consumer API Keys List**| `GET` | `/api/consumer/api-keys` | `200 OK`, `401 Unauthorized` | Phân trang 20 mục, hiển thị tiền tố `ak_live_...`, che dấu bí mật, phân biệt lỗi với 0 khóa | **ĐẠT** |
 | **Create Consumer API Key**| `POST`| `/api/consumer/api-keys` | `201 Created`, `409 Conflict`, `403 Forbidden` | Tách biệt mutation và refresh; modal hiện secret 1 lần duy nhất | **ĐẠT** |
 | **Rotate API Key** | `POST` | `/api/consumer/api-keys/:id/rotate` | `200 OK`, `404 Not Found` | Cảnh báo vô hiệu hóa khóa cũ trước khi xác nhận rotate | **ĐẠT** |
 | **Revoke API Key** | `DELETE`| `/api/consumer/api-keys/:id` | `200 OK`, `404 Not Found` | Modal xác nhận hành động không thể hoàn tác; cập nhật danh sách | **ĐẠT** |
 | **Authentication Login** | `POST` | `/api/auth/login` | `200 OK`, `401 Unauthorized` | Chuyển hướng an toàn `?redirect=...` với kiểm tra URL tương đối | **ĐẠT** |
-| **Compare APIs View** | `GET` | `/api/marketplace/apis/:id` (2 calls) | `200 OK`, `500 Server Error` | Xử lý lỗi từng phần: 1 bên lỗi vẫn hiển thị bên thành công | **ĐẠT** |
+| **Compare APIs View** | `GET` | `/api/marketplace/apis/:id` (2 calls) | `200 OK`, `500 Server Error` | Xử lý lỗi từng phần: 1 bên lỗi vẫn hiển thị bên thành công; đồng bộ 2 chiều URL; xử lý rỗng | **ĐẠT** |
 
 ---
 
@@ -37,6 +38,7 @@
 | **409** | Trùng lặp khóa API cho cùng một API ID | Báo lỗi xung đột trực quan và hướng dẫn người dùng rotate | **ĐẠT** |
 | **429** | Vượt quá tốc độ hoặc hết hạn ngạch Sandbox | Hiển thị cảnh báo Rate Limit kèm thông tin thời gian thử lại | **ĐẠT** |
 | **500** | Lỗi máy chủ cơ sở dữ liệu nội bộ | Hiển thị nút "Thử lại", lưu giữ trạng thái giao diện hiện tại | **ĐẠT** |
+| **502 / 504** | Lỗi Gateway Upstream / Timeout phản hồi | Hiển thị cảnh báo timeout, đối soát đọc lại Sandbox Grant | **ĐẠT** |
 | **503** | Dịch vụ tạm ngưng bảo trì | Hiển thị thông báo trạng thái ngoại tuyến chuyên biệt | **ĐẠT** |
 
 ---
@@ -49,9 +51,14 @@
 2. **Quản trị chi phí và ngắt tự động (Cost Guard & Hard Cutoff):**
    - *Hiện trạng:* Động cơ kiểm soát ngưỡng chi phí thời gian thực của Gateway đang được hoàn thiện cho Sprint 4.
    - *Cách xử lý phía FE:* Giao diện hiển thị cấu hình xem trước với trạng thái Read-only có ghi chú giải thích trung thực, loại bỏ hoàn toàn các thay đổi lưu tạm vào bộ nhớ mock.
-3. **Xác minh nhà cung cấp (Provider Verification - PR #79):**
-   - *Hiện trạng:* Đang chờ phê duyệt và tích hợp PR #79 phía Backend.
-   - *Cách xử lý phía FE:* Biểu mẫu xác minh giữ trạng thái hiển thị trung thực, không gây tắc nghẽn luồng làm việc của các vai trò người dùng khác.
+3. **Quản lý Hồ sơ & Đổi mật khẩu (Profile & Change Password - PR #79):**
+   - *Hiện trạng:* Phụ thuộc vào PR #79 phía Backend (User Profile & Change Password).
+   - *Cách xử lý phía FE:* Giao diện hồ sơ người dùng và đổi mật khẩu phân định rõ ràng các trường dữ liệu và thông báo lỗi tương thích với đặc tả backend PR #79.
+4. **Đính chính lịch sử nhánh về mã nguồn Gateway/Backend:**
+   - *Hiện trạng:* Nhánh `feature/sprint3-frontend-marketplace` có lịch sử commit chứa một số thay đổi Gateway/Backend từ giai đoạn trước (ví dụ commit `d2c2316` chồng lấn PR #78).
+   - *Ranh giới hiện tại:* Toàn bộ các vòng hoàn thiện từ RC trở đi tuyệt đối tuân thủ ranh giới Frontend-only, không tự can thiệp hay sửa chữa thêm vào Gateway/Backend.
+5. **Trạng thái nghiệm thu phát hành:**
+   - *Đánh giá:* **FRONTEND_SPRINT3_CONDITIONAL** (Đạt toàn diện các tiêu chí Frontend, Unit test và Playwright Chromium nội bộ; có điều kiện xác nhận qua CI GitHub Actions pipeline đầy đủ).
 
 ---
 

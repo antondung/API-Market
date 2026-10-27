@@ -1,10 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { ApiPlaygroundPage } from './ApiPlaygroundPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
 import * as consumerApi from '../../services/consumerApi';
+import { ApiError } from '../../services/authApi';
 import type { MarketplaceApiDetail } from '../../services/marketplaceTypes';
 
 let mockCurrentUser: { id: string; email: string; role: string } | null = {
@@ -389,5 +390,190 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
 
     // Active controller signal must be aborted immediately
     expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it('resets isGrantClaiming and rejects stale claim response when switching API mid-claim', async () => {
+    let resolveClaimApi1!: (val: any) => void;
+    const deferredClaimPromise = new Promise((resolve) => {
+      resolveClaimApi1 = resolve;
+    });
+
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') return mockApiDetail;
+      return { ...mockApiDetail, id: 'api-pg-2', name: 'API Two' };
+    });
+
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') {
+        throw new ApiError(404, 'NOT_FOUND', 'Not found');
+      }
+      return {
+        id: 'g-api2',
+        apiId: 'api-pg-2',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      };
+    });
+
+    vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') {
+        return deferredClaimPromise as any;
+      }
+      return {
+        id: 'g-claimed-2',
+        apiId: 'api-pg-2',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      };
+    });
+
+    let navigateFn: any;
+    const TestNavigator: React.FC = () => {
+      const navigate = useNavigate();
+      navigateFn = navigate;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-pg-1/playground']}>
+        <TestNavigator />
+        <Routes>
+          <Route path="/api/:id/playground" element={<ApiPlaygroundPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    const claimBtn = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtn);
+
+    // Switch to api-pg-2 while claim is in flight
+    navigateFn('/api/api-pg-2/playground');
+
+    // Wait for API 2 to load
+    await screen.findByText('API Two');
+
+    // Resolve API 1's claim promise late
+    resolveClaimApi1({
+      id: 'g-stale-api1',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 0,
+      remainingRequests: 5,
+      available: true,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: null,
+    });
+
+    // Verify API 2's grant remains valid and active
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*5\/5/)).toBeDefined();
+    });
+  });
+
+  it('reconciles quota after upstream 502/504 gateway timeout', async () => {
+    let grantCallCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCallCount++;
+      return {
+        id: 'g-1',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: grantCallCount === 1 ? 1 : 2,
+        remainingRequests: grantCallCount === 1 ? 4 : 3,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      };
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(504, 'GATEWAY_TIMEOUT', 'Upstream Gateway Timeout')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Expect error message
+    expect(await screen.findByText(/Lỗi Gateway Upstream: Nhà cung cấp phản hồi quá hạn/i)).toBeDefined();
+
+    // Verify reconciliation fetch was triggered and updated quota
+    await waitFor(() => {
+      expect(grantCallCount).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText(/Quota:\s*3\/5/)).toBeDefined();
+    });
+  });
+
+  it('rejects out-of-order stale metadata responses using sequence tracking quotaSeqRef', async () => {
+    let grantCall = 0;
+    let resolveStaleGrant!: (val: any) => void;
+    const staleGrantPromise = new Promise(resolve => {
+      resolveStaleGrant = resolve;
+    });
+
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCall++;
+      if (grantCall === 1) {
+        return {
+          id: 'g-initial',
+          apiId: 'api-pg-1',
+          maxRequests: 5,
+          usedRequests: 1,
+          remainingRequests: 4,
+          available: true,
+          expiresAt: '2026-10-28T00:00:00.000Z',
+          revokedAt: null,
+        };
+      }
+      return staleGrantPromise as any;
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockResolvedValueOnce({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'success' }),
+      bodyEncoding: 'utf8',
+      latencyMs: 30,
+      remainingRequests: 1, // Newer execution response
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*4\/5/)).toBeDefined();
+
+    // Execute request which updates quota sequence
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    await screen.findByText(/Còn lại: 1 requests/i);
+    expect(await screen.findByText(/Quota:\s*1\/5/)).toBeDefined();
+
+    // Now resolve the older metadata fetch with stale remaining: 4
+    resolveStaleGrant({
+      id: 'g-stale',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 1,
+      remainingRequests: 4,
+      available: true,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: null,
+    });
+
+    // Wait and verify quota is NOT overwritten back to 4
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getByText(/Quota:\s*1\/5/)).toBeDefined();
+    expect(screen.getByText(/Còn lại: 1 requests/i)).toBeDefined();
   });
 });

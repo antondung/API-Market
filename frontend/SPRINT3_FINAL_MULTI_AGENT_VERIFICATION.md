@@ -53,15 +53,16 @@
 
 ## 2. TỔNG HỢP KIỂM TRA ĐỘC LẬP RANH GIỚI (INDEPENDENCE AUDIT)
 
-Kiểm tra `git diff` toàn bộ nhánh so với `origin/develop`:
-- [x] Không có bất kỳ thay đổi nào trong `backend/**`
-- [x] Không có bất kỳ thay đổi nào trong `gateway/**`
-- [x] Không có bất kỳ thay đổi nào trong `database/migrations/**`
-- [x] Không có bất kỳ thay đổi nào trong các tệp cấu hình root hoặc workflow CI của backend
-- [x] Mọi thay đổi đều nằm trong phạm vi `frontend/**` và `qa-scripts/sprint3-frontend/**`
+Kiểm tra phạm vi hoàn thiện kỹ thuật từ commit `9c5dc655acdaca91f52ee17a1f2c04a25b45d475`:
+- [x] Đính chính lịch sử nhánh: Nhánh chứa một số commit Gateway từ giai đoạn trước (ví dụ commit `d2c2316` kế thừa PR #78); toàn bộ các lượt hoàn thiện hiện tại hoàn toàn Frontend-only.
+- [x] Không có bất kỳ thay đổi mới nào trong `backend/**`
+- [x] Không có bất kỳ thay đổi mới nào trong `gateway/**`
+- [x] Không có bất kỳ thay đổi mới nào trong `database/migrations/**`
+- [x] Không có bất kỳ thay đổi mới nào trong các tệp cấu hình root hoặc workflow CI của backend
+- [x] Mọi thay đổi hoàn thiện đều nằm trong phạm vi `frontend/**` và `qa-scripts/sprint3-frontend/**`
 
 ---
 
 ## 3. KẾT LUẬN
 
-Hệ thống điều phối đa đặc nhiệm xác nhận mã nguồn nhánh `feature/sprint3-frontend-marketplace` đã đạt trạng thái Release Candidate hoàn hảo, đáp ứng mọi cam kết kỹ thuật của Sprint 3.
+Hệ thống điều phối đa đặc nhiệm xác nhận mã nguồn nhánh `feature/sprint3-frontend-marketplace` đã đạt trạng thái **FRONTEND_SPRINT3_CONDITIONAL** (Đạt chuẩn toàn diện các bài kiểm thử frontend, bộ đệm bảo vệ bất đồng bộ và kiểm tra vệ sinh kho mã nguồn; có điều kiện xác nhận qua CI GitHub Actions toàn trình).

@@ -248,6 +248,7 @@ export const ApiPlaygroundPage: React.FC = () => {
 
   // Read Sandbox Grant Quota for authenticated Consumer
   useEffect(() => {
+    setIsGrantClaiming(false);
     if (!id || !isConsumer) {
       setGrant(null);
       setGrantError(null);
@@ -261,18 +262,19 @@ export const ApiPlaygroundPage: React.FC = () => {
     const controller = new AbortController();
     grantFetchControllerRef.current = controller;
     const requestingUserId = currentUser?.id;
+    const fetchSeq = ++quotaSeqRef.current;
     setIsGrantLoading(true);
     setGrantError(null);
 
     getSandboxGrant(id, controller.signal)
       .then(data => {
-        if (!controller.signal.aborted && activeUserIdRef.current === requestingUserId) {
+        if (!controller.signal.aborted && activeUserIdRef.current === requestingUserId && fetchSeq >= quotaSeqRef.current) {
           setGrant(data);
           setGrantError(null);
         }
       })
       .catch((err: any) => {
-        if (controller.signal.aborted || activeUserIdRef.current !== requestingUserId) return;
+        if (controller.signal.aborted || activeUserIdRef.current !== requestingUserId || fetchSeq < quotaSeqRef.current) return;
         const status = err?.status ?? (err instanceof ApiError ? err.status : undefined);
         if (status === 404) {
           setGrant(null);
@@ -286,7 +288,7 @@ export const ApiPlaygroundPage: React.FC = () => {
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted && activeUserIdRef.current === requestingUserId) {
+        if (!controller.signal.aborted && activeUserIdRef.current === requestingUserId && fetchSeq >= quotaSeqRef.current) {
           setIsGrantLoading(false);
         }
       });
@@ -305,12 +307,13 @@ export const ApiPlaygroundPage: React.FC = () => {
       grantFetchControllerRef.current.abort();
       grantFetchControllerRef.current = null;
     }
+    const claimSeq = ++quotaSeqRef.current;
     try {
       setIsGrantClaiming(true);
       setGrantError(null);
       const data = await claimSandboxGrant(requestingApiId);
-      // Ensure the response belongs to the current API and user session
-      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId) {
+      // Ensure the response belongs to the current API and user session and is the latest sequence
+      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId && claimSeq >= quotaSeqRef.current) {
         setGrant(data);
         setIsGrantLoading(false);
       }
@@ -323,9 +326,8 @@ export const ApiPlaygroundPage: React.FC = () => {
         }
       }
     } finally {
-      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId) {
-        setIsGrantClaiming(false);
-      }
+      // Always reset claiming state regardless of whether API switched mid-flight
+      setIsGrantClaiming(false);
     }
   };
 
@@ -553,20 +555,34 @@ export const ApiPlaygroundPage: React.FC = () => {
       if (controller.signal.aborted || err?.name === 'AbortError') {
         return;
       }
+      const status = err?.status ?? (err instanceof ApiError ? err.status : undefined);
       if (err instanceof ApiError) {
-        if (err.status === 401) {
+        if (status === 401) {
           setExecutionError(t('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.'));
-        } else if (err.status === 403) {
+        } else if (status === 403) {
           setExecutionError(t('Truy cập bị từ chối: Hạn mức Sandbox đã hết hoặc cần tài khoản Consumer.'));
-        } else if (err.status === 404) {
+        } else if (status === 404) {
           setExecutionError(t('Endpoint không tồn tại hoặc chưa được đăng ký trong hệ thống.'));
-        } else if (err.status === 502 || err.status === 504) {
+        } else if (status === 502 || status === 504) {
           setExecutionError(t('Lỗi Gateway Upstream: Nhà cung cấp phản hồi quá hạn (10s) hoặc không thể kết nối.'));
         } else {
           setExecutionError(err.message || t('Lỗi thực thi yêu cầu trên Gateway.'));
         }
       } else {
         setExecutionError(t('Lỗi kết nối máy chủ'));
+      }
+
+      // Re-read Sandbox Grant after 502/504 or network ambiguity to confirm authoritative quota consumption
+      const isAmbiguousError = status === 502 || status === 504 || typeof status === 'undefined';
+      if (isAmbiguousError && api?.id && currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id) {
+        const reconcileSeq = ++quotaSeqRef.current;
+        getSandboxGrant(api.id).then(reconciledGrant => {
+          if (currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id && reconcileSeq >= quotaSeqRef.current) {
+            setGrant(reconciledGrant);
+          }
+        }).catch(() => {
+          // Background reconciliation error ignored
+        });
       }
     } finally {
       if (!controller.signal.aborted) {

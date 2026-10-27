@@ -6,20 +6,20 @@
 **Nhánh làm việc:** `feature/sprint3-frontend-marketplace`<br/>
 **Mã commit đồng bộ develop:** `e84d727a72f02e5de7b4d0a21319dc6d53c98621` (Merge PR #80)<br/>
 **Ngày bàn giao:** 27/10/2026<br/>
-**Trạng thái:** **HOÀN THÀNH TOÀN DIỆN (100% PRODUCTION READY)**
+**Trạng thái:** **FRONTEND_SPRINT3_CONDITIONAL** (Đạt chuẩn kỹ thuật Frontend & Local QA, có điều kiện xác nhận CI Pipeline toàn trình)
 
 ---
 
 ## 1. TỔNG QUAN PHẠM VI & MỤC TIÊU BÀN GIAO
 
-Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (Public Marketplace) và Không gian làm việc của Người tiêu dùng API (Consumer Workspace). Phiên bản bàn giao này đáp ứng 100% tiêu chí kỹ thuật:
+Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (Public Marketplace) và Không gian làm việc của Người tiêu dùng API (Consumer Workspace). Phiên bản bàn giao này đáp ứng các tiêu chí kỹ thuật:
 
-1. **Ranh giới công nghệ Frontend-Only nghiêm ngặt:** Toàn bộ mã nguồn chỉnh sửa và bổ sung thuộc phạm vi `frontend/**`, `qa-scripts/sprint3-frontend/**`, và tài liệu kỹ thuật frontend. Tuyệt đối không can thiệp vào mã nguồn Backend (`backend/**`), Cổng Gateway (`gateway/**`), di chuyển dữ liệu cơ sở dữ liệu (`database/migrations/**`) hay hạ tầng gốc.
+1. **Ranh giới công nghệ Frontend-Only nghiêm ngặt:** Toàn bộ mã nguồn chỉnh sửa và bổ sung trong đợt Final Acceptance Corrections thuộc phạm vi `frontend/**`, `qa-scripts/sprint3-frontend/**`, và tài liệu kỹ thuật frontend. Đính chính lịch sử nhánh: nhánh có các commit Gateway kế thừa ban đầu từ PR #78 (commit `d2c2316`); trong các lượt hoàn thiện hiện tại, tuyệt đối không can thiệp hay sửa chữa thêm vào Backend (`backend/**`), Cổng Gateway (`gateway/**`), hay di chuyển cơ sở dữ liệu (`database/migrations/**`).
 2. **Loại bỏ hoàn toàn rò rỉ dữ liệu giả lập (Legacy Mock State Isolation):** Toàn bộ các trang Consumer (`MySubscriptionsPage`, `UsageQuotaPage`, `CostGuardPage`, `RequestHistoryPage`) đã được tách ly hoàn toàn khỏi `AppContext`, không còn tình trạng đột biến dữ liệu giả lập trong bộ nhớ trình duyệt.
 3. **Phân ly thao tác đột biến khóa API (Dual-Phase API Key Mutation Separation):** Tách biệt rõ ràng giữa thao tác tạo/xoay vòng khóa thành công và thao tác làm mới danh sách tiếp theo. Lỗi mạng tức thời khi tải lại danh sách không làm mất secret key đã được cấp phát.
 4. **Bảo mật bí mật một lần (Zero Plaintext Secret Principle):** Khóa bí mật API Key (`ak_live_...`) chỉ tồn tại trong bộ nhớ ngắn hạn và hiển thị một lần duy nhất trong Modal. Khóa bị tiêu hủy hoàn toàn khỏi DOM và bộ nhớ khi đóng modal hoặc khi xảy ra sự kiện đăng xuất `apihub:session-invalidated`.
 5. **Điều hướng an toàn sau đăng nhập (Safe Redirect Return Navigation):** Hỗ trợ tham số truy vấn `?redirect=...` từ `CheckoutPage` sang `LoginPage`, đồng thời thẩm định nghiêm ngặt tính an toàn của URL (chỉ chấp nhận đường dẫn tương đối nội bộ hợp lệ, chặn open redirect).
-6. **Đồng bộ trạng thái Sandbox & Quota thời gian thực:** Đồng bộ hạn ngạch kiểm thử với PostgreSQL backend, xử lý triệt để race condition bằng `quotaSeqRef` và tự động cập nhật trạng thái hết hạn thông qua bộ đếm thời gian thực trên giao diện.
+6. **Đồng bộ trạng thái Sandbox & Quota thời gian thực:** Đồng bộ hạn ngạch kiểm thử với PostgreSQL backend, xử lý triệt để race condition bằng `quotaSeqRef`, đối soát hạn ngạch sau lỗi 502/504 và tự động cập nhật trạng thái hết hạn thông qua bộ đếm thời gian thực trên giao diện.
 
 ---
 
@@ -56,4 +56,4 @@ Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (P
 
 ## 4. KẾT LUẬN & KIẾN NGHỊ BÀN GIAO
 
-Mã nguồn Sprint 3 Frontend đã hoàn thành toàn bộ yêu cầu kỹ thuật và kiến trúc, vượt qua 100% các bài kiểm thử tự động, tuân thủ nghiêm ngặt tính độc lập frontend và đã sẵn sàng tích hợp an toàn vào nhánh `develop`.
+Mã nguồn Sprint 3 Frontend đã hoàn thành các yêu cầu kỹ thuật và kiến trúc, vượt qua các bài kiểm thử tự động nội bộ, tuân thủ nghiêm ngặt tính độc lập frontend. Trạng thái nghiệm thu được xác nhận là **FRONTEND_SPRINT3_CONDITIONAL**, chờ xác thực đầy đủ của pipeline CI GitHub Actions toàn trình trước khi mở PR hợp nhất vào `develop`.

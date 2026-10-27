@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
+import { ApiError } from '../../services/authApi';
 import { listConsumerApiKeys, type ConsumerApiKey } from '../../services/consumerApi';
 
 export const ConsumerDashboardPage: React.FC = () => {
@@ -15,20 +16,26 @@ export const ConsumerDashboardPage: React.FC = () => {
   const [keys, setKeys] = useState<ConsumerApiKey[]>([]);
   const [totalKeys, setTotalKeys] = useState<number | null>(null);
   const [isKeysLoading, setIsKeysLoading] = useState(true);
+  const [keysError, setKeysError] = useState<string | null>(null);
+  const [retryKeys, setRetryKeys] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
+    setIsKeysLoading(true);
+    setKeysError(null);
     listConsumerApiKeys(1, 100)
       .then(res => {
         if (isMounted) {
           setKeys(res.items);
           setTotalKeys(res.total);
+          setKeysError(null);
         }
       })
-      .catch(() => {
+      .catch((err: any) => {
         if (isMounted) {
           setKeys([]);
-          setTotalKeys(0);
+          setTotalKeys(null);
+          setKeysError(err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')));
         }
       })
       .finally(() => {
@@ -37,7 +44,7 @@ export const ConsumerDashboardPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [retryKeys]);
 
   const activeKeys = keys.filter(k => k.isActive);
   const hasMoreKeysThanFetched = totalKeys !== null && totalKeys > keys.length;
@@ -124,13 +131,36 @@ export const ConsumerDashboardPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[22px]">vpn_key</span>
             </div>
             <div className="text-3xl font-extrabold text-on-surface font-code-md">
-              {isKeysLoading ? '...' : (hasMoreKeysThanFetched ? `${activeKeys.length}+ ${t('Keys')}` : `${activeKeys.length} ${t('Keys')}`)}
+              {isKeysLoading ? (
+                <span className="text-2xl text-on-surface-variant animate-pulse">{t('Đang tải...')}</span>
+              ) : keysError ? (
+                <span className="text-xl font-bold text-error">{t('Không thể tải')}</span>
+              ) : hasMoreKeysThanFetched ? (
+                `${activeKeys.length}+ ${t('Keys')}`
+              ) : (
+                `${activeKeys.length} ${t('Keys')}`
+              )}
             </div>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              {hasMoreKeysThanFetched
-                ? `${t('Trang 1 hiển thị')} ${activeKeys.length} ${t('khóa hoạt động trong tổng số')} ${totalKeys} ${t('khóa')}.`
-                : t('Secured with SHA-256 hash in Control Plane DB.')}
-            </p>
+            <div className="text-body-sm text-on-surface-variant mt-1">
+              {keysError ? (
+                <div className="text-error flex items-center justify-between gap-2">
+                  <span className="truncate" title={keysError}>{keysError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRetryKeys(c => c + 1)}
+                    className="text-primary underline hover:text-primary-hover font-medium shrink-0"
+                  >
+                    {t('Thử lại')}
+                  </button>
+                </div>
+              ) : hasMoreKeysThanFetched ? (
+                `${t('Trang 1 hiển thị')} ${activeKeys.length} ${t('khóa hoạt động trong tổng số')} ${totalKeys} ${t('khóa')}.`
+              ) : totalKeys === 0 ? (
+                t('Chưa có API key nào được tạo. Nhấn "Generate Key" để bắt đầu.')
+              ) : (
+                t('Secured with SHA-256 hash in Control Plane DB.')
+              )}
+            </div>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/api-keys" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">

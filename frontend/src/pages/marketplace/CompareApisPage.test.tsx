@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import { MemoryRouter, useSearchParams } from 'react-router-dom';
 import { CompareApisPage } from './CompareApisPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
 import { ApiError } from '../../services/authApi';
@@ -326,5 +326,83 @@ describe('CompareApisPage - Bounded Concurrency & Differentiated Errors', () => 
 
     expect(prevBtn.hasAttribute('disabled')).toBe(true);
     expect(nextBtn.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('renders dual empty state when both comparison slots are empty', async () => {
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=&api2=']}>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Chưa chọn API để so sánh')).toBeDefined();
+      expect(screen.getByText(/Vui lòng chọn ít nhất một hoặc hai API/i)).toBeDefined();
+    });
+
+    // Comparison table should NOT be rendered
+    expect(screen.queryByText('Specification & Criteria')).toBeNull();
+  });
+
+  it('handles single selected slot gracefully with — placeholders for unselected slot', async () => {
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-cmp-1') return mockDetail1;
+      return mockDetail2;
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=api-cmp-1&api2=']}>
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Specification & Criteria')).toBeDefined();
+      expect(screen.getAllByText('Alpha Search Engine').length).toBeGreaterThan(0);
+      expect(screen.getByText('Chưa chọn API')).toBeDefined();
+    });
+
+    // Placeholders — should be rendered in unselected column
+    const placeholders = screen.getAllByText('—');
+    expect(placeholders.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('synchronizes state when query parameters are removed or modified', async () => {
+    vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue(mockListRes);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-cmp-1') return mockDetail1;
+      return mockDetail2;
+    });
+
+    let setSearchParamsFn: any;
+    const LocationWatcher: React.FC = () => {
+      const [, setSearchParams] = useSearchParams();
+      setSearchParamsFn = setSearchParams;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/compare?api1=api-cmp-1&api2=api-cmp-2']}>
+        <LocationWatcher />
+        <CompareApisPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Alpha Search Engine').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Beta NLP Engine').length).toBeGreaterThan(0);
+    });
+
+    // Simulate URL modification (e.g. Back button or parameter removal)
+    await act(async () => {
+      setSearchParamsFn(new URLSearchParams('api1=api-cmp-1&api2='));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Chưa chọn API')).toBeDefined();
+    });
   });
 });
