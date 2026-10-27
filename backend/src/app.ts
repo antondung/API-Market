@@ -20,8 +20,6 @@ import { adminReviewPaths } from './admin-review-contract.js';
 import type { MarketplaceService } from './marketplace-service.js';
 import { marketplaceRouter } from './marketplace-router.js';
 import { marketplacePaths } from './marketplace-contract.js';
-import type { GatewayService } from './gateway-service.js';
-import { gatewayRouter } from './gateway-router.js';
 import { ApiKeyService, SandboxService } from './consumer-service.js';
 import { consumerRouter } from './consumer-router.js';
 import { PlaygroundService, playgroundInput } from './playground-service.js';
@@ -46,7 +44,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -80,10 +78,6 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
   }));
-  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
-  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
-  // an empty payload.
-  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   const baseDocument = options.provider ? {
