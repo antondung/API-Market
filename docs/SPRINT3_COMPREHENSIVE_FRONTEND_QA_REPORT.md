@@ -1,10 +1,10 @@
 # BÁO CÁO NGHIỆM THU TOÀN DIỆN QA FRONTEND SPRINT 3 (18 PHASES)
 ## API-MARKET SPRINT 3 — MARKETPLACE, PLAYGROUND, SANDBOX, PRICING, COMPARE & NAVIGATION
 
-**Chi nhánh (Branch):** `feature/sprint3-frontend-marketplace`  
-**Ngày thực hiện:** 2026-10-25  
-**Môi trường:** Node.js v20+, Vite v8.3.4, Playwright v1.64.1, Windows 11  
-**Trạng thái kiểm thử:** 100% ĐẠT (101/101 test case Chromium, 39/39 smoke test đa trình duyệt, 0 lỗi nghiêm trọng WCAG 2.2, 0px tràn màn hình trên 10 kích thước viewport)  
+**Chi nhánh (Branch):** `feature/sprint3-frontend-marketplace`
+**Ngày thực hiện:** 2026-10-25
+**Môi trường:** Node.js v20+, Vite v8.3.4, Playwright v1.64.1, Windows 11
+**Trạng thái kiểm thử:** 100% ĐẠT (101/101 test case Chromium, 39/39 smoke test đa trình duyệt, 0 lỗi nghiêm trọng WCAG 2.2, 0px tràn màn hình trên 10 kích thước viewport)
 
 ---
 
@@ -13,9 +13,9 @@
 Thực hiện kiểm thử QA toàn diện độc lập theo đúng quy trình 18 pha nghiêm ngặt. Không bỏ sót bất kỳ pha nào, không tóm tắt sơ sài, và 100% số liệu được ghi nhận từ kết quả chạy thực tế trên máy trạm.
 
 ```
-========================================================================================
+----------------------------------------------------------------------------------------
   CHỈ SỐ ĐO LƯỜNG (METRIC)                  GIÁ TRỊ THỰC TẾ               ĐÁNH GIÁ
-========================================================================================
+----------------------------------------------------------------------------------------
   Tổng số tệp kịch bản kiểm thử              14 test suite files           100% ĐẠT
   Tổng số test case chạy trên Chromium       101 / 101 tests ĐẠT           100% ĐẠT
   Cross-Browser Smoke (Chromium/FF/WebKit)   39 / 39 tests ĐẠT             100% ĐẠT
@@ -26,7 +26,7 @@ Thực hiện kiểm thử QA toàn diện độc lập theo đúng quy trình 1
   Thời gian tải danh mục 250 API             ~1200ms (< 3000ms budget)     100% ĐẠT
   Kiểm tra toàn vẹn kho mã nguồn             297 tệp không lỗi             100% ĐẠT
   Build Production Frontend                  Build thành công trong 3.68s  100% ĐẠT
-========================================================================================
+----------------------------------------------------------------------------------------
 ```
 
 ---

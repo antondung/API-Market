@@ -1,10 +1,24 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { TrySandboxPage } from './TrySandboxPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
+import * as consumerApi from '../../services/consumerApi';
 import type { MarketplaceApiDetail } from '../../services/marketplaceTypes';
+
+let mockCurrentUser: { id: string; email: string; role: string } | null = {
+  id: 'user-consumer-1',
+  email: 'consumer@apihub.vn',
+  role: 'Consumer',
+};
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({
+    currentUser: mockCurrentUser,
+    isAuthenticated: Boolean(mockCurrentUser),
+  }),
+}));
 
 vi.mock('../../i18n', () => ({
   useLanguage: () => ({ t: (key: string) => key }),
@@ -59,16 +73,28 @@ const renderPage = (apiId = 'api-sandbox-1') => {
     <MemoryRouter initialEntries={[`/api/${apiId}/sandbox`]}>
       <Routes>
         <Route path="/api/:id/sandbox" element={<TrySandboxPage />} />
-        <Route path="/consumer/keys" element={<div>API Keys Page</div>} />
+        <Route path="/api/:id/playground" element={<div>Interactive Playground Page</div>} />
+        <Route path="/dashboard/keys" element={<div>API Keys Page</div>} />
+        <Route path="/login" element={<div>Login Page</div>} />
       </Routes>
     </MemoryRouter>
   );
 };
 
-describe('TrySandboxPage Security & Credential Hygiene', () => {
+describe('TrySandboxPage Security, Sandbox Grant Lifecycle & Quota UI', () => {
   beforeEach(() => {
+    mockCurrentUser = {
+      id: 'user-consumer-1',
+      email: 'consumer@apihub.vn',
+      role: 'Consumer',
+    };
     vi.clearAllMocks();
     vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockRejectedValue({ status: 404, message: 'Not found' });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('does not render hardcoded fake demo credentials or unverified gateway claims', async () => {
@@ -81,16 +107,15 @@ describe('TrySandboxPage Security & Credential Hygiene', () => {
     // Zero fake demo keys in DOM
     expect(screen.queryByText('ak_sand_consumer_demo_test')).toBeNull();
 
-    // Fabricated claims removed
-    expect(screen.queryByText(/Anti-SSRF Gateway Guard: Bật/i)).toBeNull();
-    expect(screen.queryByText(/Rate Limit: 5 req\/giây \(Sandbox Mode\)/i)).toBeNull();
-
     // Renders honest auth requirement and API Keys navigation
     expect(screen.getByText('Yêu cầu Khóa Xác thực (API Key)')).toBeDefined();
     expect(screen.getByText('Quản lý API Keys')).toBeDefined();
   });
 
-  it('renders custom API key input with password masking by default', async () => {
+  it('renders custom API key input with password masking by default and zero local persistence', async () => {
+    const localSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const sessionSpy = vi.spyOn(sessionStorage, 'setItem');
+
     renderPage();
 
     await waitFor(() => {
@@ -108,43 +133,10 @@ describe('TrySandboxPage Security & Credential Hygiene', () => {
     const revealBtn = screen.getByTitle('Hiện');
     fireEvent.click(revealBtn);
     expect(input.getAttribute('type')).toBe('text');
-  });
 
-  it('does not store custom API key into localStorage or sessionStorage', async () => {
-    const localSpy = vi.spyOn(Storage.prototype, 'setItem');
-    const sessionSpy = vi.spyOn(sessionStorage, 'setItem');
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
-    });
-
-    const input = screen.getByPlaceholderText(/Nhập API Key của bạn/i);
-    fireEvent.change(input, { target: { value: 'ephemeral_test_key_xyz' } });
-
+    // Zero persistence
     expect(localSpy).not.toHaveBeenCalledWith(expect.stringMatching(/api.*key|secret/i), expect.anything());
     expect(sessionSpy).not.toHaveBeenCalledWith(expect.stringMatching(/api.*key|secret/i), expect.anything());
-
-    localSpy.mockRestore();
-    sessionSpy.mockRestore();
-  });
-
-  it('locks browser sandbox execution button in Step 3 awaiting backend gateway', async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
-    });
-
-    // Navigate to step 3
-    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục: Chọn Endpoint/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục: Xem cURL & Chạy thử/i }));
-
-    // Verify Step 3 execution button is safely disabled
-    const execBtn = screen.getByRole('button', { name: /Kích hoạt Sandbox Key/i });
-    expect(execBtn.hasAttribute('disabled')).toBe(true);
-    expect(execBtn.getAttribute('title')).toContain('Sprint 4');
   });
 
   it('links to /dashboard/keys and never /consumer/keys', async () => {
@@ -203,5 +195,103 @@ describe('TrySandboxPage Security & Credential Hygiene', () => {
     await waitFor(() => {
       expect(input.value).toBe('');
     });
+  });
+
+  it('renders unclaimed sandbox grant state and requires explicit claim action', async () => {
+    const claimSpy = vi.spyOn(consumerApi, 'claimSandboxGrant').mockResolvedValueOnce({
+      id: 'g-100',
+      apiId: 'api-sandbox-1',
+      maxRequests: 5,
+      usedRequests: 0,
+      remainingRequests: 5,
+      available: true,
+      expiresAt: '2026-10-28T12:00:00.000Z',
+      revokedAt: null,
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    // Verify initial unclaimed state
+    expect(screen.getByText('Chưa kích hoạt Sandbox Grant')).toBeDefined();
+    expect(claimSpy).not.toHaveBeenCalled();
+
+    // Click Claim Sandbox Grant
+    const claimBtn = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtn);
+
+    // Verifies grant is claimed and authoritative quota displayed
+    await waitFor(() => {
+      expect(claimSpy).toHaveBeenCalledWith('api-sandbox-1');
+      expect(screen.getByText(/Active Grant/i)).toBeDefined();
+      expect(screen.getByText('5')).toBeDefined(); // remaining
+    });
+  });
+
+  it('displays authoritative quota, expiration, and exhausted state when backend returns 0 remaining', async () => {
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue({
+      id: 'g-200',
+      apiId: 'api-sandbox-1',
+      maxRequests: 5,
+      usedRequests: 5,
+      remainingRequests: 0,
+      available: false,
+      expiresAt: '2026-10-28T12:00:00.000Z',
+      revokedAt: null,
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    expect(await screen.findByText('Exhausted')).toBeDefined();
+    expect(screen.getByText('Hạn mức Sandbox đã hết')).toBeDefined();
+    expect(screen.getByText('0')).toBeDefined(); // 0 remaining
+  });
+
+  it('prompts unauthenticated user to log in as Consumer', async () => {
+    mockCurrentUser = null;
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText('Yêu cầu Đăng nhập Consumer')).toBeDefined();
+    const loginLink = screen.getByRole('link', { name: /Đăng nhập Consumer/i });
+    expect(loginLink.getAttribute('href')).toBe('/login');
+  });
+
+  it('explains SafeProxy and Anti-SSRF technical architecture in Step 1', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText(/Kiến trúc Bảo vệ An ninh SafeProxy & Anti-SSRF/i)).toBeDefined();
+    expect(screen.getByText(/ghim địa chỉ IP qua DNS pinning/i)).toBeDefined();
+  });
+
+  it('provides direct navigation to Playground in Step 3', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    // Navigate to step 3
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục: Chọn Endpoint/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Tiếp tục: Xem cURL & Chạy thử/i }));
+
+    const openPlaygroundBtn = screen.getByRole('button', { name: /Mở Playground để chạy thử/i });
+    fireEvent.click(openPlaygroundBtn);
+
+    expect(await screen.findByText('Interactive Playground Page')).toBeDefined();
   });
 });

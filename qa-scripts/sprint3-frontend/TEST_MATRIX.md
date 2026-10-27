@@ -1,9 +1,9 @@
 # API-MARKET Sprint 3 Frontend QA - Test Execution Matrix
 
-**Branch:** `feature/sprint3-frontend-marketplace`  
-**Execution Date:** 2026-10-25  
-**Engine:** Playwright v1.64.1 / Node.js v20+ / Windows 11  
-**Runner Config:** `qa-scripts/sprint3-frontend/playwright.config.ts`  
+**Branch:** `feature/sprint3-frontend-marketplace`
+**Execution Date:** 2026-10-25
+**Engine:** Playwright v1.64.1 / Node.js v20+ / Windows 11
+**Runner Config:** `qa-scripts/sprint3-frontend/playwright.config.ts`
 
 ---
 
@@ -85,7 +85,7 @@ Axe-Core WCAG 2.2 AA audit execution summary:
 
 ## 5. Cross-Browser Smoke Execution Matrix
 
-Execution command: `npx playwright test --grep "@smoke" --project=chromium --project=firefox --project=webkit`  
+Execution command: `npx playwright test --grep "@smoke" --project=chromium --project=firefox --project=webkit`
 Result: **39 passed in 3.1 minutes** (100% pass)
 
 | Test Name | Chromium | Firefox | WebKit |

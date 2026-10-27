@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { CodeBlock } from '../../components/ui/CodeBlock';
 import { Modal } from '../../components/ui/Modal';
 import { useLanguage } from '../../i18n';
+import { useAuth } from '../../context/AuthContext';
 import { PublicApiUnavailable } from '../../components/marketplace/PublicApiUnavailable';
 import { PageReveal } from '../../components/motion/PageReveal';
 import { AnimatedTabs } from '../../components/motion/AnimatedTabs';
@@ -15,15 +16,28 @@ import type {
 } from '../../services/marketplaceTypes';
 import { ApiError } from '../../services/authApi';
 import {
+  executePlayground,
+  getSandboxGrant,
+  type PlaygroundResult,
+  type SandboxGrant,
+} from '../../services/consumerApi';
+import {
   generateCurlSnippet,
   generateFetchSnippet,
   generatePythonSnippet,
 } from '../../utils/apiSnippetGenerator';
 
+interface ExecutionResponseState extends PlaygroundResult {
+  timestamp: string;
+}
+
 export const ApiPlaygroundPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const { t } = useLanguage();
+  const { currentUser, isAuthenticated } = useAuth();
+
+  const isConsumer = isAuthenticated && (currentUser?.role === 'USER' || (currentUser?.role as string) === 'Consumer');
 
   const [api, setApi] = useState<MarketplaceApiDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,10 +50,21 @@ export const ApiPlaygroundPage: React.FC = () => {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [insertKeyIntoSnippet, setInsertKeyIntoSnippet] = useState(false);
+
+  // Endpoint parameters state
+  const [pathParams, setPathParams] = useState<Record<string, string>>({});
   const [queryParams, setQueryParams] = useState<Record<string, string>>({});
   const [headerParams, setHeaderParams] = useState<Record<string, string>>({});
   const [requestBody, setRequestBody] = useState('{\n  "query": "test"\n}');
   const [jsonValidStatus, setJsonValidStatus] = useState<string | null>(null);
+
+  // Sandbox grant & Authoritative Quota
+  const [grant, setGrant] = useState<SandboxGrant | null>(null);
+
+  // Execution state
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionResponse, setExecutionResponse] = useState<ExecutionResponseState | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
 
   // Security lifecycle: Wipe sensitive credentials on unmount, API switch, or logout
   useEffect(() => {
@@ -48,6 +73,9 @@ export const ApiPlaygroundPage: React.FC = () => {
       setShowApiKeyInput(false);
       setHeaderParams({});
       setInsertKeyIntoSnippet(false);
+      setExecutionResponse(null);
+      setExecutionError(null);
+      setGrant(null);
     };
 
     window.addEventListener('apihub:session-invalidated', handleLogout);
@@ -69,24 +97,46 @@ export const ApiPlaygroundPage: React.FC = () => {
   const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
 
+  // Extract path parameter names from a template string like `/v1/users/{userId}/posts/{postId}`
+  const extractPathParams = (path: string): string[] => {
+    const matches = path.match(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g);
+    if (!matches) return [];
+    return matches.map(m => m.slice(1, -1));
+  };
+
   const initEndpointParams = (ep: MarketplaceEndpoint) => {
     const qParams: Record<string, string> = {};
     const hParams: Record<string, string> = {};
+    const pParams: Record<string, string> = {};
+
+    // Path parameters
+    const extractedParams = extractPathParams(ep.path);
+    extractedParams.forEach(paramName => {
+      pParams[paramName] = '';
+    });
 
     if (Array.isArray(ep.parameters)) {
       ep.parameters.forEach((p: any) => {
         const name = p?.name;
         if (!name) return;
-        if (p.in === 'query') {
+        if (p.in === 'path') {
+          pParams[name] = p.default !== undefined ? String(p.default) : (pParams[name] || '');
+        } else if (p.in === 'query') {
           qParams[name] = p.default !== undefined ? String(p.default) : '';
         } else if (p.in === 'header') {
-          hParams[name] = p.default !== undefined ? String(p.default) : '';
+          const lower = name.toLowerCase();
+          if (['accept', 'accept-language', 'content-type'].includes(lower)) {
+            hParams[name] = p.default !== undefined ? String(p.default) : '';
+          }
         }
       });
     }
 
+    setPathParams(pParams);
     setQueryParams(qParams);
     setHeaderParams(hParams);
+    setExecutionResponse(null);
+    setExecutionError(null);
 
     if (ep.requestSchema) {
       setRequestBody(JSON.stringify(ep.requestSchema, null, 2));
@@ -97,6 +147,7 @@ export const ApiPlaygroundPage: React.FC = () => {
     }
   };
 
+  // Load API Details
   useEffect(() => {
     if (!id) return;
     const controller = new AbortController();
@@ -135,6 +186,38 @@ export const ApiPlaygroundPage: React.FC = () => {
     };
   }, [id, queryEp, queryMethod]);
 
+  // Read Sandbox Grant Quota for authenticated Consumer
+  useEffect(() => {
+    if (!id || !isConsumer) {
+      setGrant(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsGrantLoading(true);
+
+    getSandboxGrant(id, controller.signal)
+      .then(data => {
+        if (!controller.signal.aborted) {
+          setGrant(data);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setGrant(null);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsGrantLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [id, isConsumer]);
+
   const selectedEndpoint = useMemo(() => {
     if (!api || !api.endpoints) return null;
     return api.endpoints.find(e => e.id === selectedEndpointId) || api.endpoints[0] || null;
@@ -148,6 +231,18 @@ export const ApiPlaygroundPage: React.FC = () => {
     }
   };
 
+  // Resolved concrete path substituting pathParams
+  const resolvedConcretePath = useMemo(() => {
+    if (!selectedEndpoint) return '/';
+    let path = selectedEndpoint.path;
+    for (const [key, val] of Object.entries(pathParams)) {
+      if (val) {
+        path = path.replace(`{${key}}`, encodeURIComponent(val));
+      }
+    }
+    return path;
+  }, [selectedEndpoint, pathParams]);
+
   // Resolved API key for code snippets: default to safe placeholder unless user explicitly opts in
   const resolvedApiKey = useMemo(() => {
     return (insertKeyIntoSnippet && apiKeyInput.trim()) ? apiKeyInput.trim() : 'YOUR_API_KEY';
@@ -159,14 +254,14 @@ export const ApiPlaygroundPage: React.FC = () => {
 
     return generateCurlSnippet({
       method: selectedEndpoint.method,
-      urlPath: selectedEndpoint.path,
+      urlPath: resolvedConcretePath,
       apiKey: resolvedApiKey,
       queryParams,
       headers: headerParams,
       body: requestBody,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, resolvedApiKey, queryParams, headerParams, requestBody]);
+  }, [api, selectedEndpoint, resolvedConcretePath, resolvedApiKey, queryParams, headerParams, requestBody]);
 
   // Generate JavaScript fetch via hardened generator
   const generatedJs = useMemo(() => {
@@ -174,14 +269,14 @@ export const ApiPlaygroundPage: React.FC = () => {
 
     return generateFetchSnippet({
       method: selectedEndpoint.method,
-      urlPath: selectedEndpoint.path,
+      urlPath: resolvedConcretePath,
       apiKey: resolvedApiKey,
       queryParams,
       headers: headerParams,
       body: requestBody,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, resolvedApiKey, queryParams, headerParams, requestBody]);
+  }, [api, selectedEndpoint, resolvedConcretePath, resolvedApiKey, queryParams, headerParams, requestBody]);
 
   // Generate Python requests via hardened generator
   const generatedPython = useMemo(() => {
@@ -189,14 +284,14 @@ export const ApiPlaygroundPage: React.FC = () => {
 
     return generatePythonSnippet({
       method: selectedEndpoint.method,
-      urlPath: selectedEndpoint.path,
+      urlPath: resolvedConcretePath,
       apiKey: resolvedApiKey,
       queryParams,
       headers: headerParams,
       body: requestBody,
       includeTemplateNotice: true,
     });
-  }, [api, selectedEndpoint, resolvedApiKey, queryParams, headerParams, requestBody]);
+  }, [api, selectedEndpoint, resolvedConcretePath, resolvedApiKey, queryParams, headerParams, requestBody]);
 
   const activeSnippet = useMemo(() => {
     if (codeLang === 'curl') return generatedCurl;
@@ -225,6 +320,114 @@ export const ApiPlaygroundPage: React.FC = () => {
     } catch (e: any) {
       setJsonValidStatus('Lỗi cú pháp: ' + (e?.message || 'Invalid JSON'));
       setTimeout(() => setJsonValidStatus(null), 3000);
+    }
+  };
+
+  // Eligibility evaluation for Send Request
+  const isQuotaExhausted = grant !== null && (grant.remainingRequests <= 0 || !grant.available);
+
+  const sendButtonDisabled = !isConsumer || isExecuting || !selectedEndpoint || isQuotaExhausted;
+
+  const sendButtonTooltip = useMemo(() => {
+    if (!isAuthenticated) return t('Yêu cầu đăng nhập tài khoản Consumer để thực thi');
+    if (!isConsumer) return t('Chỉ tài khoản Consumer mới có quyền sử dụng Playground');
+    if (isQuotaExhausted) return t('Hạn mức Sandbox đã hết (0 lượt còn lại). Vui lòng nâng cấp gói.');
+    return undefined;
+  }, [isAuthenticated, isConsumer, isQuotaExhausted, t]);
+
+  // Execute Playground Request
+  const handleSendRequest = async () => {
+    if (!api || !selectedEndpoint || !isConsumer) return;
+
+    // Validate body if non-GET
+    let parsedBody: unknown = undefined;
+    const isBodyAllowed = selectedEndpoint.method.toUpperCase() !== 'GET' && selectedEndpoint.method.toUpperCase() !== 'DELETE';
+    if (isBodyAllowed && requestBody.trim()) {
+      try {
+        parsedBody = JSON.parse(requestBody);
+      } catch (err: any) {
+        setExecutionError(t('Payload không đúng định dạng JSON: ') + (err?.message || 'Invalid JSON'));
+        setRequestTab('body');
+        return;
+      }
+    }
+
+    try {
+      setIsExecuting(true);
+      setExecutionError(null);
+
+      // Clean query params (drop empty values)
+      const cleanQuery: Record<string, string> = {};
+      for (const [k, v] of Object.entries(queryParams)) {
+        if (v.trim()) cleanQuery[k] = v.trim();
+      }
+
+      // Clean path params
+      const cleanPathParams: Record<string, string> = {};
+      for (const [k, v] of Object.entries(pathParams)) {
+        if (v.trim()) cleanPathParams[k] = v.trim();
+      }
+
+      // Filter headers: allow only presentation headers
+      const cleanHeaders: Record<string, string> = {};
+      for (const [k, v] of Object.entries(headerParams)) {
+        const lower = k.toLowerCase();
+        if (['accept', 'accept-language', 'content-type'].includes(lower) && v.trim()) {
+          cleanHeaders[lower] = v.trim();
+        }
+      }
+
+      const res = await executePlayground(api.id, {
+        endpointId: selectedEndpoint.id,
+        pathParams: Object.keys(cleanPathParams).length > 0 ? cleanPathParams : undefined,
+        query: Object.keys(cleanQuery).length > 0 ? cleanQuery : undefined,
+        headers: Object.keys(cleanHeaders).length > 0 ? cleanHeaders : undefined,
+        body: parsedBody,
+      });
+
+      // Update state with live response
+      setExecutionResponse({
+        ...res,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Update local grant quota authoritatively
+      setGrant(prev => prev ? {
+        ...prev,
+        remainingRequests: res.remainingRequests,
+        usedRequests: prev.maxRequests - res.remainingRequests,
+        available: res.remainingRequests > 0,
+      } : {
+        id: 'runtime-grant',
+        apiId: api.id,
+        maxRequests: 5,
+        usedRequests: 5 - res.remainingRequests,
+        remainingRequests: res.remainingRequests,
+        available: res.remainingRequests > 0,
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        revokedAt: null,
+      });
+
+      // Automatically switch right panel to response tab
+      setRightPanelTab('response');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setExecutionError(t('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.'));
+        } else if (err.status === 403) {
+          setExecutionError(t('Truy cập bị từ chối: Hạn mức Sandbox đã hết hoặc cần tài khoản Consumer.'));
+        } else if (err.status === 404) {
+          setExecutionError(t('Endpoint không tồn tại hoặc chưa được đăng ký trong hệ thống.'));
+        } else if (err.status === 502 || err.status === 504) {
+          setExecutionError(t('Lỗi Gateway Upstream: Nhà cung cấp phản hồi quá hạn (10s) hoặc không thể kết nối.'));
+        } else {
+          setExecutionError(err.message || t('Lỗi thực thi yêu cầu trên Gateway.'));
+        }
+      } else {
+        setExecutionError(t('Lỗi kết nối máy chủ'));
+      }
+    } finally {
+      setIsExecuting(false);
     }
   };
 
@@ -257,9 +460,20 @@ export const ApiPlaygroundPage: React.FC = () => {
             <span className="material-symbols-outlined text-[14px]">chevron_right</span>
             <span className="text-primary font-medium">{t('Interactive Playground')}</span>
           </div>
-          <h1 className="text-headline-lg font-headline-lg font-bold text-on-surface">
-            {t('API Playground & Gateway Sandbox')}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-headline-lg font-headline-lg font-bold text-on-surface">
+              {t('API Playground & Gateway Sandbox')}
+            </h1>
+            {grant && (
+              <span className={`px-2.5 py-0.5 rounded-full text-label-sm font-semibold border ${
+                grant.remainingRequests > 0
+                  ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+              }`}>
+                {t('Quota:')} {grant.remainingRequests}/{grant.maxRequests}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -267,8 +481,8 @@ export const ApiPlaygroundPage: React.FC = () => {
             to={`/api/${api.id}/try-sandbox`}
             className="px-3.5 py-1.5 rounded-xl border border-outline-variant text-body-sm text-on-surface-variant hover:bg-surface-container-low transition-colors flex items-center gap-1.5"
           >
-            <span className="material-symbols-outlined text-primary text-[18px]">bolt</span>
-            <span>{t('Try Sandbox')}</span>
+            <span className="material-symbols-outlined text-primary text-[18px]">science</span>
+            <span>{t('Try Sandbox & Quota')}</span>
           </Link>
           <Link
             to={`/api/${api.id}`}
@@ -279,18 +493,33 @@ export const ApiPlaygroundPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Gateway Proxy Status Banner */}
-      <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-        <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[22px] mt-0.5 flex-shrink-0">
-          security
+      {/* Gateway SafeProxy Security Status Banner */}
+      <div className="mb-6 p-4 rounded-2xl bg-primary/5 border border-primary/20 flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[22px] mt-0.5 flex-shrink-0">
+          shield
         </span>
         <div className="text-body-sm text-on-surface-variant leading-relaxed">
           <strong className="text-on-surface font-semibold">
             {t('Chính sách Gateway Proxy & Chống SSRF:')}
           </strong>{' '}
-          {t('Để bảo vệ hệ thống và tuân thủ chính sách bảo mật SSRF, trình duyệt không gọi trực tiếp URL máy chủ của nhà cung cấp. Các lệnh gọi API được định tuyến an toàn qua Gateway trung tâm. Vui lòng sử dụng lệnh cURL bên dưới để chạy trực tiếp trên môi trường của bạn.')}
+          {t('Playground thực thi lệnh gọi an toàn qua SafeProxy: địa chỉ máy chủ đích được DNS pinning, chặn mọi IP nội bộ/loopback, từ chối HTTP redirects, áp dụng giới hạn thời gian 10 giây và dung lượng tối đa 2MB.')}
         </div>
       </div>
+
+      {/* RBAC Prompt Banner when unauthenticated */}
+      {!isAuthenticated && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-body-sm text-amber-900 dark:text-amber-200">
+            <strong>{t('Yêu cầu đăng nhập Consumer:')}</strong>{' '}
+            {t('Để gửi request trực tiếp từ Playground và sử dụng 5 lượt thử nghiệm Sandbox miễn phí, vui lòng đăng nhập tài khoản Consumer.')}
+          </div>
+          <Link to="/login" state={{ from: `/api/${api.id}/playground` }}>
+            <Button variant="primary" size="sm" icon="login">
+              {t('Đăng nhập Consumer')}
+            </Button>
+          </Link>
+        </div>
+      )}
 
       {/* Playground Workbench Layout: 2-column request / response */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -333,7 +562,7 @@ export const ApiPlaygroundPage: React.FC = () => {
             <div className="pt-1">
               <AnimatedTabs
                 tabs={[
-                  { id: 'params', label: `${t('Query Params')} (${Object.keys(queryParams).length})`, icon: 'tune' },
+                  { id: 'params', label: `${t('Params')} (${Object.keys(pathParams).length + Object.keys(queryParams).length})`, icon: 'tune' },
                   { id: 'headers', label: `${t('Headers')} (${Object.keys(headerParams).length + 1})`, icon: 'view_headline' },
                   { id: 'body', label: t('Body'), icon: 'data_object' },
                 ]}
@@ -343,31 +572,62 @@ export const ApiPlaygroundPage: React.FC = () => {
               />
             </div>
 
-            {/* Tab: Query Params */}
+            {/* Tab: Path & Query Params */}
             {requestTab === 'params' && (
-              <div className="space-y-3">
-                {Object.keys(queryParams).length === 0 ? (
-                  <div className="p-6 text-center text-body-xs text-on-surface-variant bg-surface-container rounded-xl border border-outline-variant/20">
-                    {t('Endpoint này không yêu cầu tham số query.')}
-                  </div>
-                ) : (
-                  <div className="space-y-2 bg-surface-container p-3.5 rounded-xl border border-outline-variant/20">
-                    {Object.entries(queryParams).map(([key, value]) => (
-                      <div key={key} className="flex items-center gap-2">
-                        <span className="w-1/3 font-code-sm text-on-surface font-medium truncate" title={key}>
-                          {key}
-                        </span>
-                        <input
-                          type="text"
-                          value={value}
-                          onChange={(e) => setQueryParams({ ...queryParams, [key]: e.target.value })}
-                          placeholder={`Giá trị ${key}`}
-                          className="flex-1 bg-surface-container-high px-2.5 py-1.5 rounded-lg text-body-sm font-code-sm text-on-surface outline-none border border-outline-variant/30 focus:border-primary"
-                        />
-                      </div>
-                    ))}
+              <div className="space-y-4">
+                {/* Path Parameters Section */}
+                {Object.keys(pathParams).length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-body-xs font-semibold text-primary block">
+                      {t('Path Parameters (URL Segments):')}
+                    </label>
+                    <div className="space-y-2 bg-surface-container p-3 rounded-xl border border-outline-variant/20">
+                      {Object.entries(pathParams).map(([key, value]) => (
+                        <div key={key} className="flex items-center gap-2">
+                          <span className="w-1/3 font-code-sm text-on-surface font-semibold truncate" title={key}>
+                            {`{${key}}`}
+                          </span>
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => setPathParams({ ...pathParams, [key]: e.target.value })}
+                            placeholder={`Giá trị ${key}`}
+                            className="flex-1 bg-surface-container-high px-2.5 py-1.5 rounded-lg text-body-sm font-code-sm text-on-surface outline-none border border-outline-variant/30 focus:border-primary"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
+
+                {/* Query Parameters Section */}
+                <div className="space-y-2">
+                  <label className="text-body-xs font-semibold text-on-surface-variant block">
+                    {t('Query Parameters:')}
+                  </label>
+                  {Object.keys(queryParams).length === 0 ? (
+                    <div className="p-4 text-center text-body-xs text-on-surface-variant bg-surface-container rounded-xl border border-outline-variant/20">
+                      {t('Endpoint này không yêu cầu tham số query.')}
+                    </div>
+                  ) : (
+                    <div className="space-y-2 bg-surface-container p-3.5 rounded-xl border border-outline-variant/20">
+                      {Object.entries(queryParams).map(([key, value]) => (
+                        <div key={key} className="flex items-center gap-2">
+                          <span className="w-1/3 font-code-sm text-on-surface font-medium truncate" title={key}>
+                            {key}
+                          </span>
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => setQueryParams({ ...queryParams, [key]: e.target.value })}
+                            placeholder={`Giá trị ${key}`}
+                            className="flex-1 bg-surface-container-high px-2.5 py-1.5 rounded-lg text-body-sm font-code-sm text-on-surface outline-none border border-outline-variant/30 focus:border-primary"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -470,34 +730,46 @@ export const ApiPlaygroundPage: React.FC = () => {
                 )}
               </div>
             )}
+
+            {executionError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-body-xs text-red-600 dark:text-red-400">
+                {executionError}
+              </div>
+            )}
           </div>
 
           {/* Action Trigger */}
           <div className="pt-4 mt-6 border-t border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-body-xs text-on-surface-variant">
-              {t('Yêu cầu định tuyến an toàn qua Gateway')}
+              {grant
+                ? `${t('Lượt gọi còn lại:')} ${grant.remainingRequests}/${grant.maxRequests}`
+                : t('Định tuyến kiểm thử qua SafeProxy')}
             </span>
             <Button
               variant="primary"
               size="md"
               icon="send"
-              disabled={true}
-              title={t('Tính năng gửi request trực tiếp yêu cầu Gateway Proxy trong Sprint 4 để bảo vệ chống SSRF')}
-              onClick={() => setProxyModalOpen(true)}
+              disabled={sendButtonDisabled}
+              title={sendButtonTooltip}
+              onClick={handleSendRequest}
             >
-              {t('Send Request')}
+              {isExecuting ? t('Đang gửi...') : t('Send Request')}
             </Button>
           </div>
         </div>
 
-        {/* Right Column: Code Generator & Response Preview */}
+        {/* Right Column: Code Generator & Live Response */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <AnimatedTabs
                 tabs={[
                   { id: 'snippets', label: t('Code Snippets'), icon: 'code' },
-                  { id: 'response', label: t('Response Schema'), icon: 'data_object' },
+                  {
+                    id: 'response',
+                    label: executionResponse ? `${t('Response')} (${executionResponse.status})` : t('Response Schema'),
+                    icon: 'data_object',
+                  },
                 ]}
                 activeTab={rightPanelTab}
                 onChange={(tabId) => setRightPanelTab(tabId as typeof rightPanelTab)}
@@ -561,28 +833,93 @@ export const ApiPlaygroundPage: React.FC = () => {
 
             {rightPanelTab === 'response' && (
               <div>
-                <div className="text-body-xs text-on-surface-variant mb-2 flex items-center justify-between">
-                  <span>{t('Dự kiến kết quả phản hồi (Expected 200 OK):')}</span>
-                  {Boolean(selectedEndpoint?.responseExample) && <span className="text-emerald-600 font-bold text-xs">200 OK</span>}
-                </div>
-                <CodeBlock
-                  code={
-                    selectedEndpoint?.responseExample
-                      ? (typeof selectedEndpoint.responseExample === 'string'
-                          ? selectedEndpoint.responseExample
-                          : JSON.stringify(selectedEndpoint.responseExample, null, 2))
-                      : JSON.stringify({
-                          status: 'success',
-                          code: 200,
-                          message: 'Gateway proxy returns sanitized upstream response payload.',
-                          endpoint: selectedEndpoint?.path,
-                          method: selectedEndpoint?.method,
-                          timestamp: '2026-10-24T22:00:00.000Z',
-                          sample: true,
-                        }, null, 2)
-                  }
-                  language="json"
-                />
+                {executionResponse ? (
+                  /* Live Real Response from Backend */
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-surface-container rounded-xl border border-outline-variant/20">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded-lg text-body-xs font-bold ${
+                          executionResponse.status >= 200 && executionResponse.status < 300
+                            ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                            : executionResponse.status >= 400 && executionResponse.status < 500
+                              ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                              : 'bg-red-500/10 text-red-600 border border-red-500/20'
+                        }`}>
+                          {executionResponse.status}
+                        </span>
+                        <span className="text-body-xs text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[16px]">schedule</span>
+                          {executionResponse.latencyMs} ms
+                        </span>
+                      </div>
+                      <span className="text-body-xs text-primary font-medium">
+                        {t('Còn lại:')} {executionResponse.remainingRequests} requests
+                      </span>
+                    </div>
+
+                    {/* Response Headers */}
+                    {Object.keys(executionResponse.headers).length > 0 && (
+                      <div>
+                        <div className="text-caption font-semibold text-on-surface-variant mb-1">
+                          {t('Response Headers (Upstream):')}
+                        </div>
+                        <div className="p-2.5 bg-surface-container rounded-xl border border-outline-variant/20 text-code-xs font-code-sm space-y-1 max-h-32 overflow-y-auto">
+                          {Object.entries(executionResponse.headers).map(([hk, hv]) => (
+                            <div key={hk} className="flex gap-2">
+                              <span className="text-on-surface-variant font-bold">{hk}:</span>
+                              <span className="text-on-surface truncate">{hv}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Response Body */}
+                    <div>
+                      <div className="text-caption font-semibold text-on-surface-variant mb-1">
+                        {t('Response Body:')}
+                      </div>
+                      <CodeBlock
+                        code={
+                          (() => {
+                            try {
+                              return JSON.stringify(JSON.parse(executionResponse.body), null, 2);
+                            } catch {
+                              return executionResponse.body;
+                            }
+                          })()
+                        }
+                        language="json"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Example Response Schema Fallback when not yet executed */
+                  <div>
+                    <div className="text-body-xs text-on-surface-variant mb-2 flex items-center justify-between">
+                      <span>{t('Dự kiến kết quả phản hồi (Expected 200 OK):')}</span>
+                      {Boolean(selectedEndpoint?.responseExample) && <span className="text-emerald-600 font-bold text-xs">200 OK</span>}
+                    </div>
+                    <CodeBlock
+                      code={
+                        selectedEndpoint?.responseExample
+                          ? (typeof selectedEndpoint.responseExample === 'string'
+                              ? selectedEndpoint.responseExample
+                              : JSON.stringify(selectedEndpoint.responseExample, null, 2))
+                          : JSON.stringify({
+                              status: 'success',
+                              code: 200,
+                              message: 'Gateway proxy returns sanitized upstream response payload.',
+                              endpoint: selectedEndpoint?.path,
+                              method: selectedEndpoint?.method,
+                              timestamp: '2026-10-24T22:00:00.000Z',
+                              sample: true,
+                            }, null, 2)
+                      }
+                      language="json"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -592,8 +929,8 @@ export const ApiPlaygroundPage: React.FC = () => {
                 {t('Hướng dẫn kiểm thử:')}
               </h4>
               <ol className="text-body-xs text-on-surface-variant list-decimal pl-4 space-y-1">
-                <li>{t('Sao chép lệnh cURL ở trên vào Terminal hoặc ứng dụng Postman.')}</li>
-                <li>{t('Thay thế YOUR_API_KEY bằng API Key thật hoặc khóa Sandbox được cấp.')}</li>
+                <li>{t('Nhấn Send Request để kiểm thử trực tiếp qua phiên đăng nhập Consumer.')}</li>
+                <li>{t('Sao chép lệnh cURL ở trên để chạy từ Terminal với API Key cá nhân.')}</li>
                 <li>{t('Tất cả lưu lượng được kiểm soát an toàn và tính vào hạn mức người dùng.')}</li>
               </ol>
             </div>
@@ -614,18 +951,18 @@ export const ApiPlaygroundPage: React.FC = () => {
         description={t('Thông báo kết nối qua API Gateway')}
       >
         <div className="space-y-4">
-          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-body-sm text-amber-800 dark:text-amber-200">
-            <div className="flex items-center gap-2 font-bold mb-1">
+          <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl text-body-sm text-on-surface">
+            <div className="flex items-center gap-2 font-bold mb-1 text-primary">
               <span className="material-symbols-outlined text-[20px]">shield</span>
-              <span>{t('Gateway Proxy đang phát triển')}</span>
+              <span>{t('Bảo vệ an ninh SafeProxy')}</span>
             </div>
-            <p className="text-body-xs leading-relaxed">
-              {t('Để tuân thủ tiêu chuẩn an toàn bảo mật SSRF (ngăn chặn trình duyệt quét cổng hoặc gọi trái phép các subnet nội bộ), lệnh gọi API trong môi trường trực tiếp yêu cầu Gateway Proxy server-side.')}
+            <p className="text-body-xs leading-relaxed text-on-surface-variant">
+              {t('Yêu cầu kiểm thử được gửi an toàn qua SafeProxy trên máy chủ với địa chỉ IP được xác thực qua DNS pinning, bảo vệ hoàn toàn khỏi nguy cơ SSRF.')}
             </p>
           </div>
 
           <p className="text-body-sm text-on-surface">
-            {t('Vui lòng sao chép lệnh cURL đã tạo để thực thi trực tiếp từ terminal của bạn:')}
+            {t('Lệnh cURL tương ứng sẵn sàng để thực thi từ terminal của bạn:')}
           </p>
 
           <CodeBlock

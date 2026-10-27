@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -6,73 +6,228 @@ import { useLanguage } from '../../i18n';
 import { useAuth } from '../../context/AuthContext';
 import { PageReveal } from '../../components/motion/PageReveal';
 import { AnimatedCard } from '../../components/motion/AnimatedCard';
-
-export interface DisplayApiKey {
-  id: string;
-  name: string;
-  keyPrefix: string;
-  fullKeySecret?: string;
-  environment: 'Sandbox' | 'Production';
-  apiScope: string;
-  rateLimitPerSec: number;
-  monthlyQuota: number;
-  createdAt: string;
-  lastUsedAt: string | null;
-  isRevoked: boolean;
-}
+import {
+  listConsumerApiKeys,
+  createConsumerApiKey,
+  rotateConsumerApiKey,
+  revokeConsumerApiKey,
+  type ConsumerApiKey,
+} from '../../services/consumerApi';
+import { ApiError } from '../../services/authApi';
 
 export const ApiKeysPage: React.FC = () => {
   const { t } = useLanguage();
-  const { currentUser } = useAuth();
+  const { currentUser, isAuthenticated } = useAuth();
 
-  // Zero mock/fake keys in production runtime - awaits Backend API Keys Service in Sprint 4
-  const [keys] = useState<DisplayApiKey[]>([]);
+  const [keys, setKeys] = useState<ConsumerApiKey[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
-  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
+  // Create Key Modal State
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [selectedEnv, setSelectedEnv] = useState<'Sandbox' | 'Production'>('Sandbox');
-  const [selectedScope, setSelectedScope] = useState('Universal / All APIs');
+  const [newKeyApiId, setNewKeyApiId] = useState('');
+  const [newKeyLabel, setNewKeyLabel] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Confirmation modals
-  const [revokeModalKey, setRevokeModalKey] = useState<DisplayApiKey | null>(null);
-  const [rotateModalKey, setRotateModalKey] = useState<DisplayApiKey | null>(null);
+  // One-time Plaintext Secret Reveal Modal (strictly in-memory, wiped immediately)
+  const [revealedSecretData, setRevealedSecretData] = useState<{
+    secret: string;
+    keyPrefix: string;
+    apiId: string;
+    label: string | null;
+    isRotated?: boolean;
+  } | null>(null);
+  const [copiedSecret, setCopiedSecret] = useState(false);
 
-  // Security lifecycle: Wipe sensitive state on modal close, unmount, auth change, or logout
-  const handleCloseCreateModal = () => {
-    setCreateModalOpen(false);
-    setNewKeyName('');
+  // Confirmation Modals for Destructive Operations
+  const [revokeModalKey, setRevokeModalKey] = useState<ConsumerApiKey | null>(null);
+  const [rotateModalKey, setRotateModalKey] = useState<ConsumerApiKey | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Load keys from backend
+  const fetchKeys = useCallback(async (currentPage: number, signal?: AbortSignal) => {
+    if (!isAuthenticated) {
+      setKeys([]);
+      setIsLoading(false);
+      return;
+    }
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await listConsumerApiKeys(currentPage, pageSize, signal);
+      setKeys(res.items);
+      setTotal(res.total);
+      setPage(res.page);
+    } catch (err) {
+      if (signal?.aborted) return;
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setError(t('Phiên đăng nhập hết hạn hoặc chưa xác thực Consumer.'));
+        } else if (err.status === 403) {
+          setError(t('Chỉ tài khoản Consumer mới có quyền truy cập kho API Keys.'));
+        } else {
+          setError(err.message || t('Lỗi khi tải danh sách API Keys.'));
+        }
+      } else {
+        setError(t('Không thể kết nối đến máy chủ.'));
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, [isAuthenticated, pageSize, t]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchKeys(page, controller.signal);
+    return () => controller.abort();
+  }, [fetchKeys, page]);
+
+  // Security lifecycle: Wipe sensitive secret state on modal close, unmount, auth switch, or logout
+  const handleCloseSecretModal = () => {
+    setRevealedSecretData(null);
+    setCopiedSecret(false);
   };
 
   useEffect(() => {
     const handleLogout = () => {
-      setRevealedKeys({});
+      setRevealedSecretData(null);
+      setCopiedSecret(false);
+      setNewKeyApiId('');
+      setNewKeyLabel('');
+      setKeys([]);
     };
 
     window.addEventListener('apihub:session-invalidated', handleLogout);
     return () => {
-      setRevealedKeys({});
+      setRevealedSecretData(null);
+      setCopiedSecret(false);
       window.removeEventListener('apihub:session-invalidated', handleLogout);
     };
   }, [currentUser?.id]);
 
-  const toggleReveal = (keyId: string) => {
-    setRevealedKeys(prev => ({ ...prev, [keyId]: !prev[keyId] }));
-  };
-
-  const handleCopyKey = async (key: DisplayApiKey) => {
-    const textToCopy = key.fullKeySecret || key.keyPrefix;
+  const handleCopyPrefix = async (key: ConsumerApiKey) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
       try {
-        await navigator.clipboard.writeText(textToCopy);
+        await navigator.clipboard.writeText(key.keyPrefix);
         setCopiedKeyId(key.id);
         setTimeout(() => setCopiedKeyId(null), 2000);
       } catch {
         // clipboard access denied - do not show false positive copy success
       }
+    }
+  };
+
+  const handleCopySecret = async () => {
+    if (!revealedSecretData?.secret) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(revealedSecretData.secret);
+        setCopiedSecret(true);
+        setTimeout(() => setCopiedSecret(false), 2500);
+      } catch {
+        // clipboard access denied
+      }
+    }
+  };
+
+  const handleCreateKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedApiId = newKeyApiId.trim();
+    if (!trimmedApiId || !/^[1-9][0-9]{0,9}$/.test(trimmedApiId)) {
+      setCreateError(t('Vui lòng nhập API ID hợp lệ (số nguyên dương, ví dụ: 1).'));
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setCreateError(null);
+      const res = await createConsumerApiKey(trimmedApiId, newKeyLabel.trim() || undefined);
+      setCreateModalOpen(false);
+      setNewKeyApiId('');
+      setNewKeyLabel('');
+      // Reveal one-time secret
+      setRevealedSecretData({
+        secret: res.key,
+        keyPrefix: res.keyPrefix,
+        apiId: res.apiId,
+        label: res.label,
+        isRotated: false,
+      });
+      await fetchKeys(page);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          setCreateError(t('Một khóa đang hoạt động đã tồn tại cho API này. Vui lòng rotate hoặc thu hồi khóa hiện tại trước.'));
+        } else if (err.status === 404) {
+          setCreateError(t('API không tồn tại hoặc chưa được công khai.'));
+        } else if (err.status === 403) {
+          setCreateError(t('Chỉ Consumer mới có quyền tạo API Key.'));
+        } else {
+          setCreateError(err.message || t('Lỗi tạo khóa.'));
+        }
+      } else {
+        setCreateError(t('Không thể tạo API Key.'));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRotateKey = async () => {
+    if (!rotateModalKey) return;
+    try {
+      setIsSubmitting(true);
+      setActionError(null);
+      const res = await rotateConsumerApiKey(rotateModalKey.id);
+      setRotateModalKey(null);
+      setRevealedSecretData({
+        secret: res.key,
+        keyPrefix: res.keyPrefix,
+        apiId: res.apiId,
+        label: res.label,
+        isRotated: true,
+      });
+      await fetchKeys(page);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          setActionError(t('Khóa này đã bị thu hồi trước đó, không thể rotate.'));
+        } else {
+          setActionError(err.message || t('Lỗi khi xoay vòng khóa.'));
+        }
+      } else {
+        setActionError(t('Không thể xoay vòng khóa.'));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRevokeKey = async () => {
+    if (!revokeModalKey) return;
+    try {
+      setIsSubmitting(true);
+      setActionError(null);
+      await revokeConsumerApiKey(revokeModalKey.id);
+      setRevokeModalKey(null);
+      await fetchKeys(page);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setActionError(err.message || t('Lỗi khi thu hồi khóa.'));
+      } else {
+        setActionError(t('Không thể thu hồi khóa.'));
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -112,7 +267,10 @@ export const ApiKeysPage: React.FC = () => {
             variant="primary"
             icon="add"
             shine={true}
-            onClick={() => setCreateModalOpen(true)}
+            onClick={() => {
+              setCreateError(null);
+              setCreateModalOpen(true);
+            }}
           >
             {t('Create New API Key')}
           </Button>
@@ -126,12 +284,32 @@ export const ApiKeysPage: React.FC = () => {
         </span>
         <div className="text-body-sm text-on-surface-variant leading-relaxed">
           <strong className="text-on-surface font-semibold">{t('Zero Plaintext Policy & Cryptographic Generation:')} </strong>
-          {t('Tính năng quản lý khóa qua Backend API Keys Service đang được hoàn thiện trong Sprint 4. Khóa sẽ được sinh bằng thuật toán mật mã an toàn từ máy chủ và chỉ hiển thị chuỗi secret 1 lần duy nhất (không sinh bằng Math.random() tại trình duyệt để đảm bảo an toàn).')}
+          {t('Khóa được sinh bằng 256-bit random mật mã từ máy chủ. Chuỗi secret chỉ hiển thị đúng một lần duy nhất tại thời điểm cấp phát/rotate. Máy chủ chỉ lưu bản băm SHA-256.')}
+          <span className="block mt-1 text-[12px] text-on-surface-variant/80">
+            {t('Lưu ý: API Key dùng để định danh và xác thực phạm vi API qua Gateway; quyền sử dụng gói cước nâng cao sẽ được quản lý qua Subscription Entitlement.')}
+          </span>
         </div>
       </div>
 
-      {/* Card / Table View or Honest Empty State */}
-      {keys.length === 0 ? (
+      {error && (
+        <div className="p-4 rounded-2xl bg-error/10 border border-error/30 text-error flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined">error</span>
+            <span>{error}</span>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => fetchKeys(page)}>
+            {t('Thử lại')}
+          </Button>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="p-12 text-center text-on-surface-variant">
+          <div className="animate-spin w-8 h-8 border-3 border-primary border-t-transparent rounded-full mx-auto mb-3" />
+          <p>{t('Đang tải danh sách API Keys...')}</p>
+        </div>
+      ) : keys.length === 0 ? (
         <div className="bg-surface-container-low border border-dashed border-outline-variant/40 rounded-2xl p-12 text-center shadow-sm">
           <div className="w-14 h-14 rounded-2xl bg-surface-container text-on-surface-variant/60 flex items-center justify-center mx-auto mb-3">
             <span className="material-symbols-outlined text-[32px]">key_off</span>
@@ -140,21 +318,19 @@ export const ApiKeysPage: React.FC = () => {
             {t('Chưa có API key nào được cấp phát')}
           </h3>
           <p className="text-body-sm text-on-surface-variant max-w-md mx-auto mb-6">
-            {t('Dịch vụ quản trị API Keys trên Backend đang được hoàn thiện trong Sprint 4. Hệ thống tuân thủ chính sách Zero Plaintext và không sinh khóa giả trên trình duyệt.')}
+            {t('Tạo API Key đầu tiên để bắt đầu gọi API của nhà cung cấp qua Gateway một cách an toàn.')}
           </p>
           <Button
             variant="primary"
             icon="add"
-            disabled={true}
-            title={t('Tính năng sẽ kích hoạt cùng Backend API Keys Service trong Sprint 4')}
+            onClick={() => setCreateModalOpen(true)}
           >
-            {t('Create New API Key (Chờ Sprint 4)')}
+            {t('Create New API Key')}
           </Button>
         </div>
       ) : viewMode === 'card' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {keys.map(k => {
-            const isRevealed = Boolean(revealedKeys[k.id]);
             const isCopied = copiedKeyId === k.id;
             return (
               <AnimatedCard
@@ -165,50 +341,38 @@ export const ApiKeysPage: React.FC = () => {
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
-                      <h3 className="text-body-lg font-bold text-on-surface">{k.name}</h3>
-                      <span className="text-[12px] text-on-surface-variant block mt-0.5">{k.apiScope}</span>
+                      <h3 className="text-body-lg font-bold text-on-surface">
+                        {k.label || t('Unnamed Key')}
+                      </h3>
+                      <span className="text-[12px] text-on-surface-variant block mt-0.5">
+                        API ID: <code className="text-primary font-bold">{k.apiId}</code>
+                      </span>
                     </div>
-                    <span title={k.environment === 'Production' ? 'Production Key: Thanh toán thực tế' : 'Sandbox Key: Môi trường kiểm thử'}>
-                      <Badge
-                        variant={k.environment === 'Production' ? 'primary' : 'neutral'}
-                        size="sm"
-                      >
-                        {k.environment}
-                      </Badge>
-                    </span>
+                    <Badge
+                      variant={k.isActive && !k.revokedAt ? 'success' : 'danger'}
+                      size="sm"
+                    >
+                      {k.isActive && !k.revokedAt ? t('Active') : t('Revoked')}
+                    </Badge>
                   </div>
 
-                  {/* Secret Key Display Box with Blur/Reveal */}
+                  {/* Masked Prefix Display */}
                   <div className="p-3 bg-surface-container rounded-xl border border-outline-variant/30 my-4 flex items-center justify-between gap-2">
                     <div className="flex-1 overflow-hidden">
                       <span className="text-[11px] uppercase font-bold text-on-surface-variant block mb-0.5">
-                        {isRevealed ? 'Secret Key (Revealed)' : 'Key Prefix (Masked)'}
+                        {t('Key Prefix (Định danh)')}
                       </span>
-                      <code
-                        className={`font-code-md text-code-sm text-primary font-bold block truncate transition-all duration-200 ${
-                          !isRevealed ? 'tracking-wider' : ''
-                        }`}
-                      >
-                        {isRevealed ? (k.fullKeySecret || k.keyPrefix) : `${k.keyPrefix.slice(0, 10)}••••••••${k.keyPrefix.slice(-4)}`}
+                      <code className="font-code-md text-code-sm text-primary font-bold block truncate tracking-wider">
+                        {k.keyPrefix}••••••••
                       </code>
                     </div>
 
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         type="button"
-                        onClick={() => toggleReveal(k.id)}
-                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
-                        title={isRevealed ? t('Ẩn khóa') : t('Hiện khóa')}
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          {isRevealed ? 'visibility_off' : 'visibility'}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyKey(k)}
+                        onClick={() => handleCopyPrefix(k)}
                         className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors cursor-pointer"
-                        title={isCopied ? t('Đã sao chép') : t('Sao chép')}
+                        title={isCopied ? t('Đã sao chép prefix') : t('Sao chép prefix')}
                       >
                         <span className="material-symbols-outlined text-[18px]">
                           {isCopied ? 'check' : 'content_copy'}
@@ -217,15 +381,8 @@ export const ApiKeysPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Metadata Attributes */}
                   <div className="grid grid-cols-2 gap-3 text-body-xs text-on-surface-variant pt-2 border-t border-outline-variant/20">
-                    <div>
-                      <span className="text-[11px] block text-on-surface-variant/70">{t('Giới hạn')}</span>
-                      <span className="font-semibold text-on-surface font-code-sm">{k.rateLimitPerSec} req/giây</span>
-                    </div>
-                    <div>
-                      <span className="text-[11px] block text-on-surface-variant/70">{t('Hạn mức tháng')}</span>
-                      <span className="font-semibold text-on-surface font-code-sm">{k.monthlyQuota.toLocaleString()} req</span>
-                    </div>
                     <div>
                       <span className="text-[11px] block text-on-surface-variant/70">{t('Ngày tạo')}</span>
                       <span className="font-code-sm">{new Date(k.createdAt).toLocaleDateString('vi-VN')}</span>
@@ -234,20 +391,29 @@ export const ApiKeysPage: React.FC = () => {
                       <span className="text-[11px] block text-on-surface-variant/70">{t('Lần dùng cuối')}</span>
                       <span className="font-code-sm">{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString('vi-VN') : t('Chưa dùng')}</span>
                     </div>
+                    {k.revokedAt && (
+                      <div className="col-span-2 text-error">
+                        <span className="text-[11px] block text-error/70">{t('Thời điểm thu hồi')}</span>
+                        <span className="font-code-sm">{new Date(k.revokedAt).toLocaleString('vi-VN')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="pt-4 mt-4 border-t border-outline-variant/20 flex items-center justify-between">
-                  <Badge variant={k.isRevoked ? 'danger' : 'success'} size="sm">
-                    {k.isRevoked ? t('Revoked') : t('Active')}
-                  </Badge>
-                  {!k.isRevoked && (
+                  <span className="text-[12px] text-on-surface-variant">
+                    {k.isActive && !k.revokedAt ? t('Sẵn sàng cho Gateway') : t('Không thể sử dụng')}
+                  </span>
+                  {k.isActive && !k.revokedAt && (
                     <div className="flex items-center gap-2">
                       <Button
                         variant="secondary"
                         size="sm"
                         icon="sync"
-                        onClick={() => setRotateModalKey(k)}
+                        onClick={() => {
+                          setActionError(null);
+                          setRotateModalKey(k);
+                        }}
                       >
                         {t('Rotate')}
                       </Button>
@@ -255,7 +421,10 @@ export const ApiKeysPage: React.FC = () => {
                         variant="danger"
                         size="sm"
                         icon="delete"
-                        onClick={() => setRevokeModalKey(k)}
+                        onClick={() => {
+                          setActionError(null);
+                          setRevokeModalKey(k);
+                        }}
                       >
                         {t('Revoke')}
                       </Button>
@@ -273,10 +442,9 @@ export const ApiKeysPage: React.FC = () => {
             <table className="w-full text-left text-body-sm">
               <thead className="bg-surface-container text-on-surface-variant text-[11px] uppercase font-semibold border-b border-outline-variant/20">
                 <tr>
-                  <th className="px-5 py-3.5">{t('Tên khóa & Phạm vi')}</th>
-                  <th className="px-5 py-3.5">{t('Môi trường')}</th>
+                  <th className="px-5 py-3.5">{t('Tên khóa (Label)')}</th>
+                  <th className="px-5 py-3.5">{t('Phạm vi (API ID)')}</th>
                   <th className="px-5 py-3.5">{t('Tiền tố khóa (Prefix)')}</th>
-                  <th className="px-5 py-3.5">{t('Giới hạn / Hạn mức')}</th>
                   <th className="px-5 py-3.5">{t('Trạng thái')}</th>
                   <th className="px-5 py-3.5">{t('Ngày tạo')}</th>
                   <th className="px-5 py-3.5">{t('Lần dùng cuối')}</th>
@@ -286,23 +454,26 @@ export const ApiKeysPage: React.FC = () => {
               <tbody className="divide-y divide-outline-variant/15 text-on-surface">
                 {keys.map(k => {
                   const isCopied = copiedKeyId === k.id;
+                  const isActive = k.isActive && !k.revokedAt;
                   return (
                     <tr key={k.id} className="hover:bg-surface-container/40 transition-colors">
                       <td className="px-5 py-4">
-                        <span className="font-semibold text-on-surface block">{k.name}</span>
-                        <span className="text-[12px] text-on-surface-variant">{k.apiScope}</span>
+                        <span className="font-semibold text-on-surface block">
+                          {k.label || t('Unnamed Key')}
+                        </span>
+                        <span className="text-[12px] text-on-surface-variant font-code-sm">ID: {k.id}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <Badge variant={k.environment === 'Production' ? 'primary' : 'neutral'} size="sm">
-                          {k.environment}
+                        <Badge variant="primary" size="sm">
+                          API #{k.apiId}
                         </Badge>
                       </td>
                       <td className="px-5 py-4 font-code-md text-code-sm text-primary font-semibold">
                         <div className="flex items-center gap-1.5">
-                          <span>{k.keyPrefix}</span>
+                          <span>{k.keyPrefix}••••</span>
                           <button
                             type="button"
-                            onClick={() => handleCopyKey(k)}
+                            onClick={() => handleCopyPrefix(k)}
                             className="p-1 rounded text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
                             title={isCopied ? t('Đã sao chép') : t('Sao chép')}
                           >
@@ -312,14 +483,11 @@ export const ApiKeysPage: React.FC = () => {
                           </button>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-on-surface-variant text-body-xs font-code-sm">
-                        {k.rateLimitPerSec} req/s • {k.monthlyQuota.toLocaleString()} req/tháng
-                      </td>
                       <td className="px-5 py-4">
-                        {k.isRevoked ? (
-                          <Badge variant="danger" size="sm">{t('Revoked')}</Badge>
-                        ) : (
+                        {isActive ? (
                           <Badge variant="success" size="sm">{t('Active')}</Badge>
+                        ) : (
+                          <Badge variant="danger" size="sm">{t('Revoked')}</Badge>
                         )}
                       </td>
                       <td className="px-5 py-4 text-on-surface-variant font-code-sm">
@@ -329,13 +497,16 @@ export const ApiKeysPage: React.FC = () => {
                         {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString('vi-VN') : t('Chưa dùng')}
                       </td>
                       <td className="px-5 py-4 text-right">
-                        {!k.isRevoked && (
+                        {isActive && (
                           <div className="flex items-center justify-end gap-2">
                             <Button
                               variant="secondary"
                               size="sm"
                               icon="sync"
-                              onClick={() => setRotateModalKey(k)}
+                              onClick={() => {
+                                setActionError(null);
+                                setRotateModalKey(k);
+                              }}
                             >
                               {t('Rotate')}
                             </Button>
@@ -343,7 +514,10 @@ export const ApiKeysPage: React.FC = () => {
                               variant="danger"
                               size="sm"
                               icon="delete"
-                              onClick={() => setRevokeModalKey(k)}
+                              onClick={() => {
+                                setActionError(null);
+                                setRevokeModalKey(k);
+                              }}
                             >
                               {t('Revoke')}
                             </Button>
@@ -359,93 +533,158 @@ export const ApiKeysPage: React.FC = () => {
         </div>
       )}
 
+      {/* Pagination Controls */}
+      {total > pageSize && (
+        <div className="flex items-center justify-between pt-4 border-t border-outline-variant/20">
+          <span className="text-body-sm text-on-surface-variant">
+            {t('Trang')} {page} / {Math.ceil(total / pageSize)} ({total} {t('khóa tổng cộng')})
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+            >
+              {t('Trước')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= Math.ceil(total / pageSize)}
+              onClick={() => setPage(p => p + 1)}
+            >
+              {t('Sau')}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Create Key Modal */}
       <Modal
         isOpen={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
+        onClose={() => {
+          setCreateModalOpen(false);
+          setNewKeyApiId('');
+          setNewKeyLabel('');
+          setCreateError(null);
+        }}
         title={t('Tạo API Key Mới')}
-        description={t('Cấp mã định danh xác thực cho các ứng dụng gửi qua Gateway')}
       >
-        <div className="space-y-4">
-          <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl text-body-xs text-on-surface">
-            <span className="font-semibold text-primary block mb-0.5">{t('Thông báo kỹ thuật (Sprint 4):')}</span>
-            {t('Dịch vụ cấp khóa an toàn của Backend sẽ ra mắt trong Sprint 4. Trình duyệt không tự tạo secret ngẫu nhiên để tuân thủ tiêu chuẩn mật mã.')}
+        <form onSubmit={handleCreateKey} className="space-y-4">
+          <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-body-xs text-on-surface-variant">
+            {t('Mỗi Consumer chỉ được cấp 1 API Key đang hoạt động cho mỗi API. Secret key sẽ chỉ được hiển thị một lần duy nhất sau khi tạo.')}
           </div>
 
           <div>
-            <label className="text-body-sm font-medium text-on-surface block mb-1">
-              {t('Tên khóa / Nhãn môi trường')}
+            <label className="text-body-sm font-medium text-on-surface block mb-1.5">
+              {t('API ID (Bắt buộc)')} *
             </label>
             <input
               type="text"
-              value={newKeyName}
-              onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder="e.g. Production Backend Cluster, Staging Runner"
-              className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-on-surface text-body-sm outline-none focus:ring-2 focus:ring-primary"
+              required
+              value={newKeyApiId}
+              onChange={(e) => setNewKeyApiId(e.target.value)}
+              placeholder="e.g. 1"
+              pattern="^[1-9][0-9]{0,9}$"
+              className="w-full px-4 py-2.5 rounded-xl bg-surface-container border border-outline-variant/40 text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none font-code-sm"
+            />
+            <span className="text-[12px] text-on-surface-variant/70 block mt-1">
+              {t('ID của API đã công khai trên Marketplace')}
+            </span>
+          </div>
+
+          <div>
+            <label className="text-body-sm font-medium text-on-surface block mb-1.5">
+              {t('Tên gợi nhớ (Label - Tùy chọn)')}
+            </label>
+            <input
+              type="text"
+              value={newKeyLabel}
+              onChange={(e) => setNewKeyLabel(e.target.value)}
+              placeholder={t('e.g. Production Backend Cluster')}
+              maxLength={100}
+              className="w-full px-4 py-2.5 rounded-xl bg-surface-container border border-outline-variant/40 text-on-surface placeholder:text-on-surface-variant/40 focus:border-primary focus:outline-none"
             />
           </div>
 
-          <div>
-            <label className="text-body-sm font-medium text-on-surface block mb-1">
-              {t('Môi trường')}
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedEnv('Sandbox')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  selectedEnv === 'Sandbox'
-                    ? 'border-primary bg-primary/5 text-primary font-bold'
-                    : 'border-outline-variant/40 bg-surface-container-low text-on-surface'
-                }`}
-              >
-                <div className="text-body-sm font-semibold">Sandbox</div>
-                <div className="text-[11px] text-on-surface-variant mt-0.5">Kiểm thử với dữ liệu mẫu</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedEnv('Production')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  selectedEnv === 'Production'
-                    ? 'border-primary bg-primary/5 text-primary font-bold'
-                    : 'border-outline-variant/40 bg-surface-container-low text-on-surface'
-                }`}
-              >
-                <div className="text-body-sm font-semibold">Production</div>
-                <div className="text-[11px] text-on-surface-variant mt-0.5">Môi trường chạy thực tế</div>
-              </button>
+          {createError && (
+            <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-body-xs">
+              {createError}
             </div>
-          </div>
+          )}
 
-          <div>
-            <label className="text-body-sm font-medium text-on-surface block mb-1">
-              {t('Phạm vi cấp quyền (API Scope)')}
-            </label>
-            <select
-              value={selectedScope}
-              onChange={(e) => setSelectedScope(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-on-surface text-body-sm outline-none"
-            >
-              <option value="Universal / All APIs">Universal / Tất cả API trên sàn</option>
-              <option value="Single API">Chỉ định từng API riêng biệt</option>
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/20">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/20">
             <Button
               type="button"
               variant="outline"
-              onClick={handleCloseCreateModal}
+              onClick={() => {
+                setCreateModalOpen(false);
+                setNewKeyApiId('');
+                setNewKeyLabel('');
+                setCreateError(null);
+              }}
+              disabled={isSubmitting}
             >
               {t('Hủy')}
             </Button>
             <Button
-              type="button"
+              type="submit"
               variant="primary"
-              disabled={true}
-              title={t('Tính năng sẽ kích hoạt cùng Backend API Keys Service trong Sprint 4')}
+              disabled={isSubmitting || !newKeyApiId.trim()}
             >
-              {t('Tạo Khóa (Chờ Sprint 4)')}
+              {isSubmitting ? t('Đang tạo...') : t('Tạo Khóa')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ONE-TIME SECRET REVEAL MODAL */}
+      <Modal
+        isOpen={Boolean(revealedSecretData)}
+        onClose={handleCloseSecretModal}
+        title={revealedSecretData?.isRotated ? t('Đã Xoay Vòng API Key Mới') : t('Khóa API Của Bạn Đã Sẵn Sàng')}
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[20px] flex-shrink-0 mt-0.5">
+              warning
+            </span>
+            <div className="text-body-xs text-on-surface-variant leading-relaxed">
+              <strong className="text-on-surface font-bold">{t('Lưu ý bảo mật quan trọng:')} </strong>
+              {t('Đây là lần duy nhất bạn thấy toàn bộ chuỗi Secret Key này. Hệ thống không lưu trữ chuỗi này ở dạng plaintext. Vui lòng sao chép và lưu trữ an toàn ngay bây giờ.')}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-body-sm font-medium text-on-surface block mb-1.5">
+              {t('Full Secret Key (Dùng làm header X-API-Key trên Gateway)')}
+            </label>
+            <div className="p-3 bg-surface-container-highest rounded-xl border border-primary/30 flex items-center justify-between gap-3">
+              <code className="font-code-md text-code-sm text-primary font-bold break-all select-all">
+                {revealedSecretData?.secret}
+              </code>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={copiedSecret ? 'check' : 'content_copy'}
+                onClick={handleCopySecret}
+                className="flex-shrink-0"
+              >
+                {copiedSecret ? t('Đã chép!') : t('Sao chép')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="text-[12px] text-on-surface-variant space-y-1 bg-surface-container p-3 rounded-xl">
+            <div><strong>API ID:</strong> {revealedSecretData?.apiId}</div>
+            <div><strong>Prefix:</strong> {revealedSecretData?.keyPrefix}</div>
+            {revealedSecretData?.label && <div><strong>Label:</strong> {revealedSecretData.label}</div>}
+          </div>
+
+          <div className="pt-3 border-t border-outline-variant/20 flex justify-end">
+            <Button variant="primary" onClick={handleCloseSecretModal}>
+              {t('Tôi đã lưu khóa an toàn')}
             </Button>
           </div>
         </div>
@@ -453,33 +692,47 @@ export const ApiKeysPage: React.FC = () => {
 
       {/* Rotate Key Confirmation Modal */}
       <Modal
-        isOpen={!!rotateModalKey}
-        onClose={() => setRotateModalKey(null)}
-        title={t('Xác nhận Đổi Khóa (Rotate API Key)')}
-        description={rotateModalKey ? `Khóa đang chọn: ${rotateModalKey.name}` : ''}
+        isOpen={Boolean(rotateModalKey)}
+        onClose={() => {
+          setRotateModalKey(null);
+          setActionError(null);
+        }}
+        title={t('Xác nhận Xoay Vòng (Rotate) API Key')}
       >
         <div className="space-y-4">
-          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-body-xs text-amber-800 dark:text-amber-200">
-            <div className="flex items-center gap-1.5 font-semibold mb-1">
-              <span className="material-symbols-outlined text-[18px]">warning</span>
-              <span>Cảnh báo thời gian chuyển tiếp (Grace Period)</span>
-            </div>
-            {t('Khi kích hoạt trên backend, đổi khóa sẽ cấp secret mới và vô hiệu hóa secret cũ sau khoảng thời gian đệm (grace period). Các ứng dụng cần cập nhật secret mới để tránh lỗi 401 Unauthorized.')}
+          <div className="p-3.5 rounded-xl bg-error/10 border border-error/30 text-error text-body-xs leading-relaxed">
+            <strong>{t('Cảnh báo:')} </strong>
+            {t('Khóa cũ sẽ bị vô hiệu hóa (revoked) ngay lập tức. Mọi ứng dụng đang dùng khóa cũ sẽ bị từ chối kết nối tức thì (không có thời gian ân hạn).')}
           </div>
 
-          <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/20">
+          <p className="text-body-sm text-on-surface-variant">
+            {t('Bạn có chắc chắn muốn xoay vòng khóa')} <strong>{rotateModalKey?.label || rotateModalKey?.keyPrefix}</strong> {t('cho API ID')} #{rotateModalKey?.apiId}?
+          </p>
+
+          {actionError && (
+            <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-body-xs">
+              {actionError}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/20">
             <Button
               variant="outline"
-              onClick={() => setRotateModalKey(null)}
+              onClick={() => {
+                setRotateModalKey(null);
+                setActionError(null);
+              }}
+              disabled={isSubmitting}
             >
-              {t('Đóng')}
+              {t('Hủy')}
             </Button>
             <Button
-              variant="primary"
-              disabled={true}
-              title={t('Tính năng sẽ kích hoạt cùng Backend API Keys Service trong Sprint 4')}
+              variant="danger"
+              icon="sync"
+              onClick={handleRotateKey}
+              disabled={isSubmitting}
             >
-              {t('Xác nhận Đổi Khóa (Chờ Sprint 4)')}
+              {isSubmitting ? t('Đang xoay vòng...') : t('Xác nhận Rotate')}
             </Button>
           </div>
         </div>
@@ -487,33 +740,47 @@ export const ApiKeysPage: React.FC = () => {
 
       {/* Revoke Key Confirmation Modal */}
       <Modal
-        isOpen={!!revokeModalKey}
-        onClose={() => setRevokeModalKey(null)}
-        title={t('Thu hồi API Key')}
-        description={revokeModalKey ? `Khóa đang chọn: ${revokeModalKey.name}` : ''}
+        isOpen={Boolean(revokeModalKey)}
+        onClose={() => {
+          setRevokeModalKey(null);
+          setActionError(null);
+        }}
+        title={t('Xác nhận Thu Hồi (Revoke) API Key')}
       >
         <div className="space-y-4">
-          <div className="p-3 bg-error/10 border border-error/20 rounded-xl text-body-xs text-error">
-            <div className="flex items-center gap-1.5 font-semibold mb-1">
-              <span className="material-symbols-outlined text-[18px]">dangerous</span>
-              <span>Hành động nguy hiểm không thể đảo ngược</span>
-            </div>
-            {t('Khi thu hồi, tất cả yêu cầu sử dụng khóa này sẽ bị Gateway từ chối ngay lập tức với mã lỗi HTTP 401 Unauthorized.')}
+          <div className="p-3.5 rounded-xl bg-error/10 border border-error/30 text-error text-body-xs leading-relaxed">
+            <strong>{t('Cảnh báo không thể hoàn tác:')} </strong>
+            {t('Khóa này sẽ bị thu hồi vĩnh viễn và không thể kích hoạt lại.')}
           </div>
 
-          <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/20">
+          <p className="text-body-sm text-on-surface-variant">
+            {t('Bạn có chắc chắn muốn thu hồi khóa')} <strong>{revokeModalKey?.label || revokeModalKey?.keyPrefix}</strong> (API #{revokeModalKey?.apiId})?
+          </p>
+
+          {actionError && (
+            <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-body-xs">
+              {actionError}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/20">
             <Button
               variant="outline"
-              onClick={() => setRevokeModalKey(null)}
+              onClick={() => {
+                setRevokeModalKey(null);
+                setActionError(null);
+              }}
+              disabled={isSubmitting}
             >
               {t('Hủy')}
             </Button>
             <Button
               variant="danger"
-              disabled={true}
-              title={t('Tính năng sẽ kích hoạt cùng Backend API Keys Service trong Sprint 4')}
+              icon="delete"
+              onClick={handleRevokeKey}
+              disabled={isSubmitting}
             >
-              {t('Thu hồi Vĩnh viễn (Chờ Sprint 4)')}
+              {isSubmitting ? t('Đang thu hồi...') : t('Xác nhận Thu Hồi')}
             </Button>
           </div>
         </div>

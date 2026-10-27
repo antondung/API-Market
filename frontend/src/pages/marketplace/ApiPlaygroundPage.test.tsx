@@ -1,10 +1,24 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ApiPlaygroundPage } from './ApiPlaygroundPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
+import * as consumerApi from '../../services/consumerApi';
 import type { MarketplaceApiDetail } from '../../services/marketplaceTypes';
+
+let mockCurrentUser: { id: string; email: string; role: string } | null = {
+  id: 'user-consumer-1',
+  email: 'consumer@apihub.vn',
+  role: 'Consumer',
+};
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({
+    currentUser: mockCurrentUser,
+    isAuthenticated: Boolean(mockCurrentUser),
+  }),
+}));
 
 vi.mock('../../i18n', () => ({
   useLanguage: () => ({ t: (key: string) => key }),
@@ -27,14 +41,15 @@ const mockApiDetail: MarketplaceApiDetail = {
     {
       id: 'ep-get',
       versionId: 'v1',
-      path: '/v1/users',
+      path: '/v1/users/{userId}',
       method: 'GET',
-      description: 'Get user list',
+      description: 'Get user by ID',
       parameters: [
+        { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, default: 'u-123' },
         { name: 'role', in: 'query', required: false, schema: { type: 'string' }, default: 'admin' },
       ],
       requestSchema: null,
-      responseExample: { status: 'ok', users: [] },
+      responseExample: { status: 'ok', user: { id: 'u-123', name: 'Alice' } },
     },
     {
       id: 'ep-post',
@@ -62,42 +77,135 @@ const renderPlayground = (initialPath = '/api/api-pg-1/playground') => {
   );
 };
 
-describe('ApiPlaygroundPage - Hardened Snippets & Safe SSRF Policy', () => {
+describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
   beforeEach(() => {
+    mockCurrentUser = {
+      id: 'user-consumer-1',
+      email: 'consumer@apihub.vn',
+      role: 'Consumer',
+    };
     vi.clearAllMocks();
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue({
+      id: 'g-1',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 1,
+      remainingRequests: 4,
+      available: true,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: null,
+    });
   });
 
-  it('renders playground with endpoints and hardened snippet generator', async () => {
-    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
+  it('renders playground with endpoints, path params and snippet generator', async () => {
     renderPlayground();
 
     expect(await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Playground Test API' })).toBeDefined();
-    expect(screen.getAllByText('/v1/users').length).toBeGreaterThan(0);
 
-    // Verify cURL snippet is present with POSIX single quote escaping
-    const curlBlock = screen.getByText(/curl -X GET/);
-    expect(curlBlock).toBeDefined();
+    // Verify endpoint path parameter input is rendered
+    expect(screen.getByText('{userId}')).toBeDefined();
+    const pathInput = screen.getByPlaceholderText('Giá trị userId') as HTMLInputElement;
+    expect(pathInput.value).toBe('u-123');
 
-    // Verify template notice
-    expect(screen.getByText(/Thay thế YOUR_API_KEY bằng API Key thật/)).toBeDefined();
+    // Verify cURL snippet has substituted path
+    expect(screen.getByText(/curl -X GET/)).toBeDefined();
   });
 
-  it('locks Send Request button with Sprint 4 notice to prevent client-side SSRF', async () => {
-    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+  it('enables Send Request button for eligible Consumer and executes via backend playground proxy', async () => {
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockResolvedValueOnce({
+      status: 200,
+      headers: { 'content-type': 'application/json', 'x-request-id': 'req-abc-123' },
+      body: JSON.stringify({ status: 'ok', user: { id: 'u-123', name: 'Alice' } }),
+      bodyEncoding: 'utf8',
+      latencyMs: 42,
+      remainingRequests: 3,
+    });
 
     renderPlayground();
     await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
 
     const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    expect(sendButton.hasAttribute('disabled')).toBe(false);
+
+    // Click Send Request
+    fireEvent.click(sendButton);
+
+    // Wait for execution to finish
+    await waitFor(() => {
+      expect(executeSpy).toHaveBeenCalledWith('api-pg-1', expect.objectContaining({
+        endpointId: 'ep-get',
+        pathParams: expect.objectContaining({ userId: 'u-123' }),
+      }));
+    });
+
+    // Verifies live response rendered: upstream status 200, latency 42 ms, remaining requests 3
+    expect(await screen.findByText('42 ms')).toBeDefined();
+    expect(screen.getByText(/Còn lại: 3 requests/i)).toBeDefined();
+    expect(screen.getByText(/"name": "Alice"/)).toBeDefined();
+  });
+
+  it('isolates upstream HTTP error status (500) from platform status without crashing', async () => {
+    vi.spyOn(consumerApi, 'executePlayground').mockResolvedValueOnce({
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: 'Database timeout on upstream provider host' }),
+      bodyEncoding: 'utf8',
+      latencyMs: 120,
+      remainingRequests: 2,
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Upstream 500 is rendered in the response panel
+    expect(await screen.findByText('120 ms')).toBeDefined();
+    expect(screen.getByText(/"Database timeout on upstream provider host"/)).toBeDefined();
+    expect(screen.getByText('500')).toBeDefined();
+  });
+
+  it('disables Send Request button when unauthenticated or role is not Consumer', async () => {
+    mockCurrentUser = null;
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
     expect(sendButton.hasAttribute('disabled')).toBe(true);
-    expect(screen.getByText(/Chính sách Gateway Proxy & Chống SSRF/)).toBeDefined();
+
+    // Renders login prompt
+    expect(screen.getByText(/Yêu cầu đăng nhập Consumer:/i)).toBeDefined();
+  });
+
+  it('disables Send Request button when sandbox quota is exhausted', async () => {
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue({
+      id: 'g-1',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 5,
+      remainingRequests: 0,
+      available: false,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: null,
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    await waitFor(() => {
+      const sendButton = screen.getByRole('button', { name: /Send Request/i });
+      expect(sendButton.hasAttribute('disabled')).toBe(true);
+    });
   });
 
   it('switches tabs between cURL, JavaScript, and Python snippets', async () => {
-    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
-
     const { container } = renderPlayground();
     await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
 
@@ -113,8 +221,6 @@ describe('ApiPlaygroundPage - Hardened Snippets & Safe SSRF Policy', () => {
   });
 
   it('resets execution state when switching endpoints', async () => {
-    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
-
     renderPlayground();
     await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
 
@@ -132,8 +238,6 @@ describe('ApiPlaygroundPage - Hardened Snippets & Safe SSRF Policy', () => {
   });
 
   it('defaults to YOUR_API_KEY in snippets and requires explicit opt-in to insert entered key', async () => {
-    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
-
     renderPlayground();
     await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
 
@@ -145,7 +249,6 @@ describe('ApiPlaygroundPage - Hardened Snippets & Safe SSRF Policy', () => {
     const input = screen.getByPlaceholderText(/Enter API Key/i) as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'super_secret_playground_token' } });
 
-    // Switch to Snippets panel (already visible on right)
     // Snippet should NOT display super_secret_playground_token without opt-in
     expect(screen.queryByText(/super_secret_playground_token/)).toBeNull();
     expect(screen.getAllByText(/YOUR_API_KEY/).length).toBeGreaterThan(0);
@@ -159,8 +262,6 @@ describe('ApiPlaygroundPage - Hardened Snippets & Safe SSRF Policy', () => {
   });
 
   it('clears API key and headers on session invalidation event', async () => {
-    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
-
     renderPlayground();
     await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
 

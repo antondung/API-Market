@@ -1,7 +1,9 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApiKeysPage } from './ApiKeysPage';
+import * as consumerApi from '../../services/consumerApi';
+import { ApiError } from '../../services/authApi';
 
 let mockCurrentUser: { id: string; email: string; role: string } | null = {
   id: 'user-consumer-1',
@@ -20,7 +22,7 @@ vi.mock('../../i18n', () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }));
 
-describe('ApiKeysPage Security & Zero Plaintext Integrity', () => {
+describe('ApiKeysPage Real Backend Integration & Security Lifecycle', () => {
   beforeEach(() => {
     mockCurrentUser = {
       id: 'user-consumer-1',
@@ -30,88 +32,235 @@ describe('ApiKeysPage Security & Zero Plaintext Integrity', () => {
     vi.clearAllMocks();
   });
 
-  it('renders honest empty state awaiting Backend API Keys Service without hardcoded demo keys', () => {
-    render(<ApiKeysPage />);
-
-    // Zero fake/mock keys rendered
-    expect(screen.queryByText('key_sand_demo_01')).toBeNull();
-    expect(screen.queryByText('key_prod_demo_02')).toBeNull();
-    expect(screen.queryByText('sk_live_demo_9876543210')).toBeNull();
-    expect(screen.queryByText('sk_test_demo_1234567890')).toBeNull();
-
-    // Honest empty state header and Sprint 4 notice
-    expect(screen.getByText('Chưa có API key nào được cấp phát')).toBeDefined();
-    expect(
-      screen.getByText(/Dịch vụ quản trị API Keys trên Backend đang được hoàn thiện trong Sprint 4/)
-    ).toBeDefined();
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('displays Zero Plaintext Policy advisory banner', () => {
+  it('renders honest empty state when backend returns 0 keys', async () => {
+    vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+    });
+
     render(<ApiKeysPage />);
 
-    expect(screen.getByText(/Zero Plaintext Policy & Cryptographic Generation:/)).toBeDefined();
-    expect(screen.getByText(/không sinh bằng Math.random\(\) tại trình duyệt/)).toBeDefined();
+    expect(await screen.findByText('Chưa có API key nào được cấp phát')).toBeDefined();
+    expect(screen.getByText(/Tạo API Key đầu tiên để bắt đầu gọi API của nhà cung cấp/)).toBeDefined();
   });
 
-  it('disables Create API Key action safely awaiting backend service', () => {
+  it('displays real keys returned by backend and supports card/table toggle', async () => {
+    vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+      items: [
+        {
+          id: '1',
+          apiId: '10',
+          keyPrefix: 'ak_live_abc123',
+          label: 'Weather Cluster Key',
+          isActive: true,
+          lastUsedAt: '2026-10-27T01:00:00.000Z',
+          revokedAt: null,
+          createdAt: '2026-10-26T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+
     render(<ApiKeysPage />);
 
-    // Top action opens modal
-    const topCreateBtn = screen.getByRole('button', { name: /addCreate New API Key$/i });
-    fireEvent.click(topCreateBtn);
+    expect(await screen.findByText('Weather Cluster Key')).toBeDefined();
+    expect(screen.getByText('10')).toBeDefined();
+    expect(screen.getByText('Active')).toBeDefined();
 
-    // Modal title appears
-    expect(screen.getByText('Tạo API Key Mới')).toBeDefined();
-
-    // Submit button in modal is disabled safely
-    const submitBtn = screen.getByRole('button', { name: /Tạo Khóa \(Chờ Sprint 4\)/i });
-    expect(submitBtn.hasAttribute('disabled')).toBe(true);
-    expect(submitBtn.getAttribute('title')).toBe(
-      'Tính năng sẽ kích hoạt cùng Backend API Keys Service trong Sprint 4'
-    );
+    // Toggle to table view
+    const tableBtn = screen.getByTitle('Xem dạng bảng');
+    fireEvent.click(tableBtn);
+    expect(await screen.findByText('Weather Cluster Key')).toBeDefined();
   });
 
-  it('wipes secret input and state on modal cancel and close', () => {
-    render(<ApiKeysPage />);
+  it('creates key, reveals secret once, and never persists plaintext to storage', async () => {
+    let callCount = 0;
+    vi.spyOn(consumerApi, 'listConsumerApiKeys').mockImplementation(async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { items: [], total: 0, page: 1, pageSize: 20 };
+      }
+      return {
+        items: [
+          {
+            id: '2',
+            apiId: '15',
+            keyPrefix: 'ak_live_xyz999',
+            label: 'New Payment Key',
+            isActive: true,
+            lastUsedAt: null,
+            revokedAt: null,
+            createdAt: '2026-10-27T02:00:00.000Z',
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      };
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /addCreate New API Key$/i }));
-    const nameInput = screen.getByPlaceholderText(/e.g. Production Backend Cluster/i);
-    fireEvent.change(nameInput, { target: { value: 'Secret Key Test' } });
-    expect((nameInput as HTMLInputElement).value).toBe('Secret Key Test');
+    const createSpy = vi.spyOn(consumerApi, 'createConsumerApiKey').mockResolvedValueOnce({
+      id: '2',
+      apiId: '15',
+      keyPrefix: 'ak_live_xyz999',
+      label: 'New Payment Key',
+      isActive: true,
+      lastUsedAt: null,
+      revokedAt: null,
+      createdAt: '2026-10-27T02:00:00.000Z',
+      key: 'ak_live_SUPER_SECRET_REVEAL_ONCE',
+    });
 
-    // Cancel modal
-    const cancelBtn = screen.getByRole('button', { name: /Hủy/i });
-    fireEvent.click(cancelBtn);
-
-    // Reopen modal: verify clean state
-    fireEvent.click(screen.getByRole('button', { name: /addCreate New API Key$/i }));
-    const reopenedInput = screen.getByPlaceholderText(/e.g. Production Backend Cluster/i);
-    expect((reopenedInput as HTMLInputElement).value).toBe('');
-  });
-
-  it('does not store secrets in localStorage or sessionStorage', () => {
     const localSpy = vi.spyOn(Storage.prototype, 'setItem');
     const sessionSpy = vi.spyOn(sessionStorage, 'setItem');
 
     render(<ApiKeysPage />);
 
-    expect(localSpy).not.toHaveBeenCalledWith(expect.stringMatching(/api.*key|secret/i), expect.anything());
-    expect(sessionSpy).not.toHaveBeenCalledWith(expect.stringMatching(/api.*key|secret/i), expect.anything());
+    // Wait for initial load
+    expect(await screen.findByText('Chưa có API key nào được cấp phát')).toBeDefined();
 
-    localSpy.mockRestore();
-    sessionSpy.mockRestore();
+    // Click Create New API Key (top button)
+    const createBtns = screen.getAllByRole('button', { name: /Create New API Key/i });
+    fireEvent.click(createBtns[0]);
+
+    // Fill form
+    const apiIdInput = screen.getByPlaceholderText('e.g. 1');
+    const labelInput = screen.getByPlaceholderText('e.g. Production Backend Cluster');
+    fireEvent.change(apiIdInput, { target: { value: '15' } });
+    fireEvent.change(labelInput, { target: { value: 'New Payment Key' } });
+
+    // Submit
+    const submitBtn = screen.getByRole('button', { name: 'Tạo Khóa' });
+    fireEvent.click(submitBtn);
+
+    // Verify modal reveals the secret
+    expect(await screen.findByText('ak_live_SUPER_SECRET_REVEAL_ONCE')).toBeDefined();
+    expect(screen.getByText('Khóa API Của Bạn Đã Sẵn Sàng')).toBeDefined();
+    expect(createSpy).toHaveBeenCalledWith('15', 'New Payment Key');
+
+    // Verify secret is NEVER persisted to storage
+    expect(localSpy).not.toHaveBeenCalledWith(expect.stringMatching(/secret|ak_live/i), expect.anything());
+    expect(sessionSpy).not.toHaveBeenCalledWith(expect.stringMatching(/secret|ak_live/i), expect.anything());
+
+    // Close secret modal and verify secret is wiped from DOM
+    const closeSecretBtn = screen.getByRole('button', { name: /Tôi đã lưu khóa an toàn/i });
+    fireEvent.click(closeSecretBtn);
+    await waitFor(() => {
+      expect(screen.queryByText('ak_live_SUPER_SECRET_REVEAL_ONCE')).toBeNull();
+    });
   });
 
-  it('supports toggling between card and table view modes', () => {
+  it('handles 409 conflict when active key already exists for the API', async () => {
+    vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+    });
+
+    vi.spyOn(consumerApi, 'createConsumerApiKey').mockRejectedValueOnce(
+      new ApiError(409, 'KEY_CONFLICT', 'An active key already exists for this API')
+    );
+
     render(<ApiKeysPage />);
+    expect(await screen.findByText('Chưa có API key nào được cấp phát')).toBeDefined();
 
-    const cardModeBtn = screen.getByTitle('Xem dạng thẻ');
-    const tableModeBtn = screen.getByTitle('Xem dạng bảng');
+    const createBtns = screen.getAllByRole('button', { name: /Create New API Key/i });
+    fireEvent.click(createBtns[0]);
+    fireEvent.change(screen.getByPlaceholderText('e.g. 1'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /Tạo Khóa/i }));
 
-    expect(cardModeBtn).toBeDefined();
-    expect(tableModeBtn).toBeDefined();
+    expect(await screen.findByText(/Một khóa đang hoạt động đã tồn tại cho API này/)).toBeDefined();
+  });
 
-    fireEvent.click(tableModeBtn);
-    fireEvent.click(cardModeBtn);
+  it('rotates key with immediate revocation warning and displays new secret', async () => {
+    vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+      items: [
+        {
+          id: '1',
+          apiId: '10',
+          keyPrefix: 'ak_live_old',
+          label: 'My API Key',
+          isActive: true,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: '2026-10-26T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+
+    const rotateSpy = vi.spyOn(consumerApi, 'rotateConsumerApiKey').mockResolvedValueOnce({
+      id: '2',
+      apiId: '10',
+      keyPrefix: 'ak_live_new',
+      label: 'My API Key',
+      isActive: true,
+      lastUsedAt: null,
+      revokedAt: null,
+      createdAt: '2026-10-27T03:00:00.000Z',
+      key: 'ak_live_ROTATED_SECRET_KEY',
+    });
+
+    render(<ApiKeysPage />);
+    expect(await screen.findByText('My API Key')).toBeDefined();
+
+    // Click Rotate
+    fireEvent.click(screen.getByRole('button', { name: /Rotate/i }));
+
+    // Confirm warning
+    expect(screen.getByText(/Khóa cũ sẽ bị vô hiệu hóa \(revoked\) ngay lập tức/)).toBeDefined();
+
+    // Confirm rotate
+    fireEvent.click(screen.getByRole('button', { name: /Xác nhận Rotate/i }));
+
+    // Verifies one-time secret modal opens
+    expect(await screen.findByText('ak_live_ROTATED_SECRET_KEY')).toBeDefined();
+    expect(rotateSpy).toHaveBeenCalledWith('1');
+  });
+
+  it('revokes key with confirmation', async () => {
+    vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+      items: [
+        {
+          id: '1',
+          apiId: '10',
+          keyPrefix: 'ak_live_old',
+          label: 'To Revoke',
+          isActive: true,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: '2026-10-26T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+
+    const revokeSpy = vi.spyOn(consumerApi, 'revokeConsumerApiKey').mockResolvedValueOnce(undefined);
+
+    render(<ApiKeysPage />);
+    expect(await screen.findByText('To Revoke')).toBeDefined();
+
+    // Click Revoke
+    fireEvent.click(screen.getByRole('button', { name: /Revoke/i }));
+    expect(screen.getByText(/Khóa này sẽ bị thu hồi vĩnh viễn/)).toBeDefined();
+
+    // Confirm revoke
+    fireEvent.click(screen.getByRole('button', { name: /Xác nhận Thu Hồi/i }));
+    await waitFor(() => {
+      expect(revokeSpy).toHaveBeenCalledWith('1');
+    });
   });
 });
