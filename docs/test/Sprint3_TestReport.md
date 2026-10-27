@@ -4,9 +4,9 @@
 > **Giai đoạn:** Sprint 3 — Sàn giao dịch API, Thử nghiệm Playground, Quota Dùng thử & Quản lý Khóa API
 > **QA Lead & Tác giả:** Trần Hà Thảo Vân (MSSV: BCS250039, `@vuonghathaovan-gif` — Issue #15 & Issue #70)
 > **Thời điểm xuất bản:** 27/10/2026 (Nghiệm thu Pha 1 — Bàn giao Backend & Khắc phục Bug F2)
-> **Mã Commit Nghiệm thu:** Cập nhật theo phản hồi Review PR #82
+> **Mã Commit Nghiệm thu:** Nâng cấp 100% HTTP-First và mở khóa toàn bộ US-18
 > **Nhánh thực thi:** `test/15-sprint3-qa-phase1` (Khớp 100% với nhánh Git làm việc)
-> **Quyết định nghiệm thu Pha 1:** **[x] ĐẠT 100% TIÊU CHÍ THỰC THI PHA 1 (Tỷ lệ đạt thực thi 100.0%, Độ phủ thiết kế 82.1% — 5 TC tạm hoãn do phụ thuộc Gateway/Mock)**
+> **Quyết định nghiệm thu Pha 1:** **[x] ĐẠT 100% TIÊU CHÍ THỰC THI PHA 1 (Tỷ lệ đạt thực thi 100.0% — 26/26, Độ phủ thiết kế 92.9% — 26/28, chỉ còn 2 TC chờ PR #78 Gateway)**
 
 ---
 
@@ -17,17 +17,19 @@ Sprint 3 tập trung vào hành trình của Consumer trên sàn thương mại 
 - **PR #76 (Vân):** Ban hành tài liệu Tiêu chuẩn nghiệm thu (`Sprint3_AcceptanceCriteria.md`), Bộ 46 Test Cases (`Sprint3_TestCases.md`), Auto-test Marketplace (`sprint3-marketplace-runner.js`) và Khắc phục dứt điểm Bug F2 (`TC-14-04`).
 - **PR #77 (Tùng Dương - Issue #12):** Hoàn thiện Backend Consumer: Proxy an toàn Playground (`SafeProxy`), chống SSRF đa lớp, quản lý Quota Sandbox nguyên tử (`SandboxService`) và Vòng đời Khóa API (`ApiKeyService`).
 - **PR #80 (Danh - Issue #11):** Bổ sung migration `008_create_reports_moderation.sql`, tạo bảng `reports` và trạng thái `Suspended` cho API.
-- **Review PR #82 (Tùng Dương & Dũng):** Tiếp thu ý kiến kiểm toán chất lượng khắt khe:
+- **PR #83 (Tùng Dương):** Bổ sung kiểm thử biên HTTP Sandbox và Upstream Timeout.
+- **Tiêu chuẩn Nâng cấp QA Pha 1:**
   1. *Data Overwrite Isolation:* Tạo riêng Test API độc lập (`isolatedApiId`), bảo toàn 100% dữ liệu seed `gateway_routes` của API ID 3, 12 và dọn dẹp sạch sẽ trong khối `finally`.
-  2. *Boundary Concurrency Test:* Kiểm tra Race Condition tại đúng điều kiện biên còn 1 lượt cuối (`used = 4, max = 5`), bắn đồng thời 10 requests, assert đúng 1 thành công và 9 bị chặn.
-  3. *Minh bạch số liệu (Transparency):* Tách bạch rõ `Total Designed`, `Executed`, `Passed`, `Failed`, `Skipped`, `Execution Pass Rate` (100.0%) và `Overall Coverage Rate` (82.1%). Tuyệt đối không đánh đồng `SKIPPED` với `PASS`.
-  4. *Nâng cấp TC-14-04:* Bổ sung hàm quét `containsSensitiveLeak()`, Canary Negative Test (phát hiện leak) và Canary Redacted Test (chống false alarm).
+  2. *100% HTTP-First cho US-19:* Toàn bộ chu trình tiêu thụ Sandbox (5 lượt tuần tự `TC-19-03`, chặn cạn quota `TC-19-04`, và kiểm thử Concurrency tại điều kiện biên còn 1 lượt cuối `TC-19-02`) đều được thực thi trực tiếp qua **HTTP Endpoint** (`POST /api/marketplace/apis/:id/playground`).
+  3. *Mở khóa 100% US-18:* Tích hợp kiểm thử thật qua upstream public hợp lệ `https://httpbin.org`, mở khóa thành công `TC-18-01` (Forward 200 OK), `TC-18-05` (Redirect 302 $\to$ 502 Blocked), và `TC-18-06` (Timeout $\to$ 504 Timeout) thông qua `SafeProxy`.
+  4. *Minh bạch số liệu (Transparency):* Tách bạch rõ `Total Designed`, `Executed`, `Passed`, `Failed`, `Skipped`, `Execution Pass Rate` (100.0%) và `Overall Coverage Rate` (92.9%).
+  5. *Nâng cấp TC-14-04:* Bổ sung hàm quét `containsSensitiveLeak()`, Canary Negative Test (phát hiện leak) và Canary Redacted Test (chống false alarm).
 
 Phạm vi nghiệm thu Pha 1 bao gồm 5 User Stories cốt lõi đã có mã nguồn trên `develop`:
 1. **US-16 (Marketplace Discovery):** Tìm kiếm không phân biệt hoa thường, lọc logic AND (category, tag, pricing), phân trang và sắp xếp ổn định, chỉ hiển thị API `Published`.
 2. **US-17 (API Detail & Public Documentation):** Xem chi tiết tài liệu OpenAPI, versions, endpoints, pricing plans; che mờ tuyệt đối tài liệu nhạy cảm (KYC evidence, domain proof); trả về `404` thống nhất cho API chưa Published hoặc Provider bị khóa.
-3. **US-18 (Playground & Anti-SSRF):** Cơ chế phòng thủ SSRF nhiều tầng chặn Loopback (`127.0.0.1`, `localhost`), Private Network (`10.x`, `192.168.x`), Cloud Metadata (`169.254.169.254`), Open Redirect (`502`), Header cấm (`400`) và Path Traversal.
-4. **US-19 (Try Before Subscribe & Sandbox Quota):** Cấp grant dùng thử 5 lượt/24h; trừ lượt nguyên tử qua stored procedure `consume_sandbox_grant()`; chặn lần gọi thứ 6 với `403 SANDBOX_EXHAUSTED`; đảm bảo an toàn tại điều kiện biên còn 1 lượt cuối trước tấn công race condition đồng thời.
+3. **US-18 (Playground & Anti-SSRF):** Chuyển tiếp request Playground tới upstream public an toàn; cơ chế phòng thủ SSRF nhiều tầng chặn Loopback (`127.0.0.1`, `localhost`), Private Network (`10.x`, `192.168.x`), Cloud Metadata (`169.254.169.254`), Open Redirect (`502`), Header cấm (`400`) và Path Traversal.
+4. **US-19 (Try Before Subscribe & Sandbox Quota):** Cấp grant dùng thử 5 lượt/24h; trừ lượt nguyên tử qua HTTP Playground; chặn lần gọi thứ 6 với `403 SANDBOX_EXHAUSTED`; đảm bảo an toàn tuyệt đối tại điều kiện biên còn 1 lượt cuối trước tấn công race condition đồng thời qua HTTP.
 5. **US-21 (API Key Lifecycle Management):** Sinh khóa ngẫu nhiên `ak_live_***` hiển thị raw key đúng 1 lần duy nhất; Database chỉ lưu chuỗi băm SHA-256 (64 hex) và prefix; ràng buộc 1 key active/Consumer/API; hỗ trợ Rotate và Revoke tức thì; bảo đảm cách ly dữ liệu giữa các Consumer.
 
 ---
@@ -41,7 +43,7 @@ Phạm vi nghiệm thu Pha 1 bao gồm 5 User Stories cốt lõi đã có mã ng
 - **Công cụ QA Runner Tự động:**
   * `qa-scripts/sprint2-backend-runner.js`: Kiểm thử hồi quy 60 TC (Sprint 1-2) kèm Canary Redaction.
   * `qa-scripts/sprint3-marketplace-runner.js`: Kiểm thử tự động 17 TC (US-16, US-17).
-  * `qa-scripts/sprint3-consumer-runner.js`: Kiểm thử tự động 28 TC thiết kế (23 Executed PASS, 5 Skipped).
+  * `qa-scripts/sprint3-consumer-runner.js`: Kiểm thử tự động 28 TC thiết kế (26 Executed PASS, 2 Skipped chờ PR #78).
 
 ---
 
@@ -77,7 +79,7 @@ Phạm vi nghiệm thu Pha 1 bao gồm 5 User Stories cốt lõi đã có mã ng
 
 ---
 
-## III. KẾT QUẢ KIỂM THỬ SPRINT 3 (PHA 1 — BẢNG ĐO LƯỜNG MINH BẠCH)
+## III. KẾT QUẢ KIỂM THỬ SPRINT 3 (PHA 1 — 100% HTTP-FIRST)
 
 ### 1. Phân hệ Marketplace & API Detail (US-16 & US-17 — 17 Test Cases)
 Thực thi qua `qa-scripts/sprint3-marketplace-runner.js`:
@@ -104,17 +106,17 @@ Thực thi qua `qa-scripts/sprint3-marketplace-runner.js`:
 
 ---
 
-### 2. Phân hệ Playground & Phòng chống SSRF (US-18)
+### 2. Phân hệ Playground & Phòng chống SSRF (US-18 — Mở khóa 100% Test Cases)
 Thực thi qua `qa-scripts/sprint3-consumer-runner.js` (Sử dụng Isolated Test API riêng biệt):
 
 | Mã TC | Phân loại | Tên Test Case | Kết quả | Chi tiết kiểm chứng kỹ thuật |
 |---|:---:|---|:---:|---|
-| `TC-18-01` | Gốc | Forward request hợp lệ tới Upstream | *SKIPPED* | Chờ staging/public upstream (môi trường local loopback bị SafeProxy chặn theo thiết kế) |
+| `TC-18-01` | Gốc | **Forward request hợp lệ tới Upstream Public** | **PASS** | **Gửi tới `https://httpbin.org/get` qua HTTP Playground: Trả về HTTP 200 OK, phản hồi chứa nội dung upstream, đo lường `latencyMs`, cập nhật `remainingRequests` chuẩn xác.** |
 | `TC-18-02` | Gốc | Chặn SSRF Loopback IPv4 (`127.0.0.1`, `localhost`) | **PASS** | Trả về `403 SSRF_DETECTED` trước khi mở socket |
 | `TC-18-03` | Gốc | Chặn SSRF Private Network RFC 1918 (`10.0.0.1`) | **PASS** | Trả về `403 SSRF_DETECTED`, chặn triệt để dải IP nội bộ |
 | `TC-18-04` | Gốc | Chặn SSRF Cloud Metadata Service (`169.254.169.254`)| **PASS** | Trả về `403 SSRF_DETECTED`, bảo vệ credentials máy chủ |
-| `TC-18-05` | Gốc | Chặn Upstream Redirect (`302 Redirect`) | *SKIPPED* | Cần mock upstream trả HTTP 302 chuyển hướng; sẽ test tại staging |
-| `TC-18-06` | Gốc | Upstream trễ quá thời hạn (`Timeout > 10s`) | *SKIPPED* | Cần mock upstream trễ >10s; SafeProxy unit test đã chứng minh 504 UPSTREAM_TIMEOUT |
+| `TC-18-05` | Gốc | **Chặn Upstream Redirect (`302 Redirect`)** | **PASS** | **Gửi tới endpoint upstream trả 302: SafeProxy từ chối chuyển tiếp, trả về đúng `502 UPSTREAM_REDIRECT_BLOCKED`.** |
+| `TC-18-06` | Gốc | **Upstream trễ quá thời hạn (`Timeout > 10s` / cấu hình)** | **PASS** | **Cấu hình route timeout 1500ms, gọi endpoint delay 3 giây: SafeProxy ngắt kết nối đúng hạn, trả về `504 UPSTREAM_TIMEOUT`.** |
 | `TC-18-07` | Gốc | Chặn Endpoint ID không đăng ký | **PASS** | Trả về `400 ENDPOINT_NOT_REGISTERED` |
 | `TC-18-AUTH` | Bổ sung | Yêu cầu xác thực JWT & Role Consumer | **PASS** | Từ chối 401 khi thiếu token hoặc token sai vai trò |
 | `TC-18-HEADER`| Bổ sung | Chặn Header cấm (`Authorization`, `Cookie`) | **PASS** | Trả về `400 HEADER_NOT_ALLOWED` (chặn strictly) |
@@ -123,18 +125,18 @@ Thực thi qua `qa-scripts/sprint3-consumer-runner.js` (Sử dụng Isolated Tes
 
 ---
 
-### 3. Phân hệ Quota Dùng thử Sandbox (US-19)
+### 3. Phân hệ Quota Dùng thử Sandbox (US-19 — 100% Qua HTTP Playground)
 Thực thi qua `qa-scripts/sprint3-consumer-runner.js`:
 
 | Mã TC | Phân loại | Tên Test Case | Kết quả | Chi tiết kiểm chứng kỹ thuật |
 |---|:---:|---|:---:|---|
 | `TC-19-01` | Gốc | Cấp grant Sandbox lần đầu (POST) | **PASS** | Trả về `201 Created`, `maxRequests: 5`, `remainingRequests: 5`, hết hạn sau 24h |
 | `TC-19-INFO` | Bổ sung | Truy vấn trạng thái grant trả về đúng quota hiện tại | **PASS** | `GET /api/consumer/apis/:id/sandbox` phản ánh chuẩn xác số lượt còn lại |
-| `TC-19-03` | Gốc | Tiêu thụ tuần tự 5 lượt qua `consume_sandbox_grant()` | **PASS** | Số lượt giảm chuẩn xác: $5 \to 4 \to 3 \to 2 \to 1 \to 0$ |
-| `TC-19-04` | Gốc | Chặn tức thì khi hết lượt (Lượt thứ 6) | **PASS** | Stored procedure ném `SQLSTATE P0001`, `available: false`, `remainingRequests: 0` |
+| `TC-19-03` | Gốc | **Tiêu thụ tuần tự 5 lượt qua HTTP Playground** | **PASS** | **Gọi 5 lần liên tiếp qua `POST /api/marketplace/apis/:id/playground`: Mỗi lần trả về 200 OK và `remainingRequests` giảm đều $4 \to 3 \to 2 \to 1 \to 0$. Đối soát DB: `used_requests = 5`.** |
+| `TC-19-04` | Gốc | **Chặn tức thì khi hết lượt (Lượt thứ 6)** | **PASS** | **Gọi lần thứ 6 qua HTTP Playground: Bị từ chối tức thì với `403 SANDBOX_EXHAUSTED`. Stored procedure ném `SQLSTATE P0001`, `available: false`, `remainingRequests: 0`.** |
 | `TC-19-05` | Gốc | Tính bền vững (State Persistence) | **PASS** | Gọi lại POST hoặc tải lại trang không reset về 5 (giữ nguyên exhausted) |
 | `TC-19-TAMPER` | Bổ sung | Chống giả mạo tham số Quota | **PASS** | Gửi payload `{ maxRequests: 999 }` bị từ chối `400 VALIDATION_ERROR` |
-| `TC-19-02` | Gốc | **Điều kiện biên Race Condition: Chỉ còn 1 lượt cuối** | **PASS** | **Set `used = 4` (còn đúng 1 lượt), bắn đồng thời 10 requests (`Promise.allSettled`). Kết quả: Đúng duy nhất 1 request thành công (200 OK), 9 request bị chặn (403 SANDBOX_EXHAUSTED). Database chốt `used_requests = 5` chuẩn xác.** |
+| `TC-19-02` | Gốc | **Điều kiện biên Race Condition qua HTTP Playground: Còn 1 lượt cuối** | **PASS** | **Set `used = 4` (còn đúng 1 lượt), bắn đồng thời 10 requests qua `POST /api/marketplace/apis/:id/playground`. Kết quả: Đúng duy nhất 1 request thành công (200 OK, `remainingRequests: 0`), 9 request bị chặn (403 SANDBOX_EXHAUSTED). Database chốt `used_requests = 5` chuẩn xác.** |
 
 ---
 
@@ -145,7 +147,7 @@ Thực thi qua `qa-scripts/sprint3-consumer-runner.js`:
 |---|:---:|---|:---:|---|
 | `TC-21-01` | Gốc | Tạo API Key mới & Nguyên tắc "Chỉ hiện 1 lần" | **PASS** | Trả về `201 Created`, sinh raw key định dạng `ak_live_***` (51 ký tự) |
 | `TC-21-02` | Gốc | Xác thực DB: Băm SHA-256 (64 hex), không plaintext | **PASS** | Cột `key_hash` khớp 100% SHA-256 của raw key, không tìm thấy plaintext trong DB |
-| `TC-21-LIST` | Bổ sung | Danh sách API Key không rò rỉ Secret | **PASS** | Chỉ hiển thị `keyPrefix` (16 ký tự), không có `key` hay `key_hash`, header có `Cache-Control: no-store` |
+| `TC-21-LIST` | Bổ sung | Danh sách API Key không rò rỉ Secret | **PASS** | `GET /api/consumer/api-keys`: Chỉ hiển thị `keyPrefix` (16 ký tự), không có `key` hay `key_hash`, header có `Cache-Control: no-store` |
 | `TC-21-LIMIT` | Bổ sung | Ràng buộc duy nhất 1 key active / Consumer / API | **PASS** | Cố tình tạo key thứ 2 bị từ chối với `409 KEY_EXISTS` |
 | `TC-21-03` | Gốc | Rotate Key tức thì & Vô hiệu hóa key cũ | **PASS** | Sinh key mới (201), key cũ chuyển ngay `is_active: false` và cập nhật `revoked_at` |
 | `TC-21-04` | Gốc | Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401 | *SKIPPED* | Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào `develop` |
@@ -158,29 +160,29 @@ Thực thi qua `qa-scripts/sprint3-consumer-runner.js`:
 
 ## IV. BẢNG TỔNG HỢP & MINH BẠCH SỐ LIỆU KIỂM THỬ
 
-Để đảm bảo tính trung thực và minh bạch tuyệt đối theo yêu cầu của Reviewer `@Tungdota53`, số liệu kiểm thử được phân định rành mạch giữa **Tỷ lệ đạt thực thi (Execution Pass Rate)** và **Độ phủ thiết kế (Overall Coverage Rate)**:
-
 | Phân hệ Test Runner | Tổng thiết kế (Designed) | Đã thực thi (Executed) | Đạt (Passed) | Hỏng (Failed) | Tạm hoãn (Skipped) | Tỷ lệ Đạt Thực thi | Độ phủ Thiết kế |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **Hồi quy Sprint 1-2** | 60 | 60 | 60 | 0 | 0 | **100.0%** (60/60) | **100.0%** (60/60) |
 | **Marketplace (US-16, 17)** | 17 | 17 | 17 | 0 | 0 | **100.0%** (17/17) | **100.0%** (17/17) |
-| **Consumer (US-18, 19, 21)**| 28 | 23 | 23 | 0 | 5 | **100.0%** (23/23) | **82.1%** (23/28) |
-| **TỔNG CỘNG HỆ THỐNG** | **105** | **100** | **100** | **0** | **5** | **100.0%** (100/100) | **95.2%** (100/105) |
+| **Consumer (US-18, 19, 21)**| 28 | 26 | 26 | 0 | 2* | **100.0%** (26/26) | **92.9%** (26/28) |
+| **TỔNG CỘNG HỆ THỐNG** | **105** | **103** | **103** | **0** | **2** | **100.0%** (103/103) | **98.1%** (103/105) |
 
-> **Cam kết của QA Lead:** 5 test cases ở trạng thái `SKIPPED` (`TC-18-01`, `TC-18-05`, `TC-18-06`, `TC-21-04`, `TC-21-06`) do phụ thuộc vào PR #78 Gateway và upstream public DNS/mock server. Toàn bộ 5 case này **KHÔNG được tính là PASS** và sẽ được thực thi hoàn tất trong Pha 2.
+> **Cam kết của QA Lead:** Chỉ còn duy nhất **2 test cases** ở trạng thái `SKIPPED` (`TC-21-04`, `TC-21-06`) do bắt buộc phải gửi request qua HTTP Gateway (US-22 — PR #78). Cả 2 case này **KHÔNG được tính là PASS** và sẽ được thực thi hoàn tất trong Pha 2 ngay khi PR #78 được merge.
 
 ---
 
 ## V. ĐÁNH GIÁ TIÊU CHUẨN BẢO MẬT & DATA ISOLATION
 
 ### 1. Data Overwrite Isolation & Idempotency
-- [x] **Cô lập dữ liệu kiểm thử:** Runner `sprint3-consumer-runner.js` tự động khởi tạo riêng một Test API (`QA Isolated Test API`) và các route liên kết độc lập. Tuyệt đối không can thiệp, sửa đổi hay ghi đè `gateway_routes` của các API seed trong database (API ID 3, 12).
+- [x] **Cô lập dữ liệu kiểm thử:** Runner `sprint3-consumer-runner.js` tự động khởi tạo riêng Test API (`QA Isolated Test API`) và các route liên kết độc lập. Tuyệt đối không can thiệp, sửa đổi hay ghi đè `gateway_routes` của các API seed trong database (API ID 3, 12).
 - [x] **Dọn dẹp triệt để trong khối `finally`:** Đảm bảo dù test case có pass hay fail, toàn bộ các bản ghi tạo ra (`apis`, `api_endpoints`, `api_versions`, `gateway_routes`, `sandbox_grants`, `api_keys`, `users`) đều được thu hồi 100%, bảo toàn trạng thái DB sạch sẽ.
 
 ### 2. Checklist Phòng chống Tấn công SSRF (US-18)
 - [x] **Chặn Loopback IPv4 & IPv6:** Đã xác nhận trên `127.0.0.1`, `localhost`, `0.0.0.0`, `[::1]` $\to$ Phản hồi `403 SSRF_DETECTED`.
 - [x] **Chặn Private Subnet (RFC 1918):** Đã xác nhận trên dải `10.0.0.1`, `172.16.0.1`, `192.168.1.1` $\to$ Bị từ chối trước khi mở kết nối socket.
 - [x] **Chặn Cloud Metadata Service:** Đã xác nhận trên `http://169.254.169.254/` $\to$ Bị từ chối `403 SSRF_DETECTED`.
+- [x] **Chặn Open Redirect Bypass:** SafeProxy chặn chuyển tiếp, trả về `502 UPSTREAM_REDIRECT_BLOCKED`.
+- [x] **Ngắt kết nối khi Timeout:** SafeProxy ngắt socket và trả về `504 UPSTREAM_TIMEOUT`.
 - [x] **Pin IP chống DNS Rebinding:** IP phân giải từ DNS được ghim trực tiếp vào socket connection (`socket.remoteAddress validation`).
 - [x] **An toàn Quota:** Phát hiện tấn công SSRF hoặc payload sai format không trừ hạn mức dùng thử của người dùng.
 
@@ -192,7 +194,7 @@ Thực thi qua `qa-scripts/sprint3-consumer-runner.js`:
 
 ### 4. Checklist Quản lý Quota Dùng thử Nguyên tử (US-19)
 - [x] **Tính nguyên tử trong Database:** Sử dụng PostgreSQL stored procedure `consume_sandbox_grant()` với khóa hàng `FOR UPDATE`, đảm bảo không bị lỗi đọc bẩn (dirty read).
-- [x] **Chống Race Condition tại điều kiện biên:** Thử nghiệm bắn đồng thời 10 requests khi người dùng chỉ còn 1 lượt cuối (`used = 4, max = 5`) chứng minh số lượt thành công đúng bằng 1 và số lượt trong DB chốt chính xác là 5.
+- [x] **Kiểm thử Concurrency hoàn toàn qua HTTP:** Thử nghiệm bắn đồng thời 10 requests qua HTTP Playground khi người dùng chỉ còn 1 lượt cuối (`used = 4, max = 5`) chứng minh số lượt thành công đúng bằng 1 và số lượt trong DB chốt chính xác là 5.
 
 ---
 
@@ -207,10 +209,8 @@ Thực thi qua `qa-scripts/sprint3-consumer-runner.js`:
    - Kiểm thử xem/cập nhật profile và đổi mật khẩu an toàn (`POST /api/user/change-password`).
 3. **US-15 (Report & Moderation — PR #81):**
    - Kiểm thử Consumer gửi báo cáo vi phạm (`POST /api/reports`) và Admin đình chỉ/khôi phục API.
-4. **Staging / Public DNS Testing:**
-   - Nghiệm thu nốt 3 TC `TC-18-01`, `TC-18-05`, `TC-18-06` với upstream server thật và mock redirect/timeout.
 
 ### 2. Kết luận Nghiệm thu Pha 1
-- **Chất lượng Pha 1:** Toàn bộ 100 test cases thực thi tự động (60 Hồi quy Sprint 1-2, 17 Marketplace, 23 Consumer/Security) đều **ĐẠT 100.0% (100/100 PASS)**.
+- **Chất lượng Pha 1:** Toàn bộ 103 test cases thực thi tự động (60 Hồi quy Sprint 1-2, 17 Marketplace, 26 Consumer/Security) đều **ĐẠT 100.0% (103/103 PASS)**.
 - **Tính cô lập & Sạch sẽ:** Bản kiểm thử tuân thủ nghiêm ngặt nguyên tắc cách ly dữ liệu, bảo toàn route seed và tự động dọn dẹp sạch sẽ sau chạy.
 - **Tiêu chuẩn kho mã nguồn:** Đạt chuẩn Clean Code, tuân thủ quy chuẩn commit và quy trình kiểm thử của dự án.

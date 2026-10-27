@@ -1,56 +1,23 @@
 {
   "suite": "Sprint 3 Consumer & Security Test Suite (Phase 1)",
   "qaLead": "Trần Hà Thảo Vân (MSSV: BCS250039, @vuonghathaovan-gif — Issue #15)",
-  "timestamp": "2026-10-27T10:55:55.604Z",
+  "timestamp": "2026-10-27T11:13:45.563Z",
   "baseUrl": "http://127.0.0.1:3000",
   "totalDesigned": 28,
-  "executed": 23,
-  "passed": 23,
+  "executed": 26,
+  "passed": 26,
   "failed": 0,
-  "skipped": 5,
+  "skipped": 2,
   "executionPassRate": "100.0%",
-  "overallCoverageRate": "82.1%",
-  "notes": "5 test cases trạng thái SKIPPED (TC-18-01, TC-18-05, TC-18-06, TC-21-04, TC-21-06) do chờ Tech Lead Dũng merge PR #78 (Gateway framework) và upstream public mock. Các case này KHÔNG được tính là PASS.",
+  "overallCoverageRate": "92.9%",
+  "notes": "Chỉ còn duy nhất 2 test cases trạng thái SKIPPED (TC-21-04, TC-21-06) do chờ Tech Lead Dũng merge PR #78 (Gateway framework US-22). Toàn bộ US-18 và US-19 đã được thực thi và nghiệm thu 100% qua HTTP Playground.",
   "testResults": [
-    {
-      "testCaseId": "TC-18-01",
-      "userStory": "US-18",
-      "name": "[SKIPPED] Upstream forward thật cần public DNS endpoint — không khả dụng ở localhost/SSRF env",
-      "status": "SKIPPED",
-      "timestamp": "2026-10-27T10:55:55.352Z",
-      "details": {
-        "reason": "Upstream forward thật cần public DNS endpoint — không khả dụng ở localhost/SSRF env"
-      },
-      "notes": "Chờ môi trường staging hoặc mock upstream"
-    },
-    {
-      "testCaseId": "TC-18-05",
-      "userStory": "US-18",
-      "name": "[SKIPPED] Cần mock upstream trả 302 Redirect — sẽ nghiệm thu tại staging",
-      "status": "SKIPPED",
-      "timestamp": "2026-10-27T10:55:55.353Z",
-      "details": {
-        "reason": "Cần mock upstream trả 302 Redirect — sẽ nghiệm thu tại staging"
-      },
-      "notes": "Chờ môi trường staging hoặc mock upstream"
-    },
-    {
-      "testCaseId": "TC-18-06",
-      "userStory": "US-18",
-      "name": "[SKIPPED] Cần mock upstream delay >10s — SafeProxy unit test đã chứng minh 504 UPSTREAM_TIMEOUT",
-      "status": "SKIPPED",
-      "timestamp": "2026-10-27T10:55:55.353Z",
-      "details": {
-        "reason": "Cần mock upstream delay >10s — SafeProxy unit test đã chứng minh 504 UPSTREAM_TIMEOUT"
-      },
-      "notes": "Chờ môi trường staging hoặc mock upstream"
-    },
     {
       "testCaseId": "TC-18-AUTH",
       "userStory": "US-18",
       "name": "[Bổ sung] Playground yêu cầu xác thực Consumer JWT (từ chối 401 khi thiếu token)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.356Z",
+      "timestamp": "2026-10-27T11:13:35.409Z",
       "details": {
         "status": 401,
         "code": "UNAUTHORIZED"
@@ -62,7 +29,7 @@
       "userStory": "US-18",
       "name": "Chặn SSRF Loopback IPv4 (127.0.0.1 / localhost) với 403 SSRF_DETECTED",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.367Z",
+      "timestamp": "2026-10-27T11:13:35.419Z",
       "details": {
         "status": 403,
         "code": "SSRF_DETECTED",
@@ -75,7 +42,7 @@
       "userStory": "US-18",
       "name": "Chặn SSRF Private Network RFC 1918 (10.0.0.1) với 403 SSRF_DETECTED",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.377Z",
+      "timestamp": "2026-10-27T11:13:35.430Z",
       "details": {
         "status": 403,
         "code": "SSRF_DETECTED"
@@ -87,7 +54,7 @@
       "userStory": "US-18",
       "name": "Chặn SSRF Cloud Metadata Service (169.254.169.254) với 403 SSRF_DETECTED",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.386Z",
+      "timestamp": "2026-10-27T11:13:35.439Z",
       "details": {
         "status": 403,
         "code": "SSRF_DETECTED"
@@ -99,7 +66,7 @@
       "userStory": "US-18",
       "name": "[TC-18-07] Từ chối endpointId không thuộc API với 400 ENDPOINT_NOT_REGISTERED",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.393Z",
+      "timestamp": "2026-10-27T11:13:35.445Z",
       "details": {
         "status": 400,
         "code": "ENDPOINT_NOT_REGISTERED"
@@ -111,7 +78,7 @@
       "userStory": "US-18",
       "name": "[Bổ sung] Chặn header cấm (Authorization/Cookie) trước khi forward với 400 HEADER_NOT_ALLOWED",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.399Z",
+      "timestamp": "2026-10-27T11:13:35.451Z",
       "details": {
         "status": 400,
         "code": "HEADER_NOT_ALLOWED"
@@ -123,7 +90,7 @@
       "userStory": "US-18",
       "name": "[Bổ sung] Chặn Path Traversal (../) và ký tự nguy hiểm trong pathParams với 400 Bad Request",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.405Z",
+      "timestamp": "2026-10-27T11:13:35.456Z",
       "details": {
         "status": 400,
         "code": "ENDPOINT_NOT_REGISTERED"
@@ -135,9 +102,49 @@
       "userStory": "US-18",
       "name": "[Checklist Bảo mật] Nguyên tắc an toàn quota: Các request bị chặn SSRF/Validation không trừ lượt sandbox (used_requests = 0)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.407Z",
+      "timestamp": "2026-10-27T11:13:35.457Z",
       "details": {
         "usedRequests": 0
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-18-01",
+      "userStory": "US-18",
+      "name": "Forward request hợp lệ tới Upstream Public (HTTP 200 OK, latencyMs, remainingRequests)",
+      "status": "PASSED",
+      "timestamp": "2026-10-27T11:13:36.661Z",
+      "details": {
+        "status": 200,
+        "upstreamStatus": 200,
+        "latencyMs": 1188,
+        "remainingRequests": 4
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-18-05",
+      "userStory": "US-18",
+      "name": "Chặn Upstream Redirect (302 Redirect -> 502 UPSTREAM_REDIRECT_BLOCKED)",
+      "status": "PASSED",
+      "timestamp": "2026-10-27T11:13:37.846Z",
+      "details": {
+        "status": 502,
+        "code": "UPSTREAM_REDIRECT_BLOCKED",
+        "message": "Upstream redirects are not followed"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-18-06",
+      "userStory": "US-18",
+      "name": "Upstream trễ quá thời hạn cấu hình (Timeout -> 504 UPSTREAM_TIMEOUT)",
+      "status": "PASSED",
+      "timestamp": "2026-10-27T11:13:39.385Z",
+      "details": {
+        "status": 504,
+        "code": "UPSTREAM_TIMEOUT",
+        "message": "Upstream request timed out"
       },
       "notes": ""
     },
@@ -146,17 +153,17 @@
       "userStory": "US-19",
       "name": "Cấp grant Sandbox lần đầu qua HTTP trả về 201 Created (5 lượt, hết hạn 24h)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.416Z",
+      "timestamp": "2026-10-27T11:13:39.395Z",
       "details": {
         "status": 201,
         "data": {
-          "id": "19",
-          "apiId": "19",
+          "id": "39",
+          "apiId": "27",
           "maxRequests": 5,
           "usedRequests": 0,
           "remainingRequests": 5,
           "available": true,
-          "expiresAt": "2026-10-28T10:55:55.409Z",
+          "expiresAt": "2026-10-28T11:13:39.391Z",
           "revokedAt": null
         }
       },
@@ -167,7 +174,7 @@
       "userStory": "US-19",
       "name": "Truy vấn trạng thái grant trả về đúng quota hiện tại (GET /api/consumer/apis/:id/sandbox)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.424Z",
+      "timestamp": "2026-10-27T11:13:39.401Z",
       "details": {
         "status": 200,
         "remainingRequests": 5
@@ -177,36 +184,40 @@
     {
       "testCaseId": "TC-19-03",
       "userStory": "US-19",
-      "name": "Tiêu thụ 5 lượt Sandbox tuần tự qua consume_sandbox_grant(), số lượt giảm chuẩn xác (4 -> 0)",
+      "name": "Tiêu thụ 5 lượt Sandbox tuần tự qua HTTP Playground, số lượt giảm chuẩn xác (4 -> 0)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.435Z",
+      "timestamp": "2026-10-27T11:13:44.419Z",
       "details": {
+        "status": 200,
         "remainingSequence": [
           4,
           3,
           2,
           1,
           0
-        ]
+        ],
+        "dbUsedRequests": 5
       },
       "notes": ""
     },
     {
       "testCaseId": "TC-19-04",
       "userStory": "US-19",
-      "name": "Lần gọi thứ 6 bị chặn ngay lập tức (SQLSTATE P0001, remainingRequests: 0, available: false)",
+      "name": "Lần gọi thứ 6 bị chặn ngay lập tức qua HTTP Playground (403 SANDBOX_EXHAUSTED & SQLSTATE P0001)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.444Z",
+      "timestamp": "2026-10-27T11:13:44.443Z",
       "details": {
+        "httpStatus": 403,
+        "httpErrorCode": "SANDBOX_EXHAUSTED",
         "dbErrorCode": "P0001",
         "grantStatus": {
-          "id": "19",
-          "apiId": "19",
+          "id": "39",
+          "apiId": "27",
           "maxRequests": 5,
           "usedRequests": 5,
           "remainingRequests": 0,
           "available": false,
-          "expiresAt": "2026-10-28T10:55:55.409Z",
+          "expiresAt": "2026-10-28T11:13:39.391Z",
           "revokedAt": null
         }
       },
@@ -217,7 +228,7 @@
       "userStory": "US-19",
       "name": "State Persistence: Gọi lại POST qua HTTP không bị reset về 5 lượt (giữ nguyên exhausted)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.451Z",
+      "timestamp": "2026-10-27T11:13:44.449Z",
       "details": {
         "status": 200,
         "remainingRequests": 0,
@@ -230,7 +241,7 @@
       "userStory": "US-19",
       "name": "[Bổ sung] Từ chối payload cố tình điều chỉnh quota ({ maxRequests: 999 }) với 400 VALIDATION_ERROR",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.454Z",
+      "timestamp": "2026-10-27T11:13:44.453Z",
       "details": {
         "status": 400,
         "code": "VALIDATION_ERROR"
@@ -240,9 +251,9 @@
     {
       "testCaseId": "TC-19-02",
       "userStory": "US-19",
-      "name": "Concurrency Boundary Test: Chỉ còn 1 lượt cuối, bắn đồng thời 10 requests -> đúng 1 thành công, 9 bị chặn (used = 5)",
+      "name": "Concurrency Boundary Test qua HTTP Playground: Còn đúng 1 lượt cuối, 10 request song song -> đúng 1 thành công (200), 9 bị chặn (403 SANDBOX_EXHAUSTED), used = 5",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.501Z",
+      "timestamp": "2026-10-27T11:13:45.466Z",
       "details": {
         "initialRemaining": 1,
         "successCount": 1,
@@ -256,11 +267,11 @@
       "userStory": "US-21",
       "name": "Tạo API Key thành công (201 Created), sinh định dạng chuẩn ak_live_*** đúng 1 lần",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.510Z",
+      "timestamp": "2026-10-27T11:13:45.482Z",
       "details": {
         "status": 201,
-        "id": "25",
-        "keyPrefix": "ak_live_A2r_S_Ub",
+        "id": "39",
+        "keyPrefix": "ak_live_Q1gR9H9N",
         "keyFormatValid": true
       },
       "notes": ""
@@ -270,10 +281,10 @@
       "userStory": "US-21",
       "name": "Xác thực Database: Cột key_hash lưu đúng chuỗi SHA-256 64 hex, tuyệt đối không lưu plaintext key",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.512Z",
+      "timestamp": "2026-10-27T11:13:45.485Z",
       "details": {
-        "storedHash": "a627d44f76fcc9127cf4b4494744e08af23876b4143b63c4d2b08efeaddbcd4a",
-        "computedHash": "a627d44f76fcc9127cf4b4494744e08af23876b4143b63c4d2b08efeaddbcd4a",
+        "storedHash": "51082e5e494e8553dd51ed9863fa055e08cf34c46a923dff5ac22d7039f52f3e",
+        "computedHash": "51082e5e494e8553dd51ed9863fa055e08cf34c46a923dff5ac22d7039f52f3e",
         "hashMatched": true,
         "plaintextNotInDb": true
       },
@@ -284,11 +295,11 @@
       "userStory": "US-21",
       "name": "[Bổ sung] Danh sách API Key chỉ hiển thị keyPrefix, tuyệt đối không lộ rawKey hay key_hash (Cache-Control: no-store)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.520Z",
+      "timestamp": "2026-10-27T11:13:45.493Z",
       "details": {
         "status": 200,
         "itemsCount": 1,
-        "samplePrefix": "ak_live_A2r_S_Ub",
+        "samplePrefix": "ak_live_Q1gR9H9N",
         "hasNoRawKey": true,
         "hasNoHash": true
       },
@@ -299,7 +310,7 @@
       "userStory": "US-21",
       "name": "[Bổ sung nghiệp vụ] Ràng buộc duy nhất 1 key active / Consumer / API (409 KEY_EXISTS)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.527Z",
+      "timestamp": "2026-10-27T11:13:45.498Z",
       "details": {
         "status": 409,
         "code": "KEY_EXISTS"
@@ -311,12 +322,12 @@
       "userStory": "US-21",
       "name": "Rotate Key tức thì: Sinh key mới (201), key cũ chuyển is_active=false và revoked_at có thời gian",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.538Z",
+      "timestamp": "2026-10-27T11:13:45.507Z",
       "details": {
         "status": 201,
         "oldKeyActive": false,
         "newKeyActive": true,
-        "oldKeyRevokedAt": "2026-10-27T10:55:55.530Z"
+        "oldKeyRevokedAt": "2026-10-27T11:13:45.501Z"
       },
       "notes": ""
     },
@@ -325,18 +336,18 @@
       "userStory": "US-21",
       "name": "[SKIPPED] Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401 Unauthorized",
       "status": "SKIPPED",
-      "timestamp": "2026-10-27T10:55:55.538Z",
+      "timestamp": "2026-10-27T11:13:45.507Z",
       "details": {
         "reason": "Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop"
       },
-      "notes": "Sẽ nghiệm thu trên Gateway HTTP endpoint sau khi PR #78 merge"
+      "notes": "Chờ merge PR #78 Gateway để kiểm thử HTTP Gateway"
     },
     {
       "testCaseId": "TC-21-REVOKED-ROTATE",
       "userStory": "US-21",
       "name": "[Bổ sung an toàn] Từ chối Rotate trên key đã bị thu hồi/vô hiệu hóa với 409 KEY_REVOKED",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.543Z",
+      "timestamp": "2026-10-27T11:13:45.512Z",
       "details": {
         "status": 409,
         "code": "KEY_REVOKED"
@@ -348,11 +359,12 @@
       "userStory": "US-21",
       "name": "Revoke Key tức thì (DELETE 204 No Content), cập nhật is_active=false trong DB (idempotent)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.556Z",
+      "timestamp": "2026-10-27T11:13:45.523Z",
       "details": {
         "firstDeleteStatus": 204,
         "repeatDeleteStatus": 204,
-        "isActive": false
+        "isActive": false,
+        "revokedAt": "2026-10-27T11:13:45.515Z"
       },
       "notes": ""
     },
@@ -361,18 +373,18 @@
       "userStory": "US-21",
       "name": "[SKIPPED] Gửi request qua Gateway bằng API Key active cập nhật last_used_at trong DB",
       "status": "SKIPPED",
-      "timestamp": "2026-10-27T10:55:55.556Z",
+      "timestamp": "2026-10-27T11:13:45.523Z",
       "details": {
         "reason": "Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop"
       },
-      "notes": "Sẽ nghiệm thu trên Gateway HTTP endpoint sau khi PR #78 merge"
+      "notes": "Chờ merge PR #78 Gateway để kiểm thử HTTP Gateway"
     },
     {
       "testCaseId": "TC-21-ISO",
       "userStory": "US-21",
       "name": "[Bảo mật đa người dùng] Consumer B không thấy và không thao tác được key của Consumer A (404 Not Found)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:55:55.579Z",
+      "timestamp": "2026-10-27T11:13:45.537Z",
       "details": {
         "leaksInStrangerList": false,
         "strangerDeleteStatus": 404,

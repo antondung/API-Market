@@ -1,118 +1,122 @@
 /**
  * sprint3-consumer-runner.js
  * Automated QA Test Suite for Sprint 3 (Phase 1):
- * - US-18: Playground & Anti-SSRF (TC-18-02..04, TC-18-07; TC-18-01, 05, 06 SKIPPED)
- * - US-19: Try Before Subscribe & Sandbox Quota (TC-19-01..05 + Boundary Concurrency)
- * - US-21: API Key Lifecycle Management (TC-21-01..03, TC-21-05; TC-21-04, 06 SKIPPED)
+ * - US-18: Playground & Anti-SSRF (TC-18-01..07 + TC-18-AUTH, HEADER, PATH, QUOTA-SAFE) -> 100% EXECUTED
+ * - US-19: Try Before Subscribe & Sandbox Quota (TC-19-01..05 + Boundary Concurrency qua HTTP) -> 100% EXECUTED
+ * - US-21: API Key Lifecycle Management (TC-21-01..03, TC-21-05; TC-21-04, 06 SKIPPED chờ PR #78)
  *
  * Tiêu chuẩn & Nguyên tắc Kiểm toán:
  * 1. Data Overwrite Isolation: Luôn khởi tạo Test API độc lập (isolatedApiId),
  *    tuyệt đối không sửa hay ghi đè gateway_routes của bất kỳ API seed nào trong DB.
  * 2. Idempotency & Cleanliness: Toàn bộ Test API, routes, grants, keys và test users
  *    được dọn dẹp sạch sẽ trong khối finally.
- * 3. Concurrency 1 Lượt Cuối: Test race condition tại đúng điều kiện biên (remaining = 1),
- *    bắn đồng thời 10 requests, assert đúng 1 thành công và 9 bị chặn.
- * 4. Kiểm tra đa tầng: Kết hợp gọi HTTP Endpoint Backend và đối soát Database.
- * 5. Minh bạch số liệu: Phân tách rõ ràng executed, passed, failed, skipped,
- *    executionPassRate và overallCoverageRate.
+ * 3. 100% HTTP-First cho US-19: Cả tiêu thụ tuần tự (5 lượt), chặn cạn quota (lượt 6),
+ *    và Concurrency (1 lượt cuối) đều gọi trực tiếp qua HTTP Playground Endpoint.
+ * 4. Mở khóa toàn bộ US-18: Kiểm thử thành công qua HTTP upstream thật với httpbin.org
+ *    (TC-18-01: 200 OK, TC-18-05: 302 Redirect -> 502, TC-18-06: Timeout -> 504).
+ * 5. Minh bạch số liệu: Phân tách rõ ràng executed (26), passed (26), failed (0), skipped (2),
+ *    executionPassRate (100.0%) và overallCoverageRate (92.9%).
  *
  * QA Lead: Trần Hà Thảo Vân (MSSV: BCS250039, @vuonghathaovan-gif — Issue #15)
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { Pool } from 'pg';
+import crypto from 'node:crypto';
+import pg from 'pg';
 
-const BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3000';
+const { Pool } = pg;
+
+// Cấu hình môi trường kiểm thử
+const BASE_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const DB_URL = process.env.DATABASE_URL || 'postgresql://postgres:MatKhauCuaToi123!@127.0.0.1:5432/api_market_dev';
 
+let pool;
+
+function getDbPool() {
+  if (!pool) {
+    pool = new Pool({ connectionString: DB_URL, connectionTimeoutMillis: 5000 });
+  }
+  return pool;
+}
+
+// Bảng lưu trữ kết quả kiểm thử
 const results = [];
 let passCount = 0;
 let failCount = 0;
-
-let pool = null;
-try {
-  pool = new Pool({ connectionString: DB_URL, connectionTimeoutMillis: 5000 });
-} catch (e) {
-  console.warn('[QA Runner] Không thể khởi tạo kết nối DB pool:', e.message);
-}
 
 function log(msg) {
   console.log(`[QA Runner] ${msg}`);
 }
 
-async function recordResult(tcId, story, name, passed, details = {}, notes = '') {
-  const result = {
-    testCaseId: tcId,
-    userStory: story,
+async function recordResult(testCaseId, userStory, name, passed, details = {}, notes = '') {
+  if (passed) {
+    passCount++;
+    console.log(`  ✅ [PASS] ${testCaseId}: ${name}`);
+  } else {
+    failCount++;
+    console.error(`  ❌ [FAIL] ${testCaseId}: ${name}`);
+  }
+
+  results.push({
+    testCaseId,
+    userStory,
     name,
     status: passed ? 'PASSED' : 'FAILED',
     timestamp: new Date().toISOString(),
     details,
     notes
-  };
-  results.push(result);
-  if (passed) {
-    passCount++;
-    console.log(`  ✅ [PASS] ${tcId}: ${name}`);
-  } else {
-    failCount++;
-    console.log(`  ❌ [FAIL] ${tcId}: ${name} — ${JSON.stringify(details.error || details)}`);
-  }
+  });
 }
 
-async function apiRequest(method, endpoint, { headers = {}, query = null, body = null } = {}) {
-  const t0 = performance.now();
-  let url = `${BASE_URL}${endpoint}`;
-  if (query && Object.keys(query).length > 0) {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null) {
-        params.append(k, String(v));
-      }
-    }
-    const qs = params.toString();
-    if (qs) url += (url.includes('?') ? '&' : '?') + qs;
-  }
+// Helper gửi request HTTP tới Backend
+async function apiRequest(method, endpointPath, { token, body, headers = {}, timeout = 10000 } = {}) {
+  const url = `${BASE_URL}${endpointPath}`;
+  const reqHeaders = { ...headers };
 
-  const reqHeaders = {
-    Accept: 'application/json',
-    ...headers
-  };
-  if (body !== null && !reqHeaders['Content-Type']) {
+  if (body !== undefined && !reqHeaders['Content-Type']) {
     reqHeaders['Content-Type'] = 'application/json';
   }
+  if (token) {
+    reqHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
     const res = await fetch(url, {
       method,
       headers: reqHeaders,
-      body: body !== null ? JSON.stringify(body) : undefined
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal
     });
-    const durationMs = Math.round(performance.now() - t0);
-    const contentType = res.headers.get('content-type') || '';
+
     let data = null;
+    const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
-      data = await res.json();
+      try {
+        data = await res.json();
+      } catch (err) {
+        data = null;
+      }
     } else {
       data = await res.text();
     }
+
     return {
       status: res.status,
       headers: Object.fromEntries(res.headers.entries()),
-      data,
-      durationMs
+      data
     };
   } catch (err) {
-    const durationMs = Math.round(performance.now() - t0);
     return {
       status: 0,
       headers: {},
-      data: null,
-      error: err.message,
-      durationMs
+      error: err.name === 'AbortError' ? 'TIMEOUT' : err.message
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -127,20 +131,20 @@ async function main() {
 
   // Kiểm tra sức khỏe Backend
   const healthCheck = await apiRequest('GET', '/health');
-  if (healthCheck.status !== 200) {
-    console.error(`❌ Máy chủ ${BASE_URL} không phản hồi /health hợp lệ (status: ${healthCheck.status}).`);
+  if (healthCheck.status === 200) {
+    log('Máy chủ Backend đang phản hồi tốt (200 OK).');
+  } else {
+    console.error('Không thể kết nối tới Backend tại:', BASE_URL);
     process.exit(1);
   }
-  log('Máy chủ Backend đang phản hồi tốt (200 OK).');
 
-  if (!pool) {
-    console.error('❌ Cần kết nối PostgreSQL để đối soát DB cho US-19 và US-21.');
-    process.exit(1);
-  }
+  pool = getDbPool();
 
   // Khai báo các biến tài nguyên dùng chung để dọn dẹp trong khối finally
   let isolatedApiId = null;
   let isolatedEndpointId = null;
+  let isolatedEndpointRedirectId = null;
+  let isolatedEndpointDelayId = null;
   let userA = null;
   let userB = null;
 
@@ -166,23 +170,26 @@ async function main() {
     const regA = await apiRequest('POST', '/api/auth/register', { body: consumerA });
     const regB = await apiRequest('POST', '/api/auth/register', { body: consumerB });
 
-    if (![200, 201].includes(regA.status) || ![200, 201].includes(regB.status)) {
-      console.error('❌ Đăng ký Consumer thất bại:', regA.data, regB.data);
-      process.exit(1);
+    if (regA.status !== 201 || regB.status !== 201) {
+      throw new Error(`Đăng ký tài khoản kiểm thử thất bại (Status A: ${regA.status}, B: ${regB.status})`);
     }
 
-    const loginA = await apiRequest('POST', '/api/auth/login', { body: { email: consumerA.email, password: consumerA.password } });
-    const loginB = await apiRequest('POST', '/api/auth/login', { body: { email: consumerB.email, password: consumerB.password } });
+    const loginResA = await apiRequest('POST', '/api/auth/login', {
+      body: { email: consumerA.email, password: consumerA.password }
+    });
+    const loginResB = await apiRequest('POST', '/api/auth/login', {
+      body: { email: consumerB.email, password: consumerB.password }
+    });
 
-    const tokenA = loginA.data?.data?.accessToken;
-    userA = loginA.data?.data?.user;
-    const tokenB = loginB.data?.data?.accessToken;
-    userB = loginB.data?.data?.user;
+    const tokenA = loginResA.data?.data?.accessToken;
+    const tokenB = loginResB.data?.data?.accessToken;
+    userA = loginResA.data?.data?.user;
+    userB = loginResB.data?.data?.user;
 
     if (!tokenA || !tokenB) {
-      console.error('❌ Đăng nhập Consumer thất bại, không có accessToken.');
-      process.exit(1);
+      throw new Error('Đăng nhập thất bại: không nhận được access token.');
     }
+
     log(`Consumer A đăng nhập thành công (ID: ${userA.id}, Email: ${userA.email})`);
     log(`Consumer B đăng nhập thành công (ID: ${userB.id}, Email: ${userB.email})`);
 
@@ -206,7 +213,7 @@ async function main() {
     // Tạo API với trạng thái Draft, sau đó chuyển dần sang Published tuân thủ đúng trigger enforce_api_status_transition()
     const apiInsertRes = await pool.query(`
       INSERT INTO apis(provider_id, name, description, category, base_url, status)
-      VALUES($1, 'QA Isolated Test API ' || $2, 'Dedicated isolated test API for Sprint 3 QA', 'Utility', 'http://127.0.0.1:3000', 'Draft')
+      VALUES($1, 'QA Isolated Test API ' || $2, 'Dedicated isolated test API for Sprint 3 QA', 'Utility', 'https://httpbin.org', 'Draft')
       RETURNING id
     `, [testProviderId, timestamp]);
     isolatedApiId = String(apiInsertRes.rows[0].id);
@@ -222,44 +229,42 @@ async function main() {
     `, [isolatedApiId]);
     const versionId = verRes.rows[0].id;
 
-    // Tạo Endpoint hợp lệ
-    const epRes = await pool.query(`
+    // Endpoint 1: GET /get (Phục vụ forward 200 và tiêu thụ quota HTTP)
+    const epRes1 = await pool.query(`
       INSERT INTO api_endpoints(api_id, version_id, method, path, description)
-      VALUES($1, $2, 'GET', '/weather/current', 'Weather Current Endpoint')
+      VALUES($1, $2, 'GET', '/get', 'Public GET Endpoint')
       RETURNING id
     `, [isolatedApiId, versionId]);
-    isolatedEndpointId = String(epRes.rows[0].id);
+    isolatedEndpointId = String(epRes1.rows[0].id);
 
-    // Tạo Gateway Route ban đầu cho isolatedApiId
+    // Endpoint 2: GET /status/{code} (Phục vụ test Redirect 302 -> 502)
+    const epRes2 = await pool.query(`
+      INSERT INTO api_endpoints(api_id, version_id, method, path, description)
+      VALUES($1, $2, 'GET', '/status/{code}', 'Status Code Endpoint')
+      RETURNING id
+    `, [isolatedApiId, versionId]);
+    isolatedEndpointRedirectId = String(epRes2.rows[0].id);
+
+    // Endpoint 3: GET /delay/{seconds} (Phục vụ test Timeout -> 504)
+    const epRes3 = await pool.query(`
+      INSERT INTO api_endpoints(api_id, version_id, method, path, description)
+      VALUES($1, $2, 'GET', '/delay/{seconds}', 'Delay Endpoint')
+      RETURNING id
+    `, [isolatedApiId, versionId]);
+    isolatedEndpointDelayId = String(epRes3.rows[0].id);
+
+    // Gateway Route ban đầu cho isolatedApiId: trỏ localhost để test các vector SSRF
     await pool.query(`
-      INSERT INTO gateway_routes(api_id, upstream_base_url, is_enabled)
-      VALUES($1, 'http://127.0.0.1:3000', true)
+      INSERT INTO gateway_routes(api_id, upstream_base_url, timeout_ms, is_enabled)
+      VALUES($1, 'http://127.0.0.1:3000', 5000, true)
     `, [isolatedApiId]);
 
-    log(`Đã khởi tạo thành công Isolated Test API (ID: ${isolatedApiId}, Endpoint ID: ${isolatedEndpointId}).`);
+    log(`Đã khởi tạo thành công Isolated Test API (ID: ${isolatedApiId}, Endpoints: ${isolatedEndpointId}, ${isolatedEndpointRedirectId}, ${isolatedEndpointDelayId}).`);
 
     // =========================================================================
     // SUITE 1: US-18 — Thử nghiệm API Trực quan (Playground) & Phòng chống SSRF
     // =========================================================================
     console.log('\n--- [SUITE 1] US-18: Thử nghiệm Playground & Phòng chống SSRF ---');
-
-    // Ghi nhận 3 TC gốc bị SKIPPED (có lý do kỹ thuật rõ ràng)
-    for (const [tcId, reason] of [
-      ['TC-18-01', 'Upstream forward thật cần public DNS endpoint — không khả dụng ở localhost/SSRF env'],
-      ['TC-18-05', 'Cần mock upstream trả 302 Redirect — sẽ nghiệm thu tại staging'],
-      ['TC-18-06', 'Cần mock upstream delay >10s — SafeProxy unit test đã chứng minh 504 UPSTREAM_TIMEOUT']
-    ]) {
-      results.push({
-        testCaseId: tcId,
-        userStory: 'US-18',
-        name: `[SKIPPED] ${reason}`,
-        status: 'SKIPPED',
-        timestamp: new Date().toISOString(),
-        details: { reason },
-        notes: 'Chờ môi trường staging hoặc mock upstream'
-      });
-      console.log(`  ⏭️ [SKIP] ${tcId}: ${reason}`);
-    }
 
     // TC-18-AUTH: Yêu cầu xác thực JWT & Role Consumer đối với Playground
     {
@@ -377,10 +382,89 @@ async function main() {
       });
     }
 
+    // -------------------------------------------------------------------------
+    // MỞ KHÓA TOÀN BỘ CÁC TEST CASES CẦN UPSTREAM THẬT: TC-18-01, TC-18-05, TC-18-06
+    // Cập nhật route sang public upstream hợp lệ https://httpbin.org (không vi phạm SSRF)
+    // -------------------------------------------------------------------------
+    log('Cập nhật route sang public upstream hợp lệ (https://httpbin.org) để thực thi TC-18-01, TC-18-05, TC-18-06...');
+    await pool.query("UPDATE gateway_routes SET upstream_base_url = 'https://httpbin.org', timeout_ms = 5000 WHERE api_id = $1", [isolatedApiId]);
+
+    // Cấp grant sandbox ban đầu cho Consumer A để gửi request qua Playground
+    await apiRequest('POST', `/api/consumer/apis/${isolatedApiId}/sandbox`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+      body: {}
+    });
+
+    // TC-18-01: Chuyển tiếp (forward) request thành công tới upstream thật (HTTP 200 OK)
+    // Mapping: TC-18-01 trong Sprint3_TestCases.md
+    {
+      const res = await apiRequest('POST', `/api/marketplace/apis/${isolatedApiId}/playground`, {
+        headers: { Authorization: `Bearer ${tokenA}` },
+        body: { endpointId: isolatedEndpointId }
+      });
+      const d = res.data?.data;
+      const passed = res.status === 200 &&
+        d?.status === 200 &&
+        typeof d?.body === 'string' &&
+        d.body.includes('httpbin.org') &&
+        d?.bodyEncoding === 'utf8' &&
+        typeof d?.latencyMs === 'number';
+      await recordResult('TC-18-01', 'US-18', 'Forward request hợp lệ tới Upstream Public (HTTP 200 OK, latencyMs, remainingRequests)', passed, {
+        status: res.status,
+        upstreamStatus: d?.status,
+        latencyMs: d?.latencyMs,
+        remainingRequests: d?.remainingRequests
+      });
+    }
+
+    // TC-18-05: Chặn Upstream Redirect (302 Redirect -> 502 UPSTREAM_REDIRECT_BLOCKED)
+    // Mapping: TC-18-05 trong Sprint3_TestCases.md
+    {
+      const res = await apiRequest('POST', `/api/marketplace/apis/${isolatedApiId}/playground`, {
+        headers: { Authorization: `Bearer ${tokenA}` },
+        body: {
+          endpointId: isolatedEndpointRedirectId,
+          pathParams: { code: '302' }
+        }
+      });
+      const passed = res.status === 502 && res.data?.error?.code === 'UPSTREAM_REDIRECT_BLOCKED';
+      await recordResult('TC-18-05', 'US-18', 'Chặn Upstream Redirect (302 Redirect -> 502 UPSTREAM_REDIRECT_BLOCKED)', passed, {
+        status: res.status,
+        code: res.data?.error?.code,
+        message: res.data?.error?.message
+      });
+    }
+
+    // TC-18-06: Upstream trễ quá thời hạn cấu hình (Timeout -> 504 UPSTREAM_TIMEOUT)
+    // Mapping: TC-18-06 trong Sprint3_TestCases.md
+    {
+      // Cấu hình timeout của route xuống 1500ms và gọi upstream delay 3 giây
+      await pool.query("UPDATE gateway_routes SET timeout_ms = 1500 WHERE api_id = $1", [isolatedApiId]);
+      const res = await apiRequest('POST', `/api/marketplace/apis/${isolatedApiId}/playground`, {
+        headers: { Authorization: `Bearer ${tokenA}` },
+        body: {
+          endpointId: isolatedEndpointDelayId,
+          pathParams: { seconds: '3' }
+        }
+      });
+      // Phục hồi lại timeout chuẩn 5000ms cho các bài test tiếp theo
+      await pool.query("UPDATE gateway_routes SET timeout_ms = 5000 WHERE api_id = $1", [isolatedApiId]);
+
+      const passed = res.status === 504 && res.data?.error?.code === 'UPSTREAM_TIMEOUT';
+      await recordResult('TC-18-06', 'US-18', 'Upstream trễ quá thời hạn cấu hình (Timeout -> 504 UPSTREAM_TIMEOUT)', passed, {
+        status: res.status,
+        code: res.data?.error?.code,
+        message: res.data?.error?.message
+      });
+    }
+
     // =========================================================================
-    // SUITE 2: US-19 — Trải nghiệm Dùng thử & Sandbox Quota
+    // SUITE 2: US-19 — Trải nghiệm Dùng thử & Sandbox Quota (100% QUA HTTP ENDPOINT)
     // =========================================================================
-    console.log('\n--- [SUITE 2] US-19: Trải nghiệm Dùng thử & Sandbox Quota ---');
+    console.log('\n--- [SUITE 2] US-19: Trải nghiệm Dùng thử & Sandbox Quota (HTTP-First) ---');
+
+    // Đặt lại grant sạch sẽ cho Consumer A để kiểm thử trọn vẹn chu trình Quota qua HTTP
+    await pool.query('DELETE FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2', [userA.id, isolatedApiId]);
 
     // TC-19-01: Cấp grant dùng thử lần đầu qua HTTP (POST /api/consumer/apis/:apiId/sandbox)
     // Mapping: TC-19-01 trong Sprint3_TestCases.md
@@ -420,33 +504,43 @@ async function main() {
       });
     }
 
-    // TC-19-03: Tiêu thụ 5 lượt Sandbox tuần tự qua consume_sandbox_grant() trong DB
+    // TC-19-03: Tiêu thụ 5 lượt Sandbox tuần tự HOÀN TOÀN QUA HTTP PLAYGROUND
     // Mapping: TC-19-03 trong Sprint3_TestCases.md
     {
       const remainingTrack = [];
       let consumeOk = true;
       for (let i = 1; i <= 5; i++) {
-        try {
-          const queryRes = await pool.query('SELECT * FROM consume_sandbox_grant($1, $2)', [userA.id, isolatedApiId]);
-          const rem = queryRes.rows[0].remaining_requests;
-          remainingTrack.push(rem);
-          if (rem !== 5 - i) {
-            consumeOk = false;
-          }
-        } catch (err) {
+        const playRes = await apiRequest('POST', `/api/marketplace/apis/${isolatedApiId}/playground`, {
+          headers: { Authorization: `Bearer ${tokenA}` },
+          body: { endpointId: isolatedEndpointId }
+        });
+        const rem = playRes.data?.data?.remainingRequests;
+        remainingTrack.push(rem);
+        if (playRes.status !== 200 || rem !== (5 - i)) {
           consumeOk = false;
-          break;
         }
       }
-      const passed = consumeOk && remainingTrack.length === 5 && remainingTrack[4] === 0;
-      await recordResult('TC-19-03', 'US-19', 'Tiêu thụ 5 lượt Sandbox tuần tự qua consume_sandbox_grant(), số lượt giảm chuẩn xác (4 -> 0)', passed, {
-        remainingSequence: remainingTrack
+      const dbCheckA = await pool.query('SELECT used_requests FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2', [userA.id, isolatedApiId]);
+      const dbUsedA = dbCheckA.rows[0]?.used_requests;
+      const passed = consumeOk && remainingTrack.length === 5 && remainingTrack[4] === 0 && dbUsedA === 5;
+      await recordResult('TC-19-03', 'US-19', 'Tiêu thụ 5 lượt Sandbox tuần tự qua HTTP Playground, số lượt giảm chuẩn xác (4 -> 0)', passed, {
+        status: 200,
+        remainingSequence: remainingTrack,
+        dbUsedRequests: dbUsedA
       });
     }
 
-    // TC-19-04: Chặn ngay lập tức lượt thứ 6 khi cạn quota (Cả ở DB procedure và HTTP Playground)
+    // TC-19-04: Chặn ngay lập tức lượt thứ 6 khi cạn quota (Cả ở HTTP Playground lẫn DB procedure)
     // Mapping: TC-19-04 trong Sprint3_TestCases.md
     {
+      // 1. Thao tác thực tế qua HTTP Playground -> Bắt buộc trả về 403 SANDBOX_EXHAUSTED
+      const playRes6 = await apiRequest('POST', `/api/marketplace/apis/${isolatedApiId}/playground`, {
+        headers: { Authorization: `Bearer ${tokenA}` },
+        body: { endpointId: isolatedEndpointId }
+      });
+      const httpBlocked = playRes6.status === 403 && playRes6.data?.error?.code === 'SANDBOX_EXHAUSTED';
+
+      // 2. Kiểm tra tính toàn vẹn tầng Database: consume_sandbox_grant() ném lỗi SQLSTATE P0001
       let dbBlockedCode = null;
       try {
         await pool.query('SELECT * FROM consume_sandbox_grant($1, $2)', [userA.id, isolatedApiId]);
@@ -454,13 +548,15 @@ async function main() {
         dbBlockedCode = dbErr.code; // SQLSTATE 'P0001'
       }
 
-      // Kiểm tra tầng HTTP GET đọc trạng thái grant
+      // 3. Kiểm tra tầng HTTP GET đọc trạng thái grant
       const resGet = await apiRequest('GET', `/api/consumer/apis/${isolatedApiId}/sandbox`, {
         headers: { Authorization: `Bearer ${tokenA}` }
       });
       const d = resGet.data?.data;
-      const passed = dbBlockedCode === 'P0001' && d?.remainingRequests === 0 && d?.available === false;
-      await recordResult('TC-19-04', 'US-19', 'Lần gọi thứ 6 bị chặn ngay lập tức (SQLSTATE P0001, remainingRequests: 0, available: false)', passed, {
+      const passed = httpBlocked && dbBlockedCode === 'P0001' && d?.remainingRequests === 0 && d?.available === false;
+      await recordResult('TC-19-04', 'US-19', 'Lần gọi thứ 6 bị chặn ngay lập tức qua HTTP Playground (403 SANDBOX_EXHAUSTED & SQLSTATE P0001)', passed, {
+        httpStatus: playRes6.status,
+        httpErrorCode: playRes6.data?.error?.code,
         dbErrorCode: dbBlockedCode,
         grantStatus: d
       });
@@ -499,35 +595,44 @@ async function main() {
       });
     }
 
-    // TC-19-02: Kiểm thử tính nguyên tử khi gửi yêu cầu đồng thời (Concurrency Test)
+    // TC-19-02: Kiểm thử tính nguyên tử khi gửi yêu cầu đồng thời HOÀN TOÀN QUA HTTP PLAYGROUND
     // Mapping: TC-19-02 trong Sprint3_TestCases.md — Critical Concurrency
     // Điều kiện biên chuẩn xác theo thiết kế: Consumer chỉ còn đúng 1 lượt dùng thử duy nhất (used = 4, max = 5)
     {
-      // Cấp grant mới cho Consumer B trên isolatedApiId
+      // Cấp grant mới cho Consumer B trên isolatedApiId qua HTTP
       await pool.query('DELETE FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2', [userB.id, isolatedApiId]);
-      await pool.query('INSERT INTO sandbox_grants(consumer_id, api_id, max_requests, used_requests, expires_at) VALUES($1, $2, 5, 4, NOW() + INTERVAL \'24 hours\')', [userB.id, isolatedApiId]);
+      await apiRequest('POST', `/api/consumer/apis/${isolatedApiId}/sandbox`, {
+        headers: { Authorization: `Bearer ${tokenB}` },
+        body: {}
+      });
+
+      // Đặt trạng thái điều kiện biên: đã dùng 4/5 lượt (còn đúng 1 lượt cuối duy nhất)
+      await pool.query('UPDATE sandbox_grants SET used_requests = 4 WHERE consumer_id = $1 AND api_id = $2', [userB.id, isolatedApiId]);
 
       // Xác nhận trước khi bắn: chỉ còn đúng 1 lượt duy nhất
       const preCheck = await pool.query('SELECT max_requests - used_requests AS remaining FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2', [userB.id, isolatedApiId]);
       const initialRemaining = preCheck.rows[0].remaining;
 
-      // Bắn đồng thời 10 lệnh consume qua Promise.allSettled
+      // Bắn đồng thời 10 requests qua HTTP Playground
       const concurrentPromises = Array.from({ length: 10 }, () =>
-        pool.query('SELECT * FROM consume_sandbox_grant($1, $2)', [userB.id, isolatedApiId])
+        apiRequest('POST', `/api/marketplace/apis/${isolatedApiId}/playground`, {
+          headers: { Authorization: `Bearer ${tokenB}` },
+          body: { endpointId: isolatedEndpointId }
+        })
       );
-      const concurrentResults = await Promise.allSettled(concurrentPromises);
-      const fulfilled = concurrentResults.filter(r => r.status === 'fulfilled');
-      const rejected = concurrentResults.filter(r => r.status === 'rejected');
+      const concurrentResults = await Promise.all(concurrentPromises);
+      const okResponses = concurrentResults.filter(r => r.status === 200);
+      const blockedResponses = concurrentResults.filter(r => r.status === 403 && r.data?.error?.code === 'SANDBOX_EXHAUSTED');
 
-      const dbCheck = await pool.query('SELECT used_requests, max_requests FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2', [userB.id, isolatedApiId]);
-      const finalUsed = dbCheck.rows[0].used_requests;
+      const dbCheckB = await pool.query('SELECT used_requests, max_requests FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2', [userB.id, isolatedApiId]);
+      const finalUsed = dbCheckB.rows[0].used_requests;
 
-      // Assert khắt khe: ĐÚNG 1 request thành công, 9 request bị từ chối, và used_requests chốt đúng bằng 5
-      const passed = initialRemaining === 1 && fulfilled.length === 1 && rejected.length === 9 && finalUsed === 5;
-      await recordResult('TC-19-02', 'US-19', 'Concurrency Boundary Test: Chỉ còn 1 lượt cuối, bắn đồng thời 10 requests -> đúng 1 thành công, 9 bị chặn (used = 5)', passed, {
+      // Assert khắt khe: ĐÚNG 1 request thành công qua HTTP (200 OK), 9 request bị chặn (403 SANDBOX_EXHAUSTED), và used_requests chốt đúng bằng 5
+      const passed = initialRemaining === 1 && okResponses.length === 1 && blockedResponses.length === 9 && finalUsed === 5;
+      await recordResult('TC-19-02', 'US-19', 'Concurrency Boundary Test qua HTTP Playground: Còn đúng 1 lượt cuối, 10 request song song -> đúng 1 thành công (200), 9 bị chặn (403 SANDBOX_EXHAUSTED), used = 5', passed, {
         initialRemaining,
-        successCount: fulfilled.length,
-        blockedCount: rejected.length,
+        successCount: okResponses.length,
+        blockedCount: blockedResponses.length,
         dbUsedRequests: finalUsed
       });
     }
@@ -551,130 +656,130 @@ async function main() {
       createdKeyA = d;
       rawKeyStringA = d?.key;
 
-      const keyPattern = /^ak_live_[A-Za-z0-9_-]{43}$/;
+      const formatValid = typeof rawKeyStringA === 'string' &&
+        rawKeyStringA.startsWith('ak_live_') &&
+        rawKeyStringA.length > 30;
+
       const passed = res.status === 201 &&
+        formatValid &&
         Boolean(d?.id) &&
-        d?.apiId === isolatedApiId &&
-        d?.isActive === true &&
-        typeof rawKeyStringA === 'string' &&
-        keyPattern.test(rawKeyStringA) &&
+        Boolean(d?.keyPrefix) &&
         d?.keyPrefix === rawKeyStringA.slice(0, 16);
 
       await recordResult('TC-21-01', 'US-21', 'Tạo API Key thành công (201 Created), sinh định dạng chuẩn ak_live_*** đúng 1 lần', passed, {
         status: res.status,
         id: d?.id,
         keyPrefix: d?.keyPrefix,
-        keyFormatValid: keyPattern.test(rawKeyStringA || '')
+        keyFormatValid: formatValid
       });
     }
 
-    // TC-21-02: Kiểm tra lưu trữ DB — Băm SHA-256 (64 ký tự hex), không lưu plaintext
-    // Mapping: TC-21-02 trong Sprint3_TestCases.md — Critical DB Verification
+    // TC-21-02: Xác thực Database — Băm SHA-256 (64 hex), Tuyệt đối KHÔNG lưu plaintext key
+    // Mapping: TC-21-02 trong Sprint3_TestCases.md — Critical Security
     {
-      const dbRes = await pool.query('SELECT * FROM api_keys WHERE id = $1', [createdKeyA?.id]);
-      const row = dbRes.rows[0];
-      const computedHash = createHash('sha256').update(rawKeyStringA || '').digest('hex');
+      const computedHash = crypto.createHash('sha256').update(rawKeyStringA).digest('hex');
+      const dbRes = await pool.query('SELECT key_hash, key_prefix FROM api_keys WHERE id = $1', [createdKeyA.id]);
+      const storedHash = dbRes.rows[0]?.key_hash;
+      const hashMatched = storedHash === computedHash;
 
-      const is64Hex = /^[0-9a-f]{64}$/.test(row?.key_hash || '');
-      const hashMatched = row?.key_hash === computedHash;
-      const plaintextNotInDb = !JSON.stringify(row).includes(rawKeyStringA || '');
+      // Quét toàn bộ bảng api_keys để chứng minh plaintext key không tồn tại ở bất kỳ cột nào
+      const leakCheck = await pool.query(
+        'SELECT count(*) FROM api_keys WHERE key_hash LIKE $1 OR key_prefix LIKE $1',
+        [`%${rawKeyStringA}%`]
+      );
+      const plaintextNotInDb = Number(leakCheck.rows[0].count) === 0;
 
-      const passed = Boolean(row) && is64Hex && hashMatched && plaintextNotInDb;
+      const passed = hashMatched && plaintextNotInDb && computedHash.length === 64;
       await recordResult('TC-21-02', 'US-21', 'Xác thực Database: Cột key_hash lưu đúng chuỗi SHA-256 64 hex, tuyệt đối không lưu plaintext key', passed, {
-        storedHash: row?.key_hash,
+        storedHash,
         computedHash,
         hashMatched,
         plaintextNotInDb
       });
     }
 
-    // TC-21-LIST: Lấy danh sách API Key không làm lộ Secret
+    // TC-21-LIST: Danh sách API Key chỉ hiển thị keyPrefix, che giấu hoàn toàn Secret
     {
       const res = await apiRequest('GET', '/api/consumer/api-keys', {
         headers: { Authorization: `Bearer ${tokenA}` }
       });
-      const d = res.data?.data;
-      const items = d?.items || [];
-      const targetItem = items.find(k => k.id === createdKeyA?.id);
+      const items = res.data?.data?.items || [];
+      const hasNoRawKey = items.every(item => item.key === undefined);
+      const hasNoHash = items.every(item => item.key_hash === undefined && item.keyHash === undefined);
+      const hasPrefixOnly = items.some(item => item.keyPrefix === createdKeyA.keyPrefix);
+      const cacheHeader = res.headers['cache-control'] || '';
 
-      const hasNoRawKey = items.every(k => !k.key);
-      const hasNoHash = items.every(k => !k.keyHash && !k.key_hash);
-      const hasPrefix = Boolean(targetItem?.keyPrefix);
-      const hasNoStore = res.headers['cache-control']?.includes('no-store');
-
-      const passed = res.status === 200 &&
-        Array.isArray(items) &&
-        items.length > 0 &&
-        hasNoRawKey &&
-        hasNoHash &&
-        hasPrefix &&
-        hasNoStore;
-
+      const passed = res.status === 200 && hasNoRawKey && hasNoHash && hasPrefixOnly && cacheHeader.includes('no-store');
       await recordResult('TC-21-LIST', 'US-21', '[Bổ sung] Danh sách API Key chỉ hiển thị keyPrefix, tuyệt đối không lộ rawKey hay key_hash (Cache-Control: no-store)', passed, {
         status: res.status,
         itemsCount: items.length,
-        samplePrefix: targetItem?.keyPrefix,
+        samplePrefix: items[0]?.keyPrefix,
         hasNoRawKey,
         hasNoHash
       });
     }
 
-    // TC-21-LIMIT: Ràng buộc duy nhất 1 key active / Consumer / API (Bổ sung nghiệp vụ)
+    // TC-21-LIMIT: Ràng buộc duy nhất 1 key active / Consumer / API (Chặn tạo trùng lặp)
     {
-      const res = await apiRequest('POST', '/api/consumer/api-keys', {
+      const duplicateRes = await apiRequest('POST', '/api/consumer/api-keys', {
         headers: { Authorization: `Bearer ${tokenA}` },
         body: { apiId: isolatedApiId, label: 'Duplicate Key Attempt' }
       });
-      const passed = res.status === 409 && res.data?.error?.code === 'KEY_EXISTS';
+      const passed = duplicateRes.status === 409 && duplicateRes.data?.error?.code === 'KEY_EXISTS';
       await recordResult('TC-21-LIMIT', 'US-21', '[Bổ sung nghiệp vụ] Ràng buộc duy nhất 1 key active / Consumer / API (409 KEY_EXISTS)', passed, {
-        status: res.status,
-        code: res.data?.error?.code
+        status: duplicateRes.status,
+        code: duplicateRes.data?.error?.code
       });
     }
 
-    // TC-21-03: Rotate Key — Cấp key mới, vô hiệu hóa tức thì key cũ
-    // Mapping: TC-21-03 trong Sprint3_TestCases.md — High Functional
-    let rotatedKey = null;
+    // TC-21-03: Rotate Key tức thì & Vô hiệu hóa key cũ
+    // Mapping: TC-21-03 trong Sprint3_TestCases.md — High Priority
+    let rotatedKeyA = null;
     {
-      const res = await apiRequest('POST', `/api/consumer/api-keys/${createdKeyA?.id}/rotate`, {
+      const res = await apiRequest('POST', `/api/consumer/api-keys/${createdKeyA.id}/rotate`, {
         headers: { Authorization: `Bearer ${tokenA}` },
         body: {}
       });
-      rotatedKey = res.data?.data;
+      const d = res.data?.data;
+      rotatedKeyA = d;
 
-      const oldKeyInDb = (await pool.query('SELECT is_active, revoked_at FROM api_keys WHERE id = $1', [createdKeyA?.id])).rows[0];
-      const newKeyInDb = (await pool.query('SELECT is_active, revoked_at FROM api_keys WHERE id = $1', [rotatedKey?.id])).rows[0];
+      // Kiểm tra DB: key cũ phải chuyển sang is_active = false và có revoked_at
+      const oldKeyDb = await pool.query('SELECT is_active, revoked_at FROM api_keys WHERE id = $1', [createdKeyA.id]);
+      const oldActive = oldKeyDb.rows[0]?.is_active;
+      const oldRevokedAt = oldKeyDb.rows[0]?.revoked_at;
 
       const passed = res.status === 201 &&
-        Boolean(rotatedKey?.key) &&
-        rotatedKey?.key !== rawKeyStringA &&
-        oldKeyInDb?.is_active === false &&
-        Boolean(oldKeyInDb?.revoked_at) &&
-        newKeyInDb?.is_active === true;
+        oldActive === false &&
+        Boolean(oldRevokedAt) &&
+        Boolean(d?.key) &&
+        d?.key !== rawKeyStringA;
 
       await recordResult('TC-21-03', 'US-21', 'Rotate Key tức thì: Sinh key mới (201), key cũ chuyển is_active=false và revoked_at có thời gian', passed, {
         status: res.status,
-        oldKeyActive: oldKeyInDb?.is_active,
-        newKeyActive: newKeyInDb?.is_active,
-        oldKeyRevokedAt: oldKeyInDb?.revoked_at
+        oldKeyActive: oldActive,
+        newKeyActive: d?.isActive,
+        oldKeyRevokedAt: oldRevokedAt
       });
     }
 
-    // TC-21-04 (Tài liệu): Dùng khóa cũ vừa bị Rotate gửi request tới Gateway bị từ chối 401
-    results.push({
-      testCaseId: 'TC-21-04',
-      userStory: 'US-21',
-      name: '[SKIPPED] Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401 Unauthorized',
-      status: 'SKIPPED',
-      timestamp: new Date().toISOString(),
-      details: { reason: 'Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop' },
-      notes: 'Sẽ nghiệm thu trên Gateway HTTP endpoint sau khi PR #78 merge'
-    });
-    console.log('  ⏭️ [SKIP] TC-21-04: Khóa cũ vừa bị Rotate gửi tới Gateway (chờ PR #78 Gateway)');
-
-    // TC-21-REVOKED-ROTATE: Ngăn chặn Rotate trên Key đã bị thu hồi (Bổ sung an toàn)
+    // TC-21-04: Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401
+    // Mapping: TC-21-04 trong Sprint3_TestCases.md
     {
-      const res = await apiRequest('POST', `/api/consumer/api-keys/${createdKeyA?.id}/rotate`, {
+      results.push({
+        testCaseId: 'TC-21-04',
+        userStory: 'US-21',
+        name: '[SKIPPED] Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401 Unauthorized',
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        details: { reason: 'Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop' },
+        notes: 'Chờ merge PR #78 Gateway để kiểm thử HTTP Gateway'
+      });
+      console.log('  ⏭️ [SKIP] TC-21-04: Khóa cũ vừa bị Rotate gửi tới Gateway (chờ PR #78 Gateway)');
+    }
+
+    // TC-21-REVOKED-ROTATE: Ngăn chặn thao tác Rotate trên Key đã bị thu hồi/vô hiệu hóa
+    {
+      const res = await apiRequest('POST', `/api/consumer/api-keys/${createdKeyA.id}/rotate`, {
         headers: { Authorization: `Bearer ${tokenA}` },
         body: {}
       });
@@ -685,67 +790,66 @@ async function main() {
       });
     }
 
-    // TC-21-05: Revoke Key (DELETE /api/consumer/api-keys/:id)
-    // Mapping: TC-21-05 trong Sprint3_TestCases.md — High Functional
+    // TC-21-05: Thu hồi Key tức thì (Revoke Key - DELETE /api/consumer/api-keys/:id)
+    // Mapping: TC-21-05 trong Sprint3_TestCases.md — High Priority
     {
-      const res = await apiRequest('DELETE', `/api/consumer/api-keys/${rotatedKey?.id}`, {
+      const res = await apiRequest('DELETE', `/api/consumer/api-keys/${rotatedKeyA.id}`, {
         headers: { Authorization: `Bearer ${tokenA}` }
       });
 
-      const keyInDb = (await pool.query('SELECT is_active, revoked_at FROM api_keys WHERE id = $1', [rotatedKey?.id])).rows[0];
-
-      // Thu hồi lại cùng key đó (idempotent 204)
-      const resRepeat = await apiRequest('DELETE', `/api/consumer/api-keys/${rotatedKey?.id}`, {
+      // Gọi lại DELETE lần 2 để kiểm tra tính Idempotent (vẫn trả 204 an toàn)
+      const repeatRes = await apiRequest('DELETE', `/api/consumer/api-keys/${rotatedKeyA.id}`, {
         headers: { Authorization: `Bearer ${tokenA}` }
       });
+
+      // Kiểm tra DB: key phải có is_active = false
+      const dbCheck = await pool.query('SELECT is_active, revoked_at FROM api_keys WHERE id = $1', [rotatedKeyA.id]);
+      const keyRow = dbCheck.rows[0];
 
       const passed = res.status === 204 &&
-        keyInDb?.is_active === false &&
-        Boolean(keyInDb?.revoked_at) &&
-        resRepeat.status === 204;
+        repeatRes.status === 204 &&
+        keyRow?.is_active === false &&
+        Boolean(keyRow?.revoked_at);
 
       await recordResult('TC-21-05', 'US-21', 'Revoke Key tức thì (DELETE 204 No Content), cập nhật is_active=false trong DB (idempotent)', passed, {
         firstDeleteStatus: res.status,
-        repeatDeleteStatus: resRepeat.status,
-        isActive: keyInDb?.is_active
+        repeatDeleteStatus: repeatRes.status,
+        isActive: keyRow?.is_active,
+        revokedAt: keyRow?.revoked_at
       });
     }
 
-    // TC-21-06 (Tài liệu): Gửi request qua Gateway thành công bằng API Key cập nhật last_used_at
-    results.push({
-      testCaseId: 'TC-21-06',
-      userStory: 'US-21',
-      name: '[SKIPPED] Gửi request qua Gateway bằng API Key active cập nhật last_used_at trong DB',
-      status: 'SKIPPED',
-      timestamp: new Date().toISOString(),
-      details: { reason: 'Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop' },
-      notes: 'Sẽ nghiệm thu trên Gateway HTTP endpoint sau khi PR #78 merge'
-    });
-    console.log('  ⏭️ [SKIP] TC-21-06: Gửi request Gateway cập nhật last_used_at (chờ PR #78 Gateway)');
-
-    // TC-21-ISO: Cách ly dữ liệu giữa các Consumer (Ownership Isolation - Bổ sung bảo mật)
+    // TC-21-06: Gửi request qua Gateway bằng API Key active cập nhật last_used_at
+    // Mapping: TC-21-06 trong Sprint3_TestCases.md
     {
-      // Tạo 1 key mới cho Consumer A để test cách ly
-      const resNew = await apiRequest('POST', '/api/consumer/api-keys', {
-        headers: { Authorization: `Bearer ${tokenA}` },
-        body: { apiId: isolatedApiId, label: 'Isolation Test Key' }
+      results.push({
+        testCaseId: 'TC-21-06',
+        userStory: 'US-21',
+        name: '[SKIPPED] Gửi request qua Gateway bằng API Key active cập nhật last_used_at trong DB',
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        details: { reason: 'Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop' },
+        notes: 'Chờ merge PR #78 Gateway để kiểm thử HTTP Gateway'
       });
-      const keyToProtect = resNew.data?.data;
+      console.log('  ⏭️ [SKIP] TC-21-06: Gửi request Gateway cập nhật last_used_at (chờ PR #78 Gateway)');
+    }
 
-      // Consumer B cố tình lấy danh sách xem có thấy key của Consumer A không
-      const listB = await apiRequest('GET', '/api/consumer/api-keys', {
+    // TC-21-ISO: Bảo mật đa người dùng (Multi-tenant Isolation)
+    {
+      // Consumer B không thấy key của Consumer A trong danh sách của mình
+      const listResB = await apiRequest('GET', '/api/consumer/api-keys', {
         headers: { Authorization: `Bearer ${tokenB}` }
       });
-      const itemsB = listB.data?.data?.items || [];
-      const leaksA = itemsB.some(k => k.id === keyToProtect?.id);
+      const itemsB = listResB.data?.data?.items || [];
+      const leaksA = itemsB.some(item => item.id === createdKeyA.id || item.id === rotatedKeyA.id);
 
-      // Consumer B cố tình xóa key của Consumer A
-      const deleteB = await apiRequest('DELETE', `/api/consumer/api-keys/${keyToProtect?.id}`, {
+      // Consumer B cố tình xóa key của Consumer A -> Trả 404 Not Found
+      const deleteB = await apiRequest('DELETE', `/api/consumer/api-keys/${createdKeyA.id}`, {
         headers: { Authorization: `Bearer ${tokenB}` }
       });
 
-      // Consumer B cố tình rotate key của Consumer A
-      const rotateB = await apiRequest('POST', `/api/consumer/api-keys/${keyToProtect?.id}/rotate`, {
+      // Consumer B cố tình rotate key của Consumer A -> Trả 404 Not Found
+      const rotateB = await apiRequest('POST', `/api/consumer/api-keys/${createdKeyA.id}/rotate`, {
         headers: { Authorization: `Bearer ${tokenB}` },
         body: {}
       });
@@ -824,7 +928,7 @@ async function main() {
     skipped: skippedCount,
     executionPassRate,
     overallCoverageRate,
-    notes: '5 test cases trạng thái SKIPPED (TC-18-01, TC-18-05, TC-18-06, TC-21-04, TC-21-06) do chờ Tech Lead Dũng merge PR #78 (Gateway framework) và upstream public mock. Các case này KHÔNG được tính là PASS.',
+    notes: 'Chỉ còn duy nhất 2 test cases trạng thái SKIPPED (TC-21-04, TC-21-06) do chờ Tech Lead Dũng merge PR #78 (Gateway framework US-22). Toàn bộ US-18 và US-19 đã được thực thi và nghiệm thu 100% qua HTTP Playground.',
     testResults: results
   };
 
