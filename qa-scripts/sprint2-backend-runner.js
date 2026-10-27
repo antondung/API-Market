@@ -840,30 +840,107 @@ async function main() {
     await recordResult('TC-14-03', 'US-14', 'Admin lọc Audit Log theo targetType=api và targetId', passed, { status: res.status, matchingLogs: items.length });
   }
 
-  // TC-14-04: Security & Sensitive Data Redaction in Audit Logs
-  {
-    const res = await apiRequest('GET', `/api/admin/audit-logs?targetType=api&targetId=${testApiId}`, { token: adminToken });
-    const items = res.data?.data?.items || [];
-    // Ensure challenge tokens and secrets are NOT exposed in detail, and verify logs actually exist (prevent false pass)
-    let hasLeakedTokens = false;
-    const hasItems = items.length > 0;
-    for (const item of items) {
-      const detailStr = JSON.stringify(item.detail || {});
-      const recordStr = JSON.stringify(item);
-      if (
-        detailStr.includes('platform-verification=') ||
-        detailStr.includes('Password') ||
-        detailStr.includes('password_hash') ||
-        recordStr.includes('password_hash')
-      ) {
-        hasLeakedTokens = true;
+  // Helper function: Quét toàn diện các nguy cơ rò rỉ dữ liệu nhạy cảm trong Audit Log
+  function containsSensitiveLeak(record) {
+    if (!record) return false;
+    const detailStr = JSON.stringify(record.detail ?? {});
+    const recordStr = JSON.stringify(record);
+
+    // 1. Quét DNS verification token
+    if (detailStr.includes('platform-verification=') || recordStr.includes('platform-verification=')) {
+      return true;
+    }
+
+    // 2. Quét trường mật khẩu hoặc bí mật không được che dấu
+    if (record.detail && typeof record.detail === 'object') {
+      for (const [key, val] of Object.entries(record.detail)) {
+        const lowerKey = key.toLowerCase();
+        const strVal = String(val ?? '');
+        if (lowerKey.includes('password') && strVal !== '[REDACTED]' && strVal !== 'true' && strVal !== 'false') {
+          return true;
+        }
+        if (lowerKey.includes('secret') && strVal !== '[REDACTED]' && strVal.length > 5) {
+          return true;
+        }
+        if (lowerKey.includes('token') && !lowerKey.includes('action') && strVal.length > 20 && strVal !== '[REDACTED]') {
+          return true;
+        }
       }
     }
-    const passed = res.status === 200 && hasItems && !hasLeakedTokens;
-    await recordResult('TC-14-04', 'US-14', 'Kiểm tra bảo mật: Không rò rỉ token DNS, mật khẩu trong Audit Log', passed, {
+
+    // 3. Quét pattern băm mật khẩu Bcrypt ($2a$, $2b$, $2y$)
+    if (/\$2[aby]\$[0-9]{2}\$[A-Za-z0-9./]{53}/.test(recordStr)) {
+      return true;
+    }
+
+    // 4. Quét chuỗi JWT (Header.Payload.Signature)
+    if (/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/.test(recordStr)) {
+      return true;
+    }
+
+    // 5. Quét khóa nhạy cảm password_hash
+    if (detailStr.includes('"password_hash"') || detailStr.includes('"passwordHash"')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // TC-14-04: Security & Sensitive Data Redaction in Audit Logs (với Canary Fixtures chống False Positive)
+  {
+    // BƯỚC 1: Canary Negative Test (Dữ liệu rò rỉ mẫu -> BẮT BUỘC hàm quét phải phát hiện được)
+    const canaryLeakRecord = {
+      id: 'canary-leak-01',
+      action: 'user.login',
+      actorId: '1',
+      detail: {
+        password_hash: '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklm',
+        secret: 'raw_api_secret_token_12345'
+      }
+    };
+    const canaryLeakDetected = containsSensitiveLeak(canaryLeakRecord);
+
+    // BƯỚC 2: Canary Redacted Test (Dữ liệu mẫu đã che mờ hợp lệ -> KHÔNG ĐƯỢC báo lỗi giả)
+    const canarySafeRecord = {
+      id: 'canary-safe-01',
+      action: 'user.login',
+      actorId: '1',
+      detail: {
+        password: '[REDACTED]',
+        actorEmail: 'admin@example.com',
+        hasPassword: true
+      }
+    };
+    const canaryFalseAlarm = containsSensitiveLeak(canarySafeRecord);
+
+    // BƯỚC 3: Quét dữ liệu Audit Log thực tế từ API Backend
+    const res = await apiRequest('GET', `/api/admin/audit-logs?targetType=api&targetId=${testApiId}`, { token: adminToken });
+    const items = res.data?.data?.items || [];
+    const hasItems = Array.isArray(items) && items.length > 0;
+    const hasValidDetail = items.some(item => item.detail !== null && typeof item.detail === 'object' && Object.keys(item.detail).length > 0);
+
+    let actualLeakDetected = false;
+    for (const item of items) {
+      if (containsSensitiveLeak(item)) {
+        actualLeakDetected = true;
+        break;
+      }
+    }
+
+    const passed = res.status === 200 &&
+      canaryLeakDetected === true &&
+      canaryFalseAlarm === false &&
+      hasItems &&
+      hasValidDetail &&
+      !actualLeakDetected;
+
+    await recordResult('TC-14-04', 'US-14', 'Kiểm tra bảo mật: Không rò rỉ token DNS, mật khẩu trong Audit Log (Canary Verified)', passed, {
       status: res.status,
       logCount: items.length,
-      hasLeakedTokens
+      canaryLeakDetected,
+      canaryFalseAlarm,
+      hasValidDetail,
+      actualLeakDetected
     });
   }
 
