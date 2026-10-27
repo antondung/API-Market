@@ -6,11 +6,20 @@ import { useLanguage } from '../../i18n';
 import type { UserRole } from '../../types';
 
 const homeForRole = (role: UserRole) => role === 'ADMIN' ? '/admin' : role === 'API_PROVIDER' ? '/provider' : '/dashboard';
+
+const isSafeRedirectPath = (path: string): boolean => {
+  if (typeof path !== 'string') return false;
+  const trimmed = path.trim();
+  // Must start with single slash, not protocol-relative (//), no backslashes, no scheme indicators
+  return trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.includes('\\') && !trimmed.includes(':');
+};
+
 const canAccess = (role: UserRole, path: string) => {
+  if (!isSafeRedirectPath(path)) return false;
   if (path.startsWith('/admin')) return role === 'ADMIN';
   if (path.startsWith('/provider')) return role === 'API_PROVIDER';
   if (path.startsWith('/dashboard')) return role === 'USER' || role === 'API_PROVIDER';
-  return path.startsWith('/') && !path.startsWith('//');
+  return true;
 };
 
 export const LoginPage: React.FC = () => {
@@ -36,8 +45,14 @@ export const LoginPage: React.FC = () => {
       setErrorMessage(result.error || 'Đăng nhập không thành công.');
       return;
     }
-    const requested = (location.state as { from?: unknown } | null)?.from;
-    const destination = typeof requested === 'string' && canAccess(result.user.role, requested) ? requested : homeForRole(result.user.role);
+
+    // Support both state.from (ProtectedRoute) and ?redirect=... query parameter (CheckoutPage)
+    const searchParams = new URLSearchParams(location.search);
+    const redirectQuery = searchParams.get('redirect');
+    const stateFrom = (location.state as { from?: unknown } | null)?.from;
+    const requested = typeof stateFrom === 'string' ? stateFrom : (typeof redirectQuery === 'string' ? redirectQuery : null);
+
+    const destination = requested && canAccess(result.user.role, requested) ? requested : homeForRole(result.user.role);
     navigate(destination, { replace: true });
   };
 
