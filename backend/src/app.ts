@@ -80,6 +80,14 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
   }));
+  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
+  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
+  // an empty payload.
+  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
+  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
+  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
+  // an empty payload.
+  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   const baseDocument = options.provider ? {
@@ -108,7 +116,6 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   };
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
-  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
   if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
   const playground = options.playground ?? (options.marketplace ? new PlaygroundService(options.marketplace.pool) : undefined);
   if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireRole('Consumer'),

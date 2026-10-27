@@ -2,10 +2,13 @@ import type { Pool } from 'pg';
 import { ApiError } from './auth.js';
 import { RoutingRegistry } from './routing-registry.js';
 import { ApiKeyService } from './consumer-service.js';
+import { SafeProxy, type ProxyInput } from './safe-proxy.js';
 
 export interface GatewayRequest {
   method: string;
+  /** Path below the API id, e.g. `/weather/Hanoi`. */
   path: string;
+  query: Record<string, string>;
   headers: Record<string, string | string[] | undefined>;
   body?: Buffer;
 }
@@ -16,125 +19,111 @@ export interface GatewayResponse {
   body: Buffer;
 }
 
-// The Gateway authenticates with the API key, so caller credentials must never reach the
-// upstream: forwarding them would let a Consumer leak their own session to a third party.
-const BLOCKED_REQUEST_HEADERS = new Set([
-  'authorization', 'cookie', 'set-cookie', 'host', 'connection', 'keep-alive',
-  'proxy-authorization', 'proxy-authenticate', 'te', 'trailer', 'transfer-encoding',
-  'upgrade', 'x-api-key', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto',
-  'x-real-ip', 'forwarded',
-]);
+/** Structural contract so tests can substitute a transport stub for SafeProxy. */
+export interface UpstreamProxy {
+  prepare(baseUrl: string, registeredPath: string, input: ProxyInput, timeoutMs: number): Promise<unknown>;
+  execute(target: unknown): Promise<{ status: number; headers: Record<string, string>; body: string; bodyEncoding: 'utf8' | 'base64' }>;
+}
 
-// Body is re-buffered, so framing and encoding headers no longer describe what we send.
-const BLOCKED_RESPONSE_HEADERS = new Set([
-  'content-encoding', 'content-length', 'transfer-encoding', 'connection',
-  'keep-alive', 'set-cookie', 'proxy-authenticate',
-]);
+// Callers may only supply presentation headers. Everything else is either set by the Gateway
+// or dropped, so a caller can never impersonate internal context (X-Internal-Actor) or leak
+// their own session (authorization, cookie) to a third-party provider.
+const ALLOWED_REQUEST_HEADERS = ['accept', 'accept-language', 'content-type'];
+const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
 
-const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+/** Matches a registered template such as `/weather/{city}` against a concrete path. */
+export function matchTemplate(template: string, actual: string): Record<string, string> | null {
+  const templateParts = template.split('/').filter(Boolean);
+  const actualParts = actual.split('/').filter(Boolean);
+  if (templateParts.length !== actualParts.length) return null;
+  const params: Record<string, string> = {};
+  for (let index = 0; index < templateParts.length; index += 1) {
+    const expected = templateParts[index]!;
+    const received = actualParts[index]!;
+    const placeholder = /^\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(expected);
+    if (placeholder) {
+      if (!received || received.length > 200 || /[/\\\x00-\x1f]/.test(received)) return null;
+      params[placeholder[1]!] = decodeURIComponent(received);
+      continue;
+    }
+    if (expected !== received) return null;
+  }
+  return params;
+}
 
 /**
- * Gateway forwards a Consumer call to a Published API after checking the API key and the
- * route. Deliberately narrow: only endpoints registered for the API are reachable, and the
- * upstream host always comes from the registry — never from the caller.
+ * Gateway forwards a Consumer call to a Published API after checking the API key and route.
+ * Upstream transport is delegated to SafeProxy so the Gateway inherits the same SSRF policy
+ * as the Playground (public-address validation, DNS pinning, redirect refusal, streamed size
+ * limit). A Gateway that skipped those checks would reopen the hole they close.
  */
 export class GatewayService {
   private readonly registry: RoutingRegistry;
   private readonly keys: ApiKeyService;
+  private readonly proxy: UpstreamProxy;
 
-  constructor(readonly pool: Pool, keys = new ApiKeyService(pool)) {
+  constructor(readonly pool: Pool, keys = new ApiKeyService(pool), proxy: UpstreamProxy = new SafeProxy()) {
     this.registry = new RoutingRegistry(pool);
     this.keys = keys;
-  }
-
-  /** Rejects traversal and control characters so a path cannot escape the registered base. */
-  private upstreamPath(path: string): string {
-    if (!path.startsWith('/')) throw new ApiError(400, 'INVALID_PATH', 'Path must start with /');
-    if (path.includes('..') || path.includes('//') || /[\s\\]/.test(path) || path.includes('\0')) {
-      throw new ApiError(400, 'INVALID_PATH', 'Path contains an unsafe segment');
-    }
-    return path;
+    this.proxy = proxy;
   }
 
   /**
-   * Confirms method+path belongs to an endpoint registered for this API. Without this a key
+   * Finds the registered endpoint matching this method and concrete path. Without this a key
    * issued for one API could reach arbitrary paths on the provider host.
    */
   private async registeredEndpoint(apiId: string, method: string, path: string) {
     const result = await this.pool.query(
-      `SELECT 1 FROM api_endpoints e JOIN api_versions v ON v.id=e.version_id
-       WHERE e.api_id=$1 AND e.method=$2 AND e.path=$3 AND v.api_id=$1 LIMIT 1`,
-      [apiId, method, path]
+      `SELECT e.path FROM api_endpoints e JOIN api_versions v ON v.id=e.version_id
+       WHERE e.api_id=$1 AND e.method=$2 AND v.api_id=$1`,
+      [apiId, method]
     );
-    if (!result.rows[0]) throw new ApiError(404, 'ENDPOINT_NOT_FOUND', 'Endpoint is not registered for this API');
-  }
-
-  private forwardHeaders(headers: GatewayRequest['headers']) {
-    const forwarded: Record<string, string> = { accept: 'application/json' };
-    for (const [name, value] of Object.entries(headers)) {
-      const lower = name.toLowerCase();
-      if (BLOCKED_REQUEST_HEADERS.has(lower) || value === undefined) continue;
-      forwarded[lower] = Array.isArray(value) ? value.join(', ') : value;
+    for (const row of result.rows as { path: string }[]) {
+      const params = matchTemplate(row.path, path);
+      if (params) return { registeredPath: row.path, pathParams: params };
     }
-    return forwarded;
+    throw new ApiError(404, 'ENDPOINT_NOT_FOUND', 'Endpoint is not registered for this API');
   }
 
   async forward(apiKey: string, apiId: string, request: GatewayRequest): Promise<GatewayResponse> {
     const method = request.method.toUpperCase();
     if (!METHODS.has(method)) throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Unsupported method');
-    const path = this.upstreamPath(request.path);
 
-    // Authenticate before the route lookup so an unauthenticated caller cannot probe which
+    const path = request.path.startsWith('/') ? request.path : `/${request.path}`;
+    if (path.includes('..') || path.includes('//') || /[\\\x00-\x1f]/.test(path)) {
+      throw new ApiError(400, 'INVALID_PATH', 'Path contains an unsafe segment');
+    }
+
+    // Authenticate before resolving the route so an unauthenticated caller cannot probe which
     // APIs exist.
     await this.keys.authenticate(apiKey, apiId);
-    await this.registeredEndpoint(apiId, method, path);
-
+    const matched = await this.registeredEndpoint(apiId, method, path);
     const route = await this.registry.resolve(apiId);
-    const base = route.upstreamBaseUrl.endsWith('/') ? route.upstreamBaseUrl : `${route.upstreamBaseUrl}/`;
-    const url = new URL(path.slice(1), base);
 
-    // The registry only stores operator-approved base URLs; re-check the scheme so a bad row
-    // can never turn the Gateway into a file/protocol reader.
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new ApiError(503, 'ROUTE_UNAVAILABLE', 'Upstream route is not usable');
+    const headers: Record<string, string> = {};
+    for (const name of ALLOWED_REQUEST_HEADERS) {
+      const raw = request.headers[name];
+      const value = Array.isArray(raw) ? raw[0] : raw;
+      if (typeof value === 'string' && value.length <= 1000) headers[name] = value;
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), route.timeoutMs);
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: this.forwardHeaders(request.headers),
-        body: method === 'GET' || method === 'HEAD' || !request.body ? undefined : new Uint8Array(request.body),
-        redirect: 'manual',
-        signal: controller.signal,
-      });
+    const body = method === 'GET' || method === 'HEAD' ? undefined : request.body;
 
-      // A redirect could point at an internal address, so the Gateway never follows one.
-      if (response.status >= 300 && response.status < 400) {
-        throw new ApiError(502, 'UPSTREAM_REDIRECT', 'Upstream redirects are not followed');
-      }
+    const target = await this.proxy.prepare(route.upstreamBaseUrl, matched.registeredPath, {
+      method,
+      pathParams: matched.pathParams,
+      query: request.query,
+      headers,
+      body: body ? asJson(body) : undefined,
+    }, route.timeoutMs);
 
-      const buffer = Buffer.from(await response.arrayBuffer());
-      if (buffer.length > MAX_RESPONSE_BYTES) {
-        throw new ApiError(502, 'UPSTREAM_TOO_LARGE', 'Upstream response exceeds the size limit');
-      }
-
-      const headers: Record<string, string> = {};
-      response.headers.forEach((value, name) => {
-        if (!BLOCKED_RESPONSE_HEADERS.has(name.toLowerCase())) headers[name] = value;
-      });
-
-      return { status: response.status, headers, body: buffer };
-    } catch (error) {
-      if (error instanceof ApiError) throw error;
-      if ((error as { name?: string }).name === 'AbortError') {
-        throw new ApiError(504, 'UPSTREAM_TIMEOUT', 'Upstream did not respond in time');
-      }
-      throw new ApiError(502, 'UPSTREAM_UNAVAILABLE', 'Upstream request failed');
-    } finally {
-      clearTimeout(timer);
-    }
+    const result = await this.proxy.execute(target);
+    return { status: result.status, headers: result.headers, body: Buffer.from(result.body, result.bodyEncoding) };
   }
+}
+
+/** SafeProxy accepts JSON bodies; a non-JSON caller body is rejected rather than silently dropped. */
+function asJson(body: Buffer): unknown {
+  try { return JSON.parse(body.toString('utf8')); }
+  catch { throw new ApiError(400, 'VALIDATION_ERROR', 'Request body must be JSON'); }
 }
