@@ -147,6 +147,7 @@ async function main() {
   let isolatedEndpointDelayId = null;
   let userA = null;
   let userB = null;
+  const cleanupUserIds = [];
 
   try {
     // -------------------------------------------------------------------------
@@ -168,7 +169,14 @@ async function main() {
 
     log('Đăng ký tài khoản kiểm thử Consumer A và Consumer B...');
     const regA = await apiRequest('POST', '/api/auth/register', { body: consumerA });
+    if (regA.status === 201 && regA.data?.data?.id) {
+      cleanupUserIds.push(regA.data.data.id);
+    }
+
     const regB = await apiRequest('POST', '/api/auth/register', { body: consumerB });
+    if (regB.status === 201 && regB.data?.data?.id) {
+      cleanupUserIds.push(regB.data.data.id);
+    }
 
     if (regA.status !== 201 || regB.status !== 201) {
       throw new Error(`Đăng ký tài khoản kiểm thử thất bại (Status A: ${regA.status}, B: ${regB.status})`);
@@ -185,6 +193,8 @@ async function main() {
     const tokenB = loginResB.data?.data?.accessToken;
     userA = loginResA.data?.data?.user;
     userB = loginResB.data?.data?.user;
+    if (userA?.id && !cleanupUserIds.includes(userA.id)) cleanupUserIds.push(userA.id);
+    if (userB?.id && !cleanupUserIds.includes(userB.id)) cleanupUserIds.push(userB.id);
 
     if (!tokenA || !tokenB) {
       throw new Error('Đăng nhập thất bại: không nhận được access token.');
@@ -277,6 +287,21 @@ async function main() {
         code: resNoAuth.data?.error?.code
       });
     }
+
+    // Cấp một grant Sandbox thật cho Consumer A trước khi chạy các vector SSRF/Validation
+    // để xác minh cơ chế bảo toàn Quota (TC-18-QUOTA-SAFE)
+    const initialGrantSetup = await apiRequest('POST', `/api/consumer/apis/${isolatedApiId}/sandbox`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+      body: {}
+    });
+    const initialGrantCheck = await pool.query(
+      'SELECT used_requests, max_requests FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2',
+      [userA.id, isolatedApiId]
+    );
+    if (initialGrantCheck.rows.length === 0) {
+      throw new Error('Khởi tạo Sandbox Grant ban đầu cho TC-18-QUOTA-SAFE thất bại trong DB');
+    }
+    const initialUsedRequests = initialGrantCheck.rows[0].used_requests;
 
     // TC-18-02: Chặn SSRF với Loopback IPv4 (127.0.0.1 / localhost)
     // Mapping: TC-18-02 trong Sprint3_TestCases.md — Critical Security
@@ -372,13 +397,18 @@ async function main() {
     // TC-18-QUOTA-SAFE: An toàn Quota — Các request bị chặn SSRF/Validation tuyệt đối không trừ quota
     {
       const grantCheck = await pool.query(
-        'SELECT used_requests FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2',
+        'SELECT used_requests, max_requests FROM sandbox_grants WHERE consumer_id = $1 AND api_id = $2',
         [userA.id, isolatedApiId]
       );
-      const used = grantCheck.rows.length === 0 ? 0 : grantCheck.rows[0].used_requests;
-      const passed = used === 0;
-      await recordResult('TC-18-QUOTA-SAFE', 'US-18', '[Checklist Bảo mật] Nguyên tắc an toàn quota: Các request bị chặn SSRF/Validation không trừ lượt sandbox (used_requests = 0)', passed, {
-        usedRequests: used
+      // Bắt buộc grant phải tồn tại trong DB (rows.length === 1) và used_requests giữ nguyên tuyệt đối
+      const grantExists = grantCheck.rows.length === 1;
+      const usedRequestsAfter = grantExists ? grantCheck.rows[0].used_requests : -1;
+      const passed = grantExists && usedRequestsAfter === initialUsedRequests;
+
+      await recordResult('TC-18-QUOTA-SAFE', 'US-18', '[Checklist Bảo mật] Nguyên tắc an toàn quota: Các request bị chặn SSRF/Validation không trừ lượt sandbox (used_requests giữ nguyên)', passed, {
+        grantExists,
+        initialUsed: initialUsedRequests,
+        usedAfter: usedRequestsAfter
       });
     }
 
@@ -868,6 +898,7 @@ async function main() {
     // Đảm bảo dọn dẹp sạch sẽ 100% tài nguyên test, không ảnh hưởng DB
     // -------------------------------------------------------------------------
     log('Dọn dẹp triệt để các bản ghi test tạm thời trong PostgreSQL (Finally block)...');
+    let cleanupSuccess = true;
     try {
       if (isolatedApiId) {
         await pool.query('DELETE FROM gateway_routes WHERE api_id = $1', [isolatedApiId]);
@@ -877,21 +908,18 @@ async function main() {
         await pool.query('DELETE FROM api_keys WHERE api_id = $1', [isolatedApiId]);
         await pool.query('DELETE FROM apis WHERE id = $1', [isolatedApiId]);
       }
-      if (userA?.id) {
-        await pool.query('DELETE FROM api_keys WHERE user_id = $1', [userA.id]);
-        await pool.query('DELETE FROM sandbox_grants WHERE consumer_id = $1', [userA.id]);
-        await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userA.id]);
-        await pool.query('DELETE FROM users WHERE id = $1', [userA.id]);
+      if (cleanupUserIds.length > 0) {
+        await pool.query('DELETE FROM api_keys WHERE user_id = ANY($1)', [cleanupUserIds]);
+        await pool.query('DELETE FROM sandbox_grants WHERE consumer_id = ANY($1)', [cleanupUserIds]);
+        await pool.query('DELETE FROM refresh_tokens WHERE user_id = ANY($1)', [cleanupUserIds]);
+        await pool.query('DELETE FROM users WHERE id = ANY($1)', [cleanupUserIds]);
       }
-      if (userB?.id) {
-        await pool.query('DELETE FROM api_keys WHERE user_id = $1', [userB.id]);
-        await pool.query('DELETE FROM sandbox_grants WHERE consumer_id = $1', [userB.id]);
-        await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userB.id]);
-        await pool.query('DELETE FROM users WHERE id = $1', [userB.id]);
-      }
-      log('Đã dọn dẹp hoàn tất, cơ sở dữ liệu đã khôi phục nguyên trạng.');
     } catch (cleanErr) {
-      console.warn('[QA Cleanup Warning]:', cleanErr.message);
+      cleanupSuccess = false;
+      console.error('[QA Cleanup Error] Dọn dẹp tài nguyên test thất bại:', cleanErr.message);
+    }
+    if (cleanupSuccess) {
+      log('Đã dọn dẹp hoàn tất, cơ sở dữ liệu đã khôi phục nguyên trạng.');
     }
   }
 

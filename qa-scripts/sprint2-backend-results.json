@@ -4,7 +4,7 @@
     "passed": 60,
     "failed": 0,
     "passRate": "100.0%",
-    "executedAt": "2026-10-27T10:53:58.321Z",
+    "executedAt": "2026-10-27T15:39:08.950Z",
     "environment": {
       "baseUrl": "http://127.0.0.1:3000",
       "database": "PostgreSQL 17 (Docker)",
@@ -24,7 +24,7 @@
       "userStory": "US-06",
       "name": "Provider kiểm tra trạng thái xác minh ban đầu",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.803Z",
+      "timestamp": "2026-10-27T15:39:07.512Z",
       "details": {
         "status": 200,
         "data": {
@@ -38,13 +38,13 @@
       "userStory": "US-06",
       "name": "Provider nộp hồ sơ xác minh KYC (trạng thái Pending)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.813Z",
+      "timestamp": "2026-10-27T15:39:07.526Z",
       "details": {
         "status": 201,
         "data": {
           "data": {
-            "id": "35",
-            "providerId": "38",
+            "id": "39",
+            "providerId": "42",
             "organizationName": "QA Fintech Global Corp",
             "contactEmail": "contact@qafintech.com",
             "evidenceUrls": [
@@ -52,10 +52,10 @@
             ],
             "status": "Pending",
             "rejectReason": null,
-            "submittedAt": "2026-10-27T10:53:56.806Z",
+            "submittedAt": "2026-10-27T15:39:07.519Z",
             "reviewedAt": null,
             "reviewedBy": null,
-            "updatedAt": "2026-10-27T10:53:56.806Z"
+            "updatedAt": "2026-10-27T15:39:07.519Z"
           }
         }
       },
@@ -66,13 +66,13 @@
       "userStory": "US-06",
       "name": "Provider tra cứu trạng thái sau nộp (Pending)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.820Z",
+      "timestamp": "2026-10-27T15:39:07.532Z",
       "details": {
         "status": 200,
         "data": {
           "data": {
-            "id": "35",
-            "providerId": "38",
+            "id": "39",
+            "providerId": "42",
             "organizationName": "QA Fintech Global Corp",
             "contactEmail": "contact@qafintech.com",
             "evidenceUrls": [
@@ -80,10 +80,10 @@
             ],
             "status": "Pending",
             "rejectReason": null,
-            "submittedAt": "2026-10-27T10:53:56.806Z",
+            "submittedAt": "2026-10-27T15:39:07.519Z",
             "reviewedAt": null,
             "reviewedBy": null,
-            "updatedAt": "2026-10-27T10:53:56.806Z"
+            "updatedAt": "2026-10-27T15:39:07.519Z"
           }
         }
       },
@@ -94,7 +94,7 @@
       "userStory": "US-06",
       "name": "Chặn nộp lặp hồ sơ xác minh khi đang Pending (409 Conflict)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.826Z",
+      "timestamp": "2026-10-27T15:39:07.538Z",
       "details": {
         "status": 409,
         "code": "VERIFICATION_EXISTS"
@@ -106,7 +106,7 @@
       "userStory": "US-07",
       "name": "Admin xem danh sách hàng chờ xác minh Provider",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.834Z",
+      "timestamp": "2026-10-27T15:39:07.552Z",
       "details": {
         "status": 200,
         "count": 8
@@ -118,7 +118,7 @@
       "userStory": "US-07",
       "name": "Admin xem chi tiết hồ sơ xác minh Provider",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.839Z",
+      "timestamp": "2026-10-27T15:39:07.559Z",
       "details": {
         "status": 200,
         "org": "QA Fintech Global Corp"
@@ -130,13 +130,13 @@
       "userStory": "US-07",
       "name": "Admin từ chối hồ sơ thiếu lý do (400 Bad Request)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.845Z",
+      "timestamp": "2026-10-27T15:39:07.568Z",
       "details": {
         "status": 400,
         "error": {
           "code": "REASON_REQUIRED",
           "message": "Rejection reason is required",
-          "requestId": "16db1728-a5d4-47a0-a157-6850135954f1"
+          "requestId": "7d14a6be-81b2-4350-a079-95e6eee89a2f"
         }
       },
       "notes": ""
@@ -146,7 +146,7 @@
       "userStory": "US-07",
       "name": "Admin từ chối hồ sơ kèm lý do hợp lệ",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.855Z",
+      "timestamp": "2026-10-27T15:39:07.580Z",
       "details": {
         "status": 200,
         "statusResult": "Rejected"
@@ -158,13 +158,13 @@
       "userStory": "US-06",
       "name": "Provider nộp lại hồ sơ sau khi bị từ chối (Resubmit)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.862Z",
+      "timestamp": "2026-10-27T15:39:07.587Z",
       "details": {
         "status": 201,
         "data": {
           "data": {
-            "id": "36",
-            "providerId": "38",
+            "id": "40",
+            "providerId": "42",
             "organizationName": "QA Fintech Global Corp Updated",
             "contactEmail": "contact@qafintech.com",
             "evidenceUrls": [
@@ -172,10 +172,10 @@
             ],
             "status": "Pending",
             "rejectReason": null,
-            "submittedAt": "2026-10-27T10:53:56.857Z",
+            "submittedAt": "2026-10-27T15:39:07.583Z",
             "reviewedAt": null,
             "reviewedBy": null,
-            "updatedAt": "2026-10-27T10:53:56.857Z"
+            "updatedAt": "2026-10-27T15:39:07.583Z"
           }
         }
       },
@@ -186,13 +186,13 @@
       "userStory": "US-07",
       "name": "Admin phê duyệt hồ sơ xác minh Provider (Verified)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.869Z",
+      "timestamp": "2026-10-27T15:39:07.595Z",
       "details": {
         "status": 200,
         "data": {
           "data": {
-            "id": "36",
-            "providerId": "38",
+            "id": "40",
+            "providerId": "42",
             "organizationName": "QA Fintech Global Corp Updated",
             "contactEmail": "contact@qafintech.com",
             "evidenceUrls": [
@@ -200,10 +200,10 @@
             ],
             "status": "Verified",
             "rejectReason": null,
-            "submittedAt": "2026-10-27T10:53:56.857Z",
-            "reviewedAt": "2026-10-27T10:53:56.864Z",
+            "submittedAt": "2026-10-27T15:39:07.583Z",
+            "reviewedAt": "2026-10-27T15:39:07.590Z",
             "reviewedBy": "1",
-            "updatedAt": "2026-10-27T10:53:56.857Z"
+            "updatedAt": "2026-10-27T15:39:07.583Z"
           }
         }
       },
@@ -214,7 +214,7 @@
       "userStory": "US-07",
       "name": "Chặn Admin duyệt lại hồ sơ đã được xử lý (409 Conflict)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.874Z",
+      "timestamp": "2026-10-27T15:39:07.599Z",
       "details": {
         "status": 409,
         "code": "VERIFICATION_ALREADY_REVIEWED"
@@ -226,7 +226,7 @@
       "userStory": "RBAC",
       "name": "Guest không có token truy cập Provider API (401 Unauthorized)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.905Z",
+      "timestamp": "2026-10-27T15:39:07.632Z",
       "details": {
         "status": 401
       },
@@ -237,7 +237,7 @@
       "userStory": "RBAC",
       "name": "Guest không có token truy cập Admin API (401 Unauthorized)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.906Z",
+      "timestamp": "2026-10-27T15:39:07.634Z",
       "details": {
         "status": 401
       },
@@ -248,7 +248,7 @@
       "userStory": "RBAC",
       "name": "Consumer gọi API Provider (403 Forbidden)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.910Z",
+      "timestamp": "2026-10-27T15:39:07.637Z",
       "details": {
         "status": 403
       },
@@ -259,7 +259,7 @@
       "userStory": "RBAC",
       "name": "Consumer gọi API Admin (403 Forbidden)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.913Z",
+      "timestamp": "2026-10-27T15:39:07.641Z",
       "details": {
         "status": 403
       },
@@ -270,7 +270,7 @@
       "userStory": "RBAC",
       "name": "Provider gọi API Admin Review (403 Forbidden)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.916Z",
+      "timestamp": "2026-10-27T15:39:07.645Z",
       "details": {
         "status": 403
       },
@@ -281,13 +281,13 @@
       "userStory": "RBAC",
       "name": "Provider chưa xác minh (Unverified) cố tạo API (403 Forbidden)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.922Z",
+      "timestamp": "2026-10-27T15:39:07.653Z",
       "details": {
         "status": 403,
         "error": {
           "code": "PROVIDER_NOT_VERIFIED",
           "message": "Verified Provider required",
-          "requestId": "b360cec5-47eb-4e4b-813b-2243d1849d7d"
+          "requestId": "2b72db7c-fb0d-4513-8394-242a844f6b1d"
         }
       },
       "notes": ""
@@ -297,10 +297,10 @@
       "userStory": "US-09",
       "name": "Tạo mới API ở trạng thái Draft thành công",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.931Z",
+      "timestamp": "2026-10-27T15:39:07.668Z",
       "details": {
         "status": 201,
-        "apiId": "18",
+        "apiId": "29",
         "state": "Draft"
       },
       "notes": ""
@@ -310,7 +310,7 @@
       "userStory": "US-09",
       "name": "Lấy thông tin chi tiết API theo ID",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.938Z",
+      "timestamp": "2026-10-27T15:39:07.676Z",
       "details": {
         "status": 200,
         "name": "QA Weather Core API"
@@ -322,7 +322,7 @@
       "userStory": "US-09",
       "name": "Cập nhật thông tin API ở trạng thái Draft",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.946Z",
+      "timestamp": "2026-10-27T15:39:07.684Z",
       "details": {
         "status": 200,
         "updatedName": "QA Weather Core API v1.1"
@@ -334,7 +334,7 @@
       "userStory": "US-09",
       "name": "Chặn Provider khác xem hoặc chỉnh sửa API không sở hữu (404/403)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.951Z",
+      "timestamp": "2026-10-27T15:39:07.688Z",
       "details": {
         "status": 404
       },
@@ -345,10 +345,10 @@
       "userStory": "US-09",
       "name": "Tạo Version mới cho API",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.960Z",
+      "timestamp": "2026-10-27T15:39:07.698Z",
       "details": {
         "status": 201,
-        "versionId": "24"
+        "versionId": "36"
       },
       "notes": ""
     },
@@ -357,10 +357,10 @@
       "userStory": "US-09",
       "name": "Thêm Endpoint thủ công vào Version",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.972Z",
+      "timestamp": "2026-10-27T15:39:07.712Z",
       "details": {
         "status": 201,
-        "endpointId": "48"
+        "endpointId": "77"
       },
       "notes": ""
     },
@@ -369,7 +369,7 @@
       "userStory": "US-09",
       "name": "Xóa Endpoint trong trạng thái Draft",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:56.979Z",
+      "timestamp": "2026-10-27T15:39:07.720Z",
       "details": {
         "status": 204
       },
@@ -380,7 +380,7 @@
       "userStory": "US-10",
       "name": "Import file JSON lỗi cú pháp (invalid-syntax.json -> 400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.044Z",
+      "timestamp": "2026-10-27T15:39:07.779Z",
       "details": {
         "status": 400,
         "code": "OPENAPI_IMPORT_INVALID"
@@ -392,7 +392,7 @@
       "userStory": "US-10",
       "name": "Import file YAML thiếu paths/info (missing-required-fields.yaml -> 400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.103Z",
+      "timestamp": "2026-10-27T15:39:07.833Z",
       "details": {
         "status": 400,
         "code": "OPENAPI_IMPORT_INVALID"
@@ -404,7 +404,7 @@
       "userStory": "US-10",
       "name": "Import file có kiểu dữ liệu schema không hợp lệ (invalid-schema-types.json -> 400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.289Z",
+      "timestamp": "2026-10-27T15:39:08.027Z",
       "details": {
         "status": 400,
         "code": "OPENAPI_IMPORT_INVALID"
@@ -416,13 +416,13 @@
       "userStory": "US-10",
       "name": "Import file vượt quá giới hạn 1MB (oversized-over-1mb.json -> 413/400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.361Z",
+      "timestamp": "2026-10-27T15:39:08.078Z",
       "details": {
         "status": 413,
         "error": {
           "code": "IMPORT_UPLOAD_INVALID",
           "message": "Maximum file size is 1 MiB",
-          "requestId": "67d6c021-0ef9-46d6-85c3-39aef038c260"
+          "requestId": "08504724-9b51-4abe-93ff-e5e979306924"
         }
       },
       "notes": ""
@@ -432,7 +432,7 @@
       "userStory": "US-10",
       "name": "Import OpenAPI 3.0 hợp lệ đầy đủ sinh 7 khối tài liệu (valid-weather-openapi3.json -> 200)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.482Z",
+      "timestamp": "2026-10-27T15:39:08.213Z",
       "details": {
         "status": 200,
         "endpointCount": 3
@@ -444,7 +444,7 @@
       "userStory": "US-10",
       "name": "Truy vấn tài liệu chuẩn hóa 7 khối sau khi import",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.489Z",
+      "timestamp": "2026-10-27T15:39:08.221Z",
       "details": {
         "status": 200,
         "hasPaths": true,
@@ -457,7 +457,7 @@
       "userStory": "US-10",
       "name": "Import file chứa payload XSS (xss-payload-openapi.json -> lưu trữ an toàn)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.602Z",
+      "timestamp": "2026-10-27T15:39:08.339Z",
       "details": {
         "status": 200,
         "count": 1
@@ -469,13 +469,13 @@
       "userStory": "US-11",
       "name": "Chặn tạo gói Free có giá > 0 (400 Validation Error)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.616Z",
+      "timestamp": "2026-10-27T15:39:08.351Z",
       "details": {
         "status": 400,
         "error": {
           "code": "VALIDATION_ERROR",
           "message": "Invalid request",
-          "requestId": "4e3727fc-a166-4779-9d9e-4816bce0b1fc",
+          "requestId": "a3ef1c3f-afe2-47ca-8f61-115c9aae883b",
           "details": [
             {
               "field": "priceMonthly",
@@ -491,10 +491,10 @@
       "userStory": "US-11",
       "name": "Tạo gói Free hợp lệ (giá = 0, quota = 500)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.625Z",
+      "timestamp": "2026-10-27T15:39:08.362Z",
       "details": {
         "status": 201,
-        "planId": "26"
+        "planId": "28"
       },
       "notes": ""
     },
@@ -503,10 +503,10 @@
       "userStory": "US-11",
       "name": "Tạo gói trả phí Pro (499.000 VND)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.633Z",
+      "timestamp": "2026-10-27T15:39:08.368Z",
       "details": {
         "status": 201,
-        "planId": "27"
+        "planId": "29"
       },
       "notes": ""
     },
@@ -515,7 +515,7 @@
       "userStory": "US-11",
       "name": "Cập nhật cấu hình gói giá Pro (599.000 VND)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.640Z",
+      "timestamp": "2026-10-27T15:39:08.375Z",
       "details": {
         "status": 200,
         "newPrice": 599000
@@ -527,7 +527,7 @@
       "userStory": "US-11",
       "name": "Liệt kê danh sách các gói giá của API (Free & Pro)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.646Z",
+      "timestamp": "2026-10-27T15:39:08.381Z",
       "details": {
         "status": 200,
         "count": 2
@@ -539,7 +539,7 @@
       "userStory": "US-08",
       "name": "Lấy thông tin Thỏa thuận Nền tảng (Platform Agreement)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.652Z",
+      "timestamp": "2026-10-27T15:39:08.387Z",
       "details": {
         "status": 200,
         "version": "2026-10"
@@ -551,13 +551,13 @@
       "userStory": "US-08",
       "name": "Chặn khai báo pháp lý với phiên bản thỏa thuận không hợp lệ (409/400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.658Z",
+      "timestamp": "2026-10-27T15:39:08.395Z",
       "details": {
         "status": 409,
         "error": {
           "code": "AGREEMENT_CHANGED",
           "message": "Accept the current agreement version",
-          "requestId": "75ddfed7-cbdc-41d7-9fb3-7e1963a7307e"
+          "requestId": "5250192a-9809-4458-ae54-707b755d2b8b"
         }
       },
       "notes": ""
@@ -567,19 +567,19 @@
       "userStory": "US-08",
       "name": "Khai báo pháp lý và phân loại dữ liệu cá nhân hợp lệ",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.667Z",
+      "timestamp": "2026-10-27T15:39:08.406Z",
       "details": {
         "status": 200,
         "legal": {
-          "id": "13",
-          "apiId": "18",
+          "id": "14",
+          "apiId": "29",
           "agreementId": "1",
           "ownershipDeclaration": "Tôi sở hữu bản quyền toàn bộ mã nguồn API này",
           "distributionRights": "Có quyền phân phối thương mại không giới hạn",
           "dataClassification": "Internal",
-          "acceptedAt": "2026-10-27T10:53:57.659Z",
-          "createdAt": "2026-10-27T10:53:57.659Z",
-          "updatedAt": "2026-10-27T10:53:57.659Z",
+          "acceptedAt": "2026-10-27T15:39:08.398Z",
+          "createdAt": "2026-10-27T15:39:08.398Z",
+          "updatedAt": "2026-10-27T15:39:08.398Z",
           "processesPersonalData": true,
           "personalDataTypes": [
             "Email",
@@ -596,7 +596,7 @@
       "userStory": "US-08",
       "name": "Truy vấn thông tin khai báo pháp lý của API",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.674Z",
+      "timestamp": "2026-10-27T15:39:08.413Z",
       "details": {
         "status": 200,
         "classification": "Internal"
@@ -608,7 +608,7 @@
       "userStory": "US-08",
       "name": "Tạo DNS TXT verification challenge cho tên miền API",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.684Z",
+      "timestamp": "2026-10-27T15:39:08.422Z",
       "details": {
         "status": 201,
         "recordName": "_apihub-verification.weather.api-market-partner.com"
@@ -620,7 +620,7 @@
       "userStory": "US-08",
       "name": "Kiểm tra trạng thái tên miền khi chưa xác thực DNS (verified = false)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.690Z",
+      "timestamp": "2026-10-27T15:39:08.429Z",
       "details": {
         "status": 200,
         "verified": false
@@ -632,7 +632,7 @@
       "userStory": "US-08",
       "name": "Kiểm tra thất bại khi gọi verify domain chưa cấu hình DNS TXT",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:57.996Z",
+      "timestamp": "2026-10-27T15:39:08.625Z",
       "details": {
         "status": 400,
         "code": "DOMAIN_PROOF_MISSING"
@@ -644,7 +644,7 @@
       "userStory": "US-12",
       "name": "Chặn nộp duyệt API khi tên miền chưa được xác minh (400 DOMAIN_NOT_VERIFIED)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.007Z",
+      "timestamp": "2026-10-27T15:39:08.633Z",
       "details": {
         "status": 400,
         "code": "DOMAIN_NOT_VERIFIED"
@@ -656,7 +656,7 @@
       "userStory": "US-12",
       "name": "Nộp duyệt API thành công khi đã đủ điều kiện Checklist (Submitted)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.068Z",
+      "timestamp": "2026-10-27T15:39:08.671Z",
       "details": {
         "status": 200,
         "statusResult": "Submitted"
@@ -668,7 +668,7 @@
       "userStory": "US-12",
       "name": "Đóng băng bản ghi: Chặn sửa metadata khi API ở trạng thái Submitted (409/400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.073Z",
+      "timestamp": "2026-10-27T15:39:08.678Z",
       "details": {
         "status": 409,
         "code": "INVALID_STATE"
@@ -680,7 +680,7 @@
       "userStory": "US-12",
       "name": "Đóng băng bản ghi: Chặn tạo Version mới khi API ở trạng thái Submitted",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.080Z",
+      "timestamp": "2026-10-27T15:39:08.685Z",
       "details": {
         "status": 409,
         "code": "INVALID_STATE"
@@ -692,7 +692,7 @@
       "userStory": "US-12",
       "name": "Đóng băng bản ghi: Chặn Import OpenAPI khi API ở trạng thái Submitted",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.193Z",
+      "timestamp": "2026-10-27T15:39:08.781Z",
       "details": {
         "status": 409,
         "code": "INVALID_STATE"
@@ -704,7 +704,7 @@
       "userStory": "US-13",
       "name": "Admin xem Dossier hồ sơ nộp duyệt (có cảnh báo dữ liệu cá nhân)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.213Z",
+      "timestamp": "2026-10-27T15:39:08.799Z",
       "details": {
         "status": 200,
         "personalData": true
@@ -716,7 +716,7 @@
       "userStory": "US-13",
       "name": "Chặn nhảy cóc trạng thái: Chặn Publish trực tiếp từ Submitted (409/400)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.221Z",
+      "timestamp": "2026-10-27T15:39:08.807Z",
       "details": {
         "status": 409,
         "code": "INVALID_TRANSITION"
@@ -728,7 +728,7 @@
       "userStory": "US-13",
       "name": "Admin bắt đầu thẩm định API (Submitted -> Under Review)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.235Z",
+      "timestamp": "2026-10-27T15:39:08.819Z",
       "details": {
         "status": 200,
         "statusResult": "Under Review"
@@ -740,7 +740,7 @@
       "userStory": "US-13",
       "name": "Admin từ chối duyệt API kèm lý do chi tiết",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.243Z",
+      "timestamp": "2026-10-27T15:39:08.827Z",
       "details": {
         "status": 200,
         "statusResult": "Rejected"
@@ -752,7 +752,7 @@
       "userStory": "US-13",
       "name": "Provider mở lại API sau khi bị từ chối (Rejected -> Draft)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.251Z",
+      "timestamp": "2026-10-27T15:39:08.838Z",
       "details": {
         "status": 200,
         "statusResult": "Draft"
@@ -764,7 +764,7 @@
       "userStory": "US-13",
       "name": "Máy trạng thái hoàn chỉnh: Under Review -> Approved -> Published",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.288Z",
+      "timestamp": "2026-10-27T15:39:08.907Z",
       "details": {
         "approveStatus": "Approved",
         "publishStatus": "Published"
@@ -776,15 +776,15 @@
       "userStory": "US-13",
       "name": "Provider tra cứu trạng thái xuất bản sàn thương mại",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.294Z",
+      "timestamp": "2026-10-27T15:39:08.919Z",
       "details": {
         "status": 200,
         "data": {
-          "id": "18",
+          "id": "29",
           "status": "Published",
-          "submittedAt": "2026-10-27T10:53:58.252Z",
-          "approvedAt": "2026-10-27T10:53:58.273Z",
-          "publishedAt": "2026-10-27T10:53:58.281Z"
+          "submittedAt": "2026-10-27T15:39:08.857Z",
+          "approvedAt": "2026-10-27T15:39:08.890Z",
+          "publishedAt": "2026-10-27T15:39:08.900Z"
         }
       },
       "notes": ""
@@ -794,7 +794,7 @@
       "userStory": "US-14",
       "name": "Admin lấy danh mục các hành động Audit Log chuẩn hóa",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.299Z",
+      "timestamp": "2026-10-27T15:39:08.925Z",
       "details": {
         "status": 200,
         "actionCount": 14
@@ -806,7 +806,7 @@
       "userStory": "US-14",
       "name": "Admin truy vấn danh sách Audit Log có phân trang",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.306Z",
+      "timestamp": "2026-10-27T15:39:08.932Z",
       "details": {
         "status": 200,
         "count": 10
@@ -818,7 +818,7 @@
       "userStory": "US-14",
       "name": "Admin lọc Audit Log theo targetType=api và targetId",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.311Z",
+      "timestamp": "2026-10-27T15:39:08.940Z",
       "details": {
         "status": 200,
         "matchingLogs": 14
@@ -830,7 +830,7 @@
       "userStory": "US-14",
       "name": "Kiểm tra bảo mật: Không rò rỉ token DNS, mật khẩu trong Audit Log (Canary Verified)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.316Z",
+      "timestamp": "2026-10-27T15:39:08.946Z",
       "details": {
         "status": 200,
         "logCount": 14,
@@ -846,7 +846,7 @@
       "userStory": "US-14",
       "name": "Chặn Provider và Consumer truy vấn Audit Log (403 Forbidden)",
       "status": "PASSED",
-      "timestamp": "2026-10-27T10:53:58.321Z",
+      "timestamp": "2026-10-27T15:39:08.950Z",
       "details": {
         "status": 403
       },

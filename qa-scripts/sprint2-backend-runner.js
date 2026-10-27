@@ -840,7 +840,7 @@ async function main() {
     await recordResult('TC-14-03', 'US-14', 'Admin lọc Audit Log theo targetType=api và targetId', passed, { status: res.status, matchingLogs: items.length });
   }
 
-  // Helper function: Quét toàn diện các nguy cơ rò rỉ dữ liệu nhạy cảm trong Audit Log
+  // Helper function: Quét toàn diện các nguy cơ rò rỉ dữ liệu nhạy cảm trong Audit Log (Deep Scan Đệ quy)
   function containsSensitiveLeak(record) {
     if (!record) return false;
     const detailStr = JSON.stringify(record.detail ?? {});
@@ -851,11 +851,29 @@ async function main() {
       return true;
     }
 
-    // 2. Quét trường mật khẩu hoặc bí mật không được che dấu
-    if (record.detail && typeof record.detail === 'object') {
-      for (const [key, val] of Object.entries(record.detail)) {
+    // 2. Quét đệ quy sâu (deep scan) mọi cấp lồng nhau trong record.detail
+    function deepScan(node) {
+      if (!node || typeof node !== 'object') return false;
+
+      // Xử lý Array
+      if (Array.isArray(node)) {
+        for (const item of node) {
+          if (typeof item === 'object' && deepScan(item)) return true;
+          if (typeof item === 'string') {
+            if (/\$2[aby]\$[0-9]{2}\$[A-Za-z0-9./]{53}/.test(item)) return true;
+            if (/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/.test(item)) return true;
+            if (item.startsWith('ak_live_') && item.length > 15) return true;
+          }
+        }
+        return false;
+      }
+
+      // Xử lý Object
+      for (const [key, val] of Object.entries(node)) {
         const lowerKey = key.toLowerCase();
         const strVal = String(val ?? '');
+
+        // Kiểm tra key nhạy cảm
         if (lowerKey.includes('password') && strVal !== '[REDACTED]' && strVal !== 'true' && strVal !== 'false') {
           return true;
         }
@@ -865,7 +883,20 @@ async function main() {
         if (lowerKey.includes('token') && !lowerKey.includes('action') && strVal.length > 20 && strVal !== '[REDACTED]') {
           return true;
         }
+        if ((lowerKey.includes('apikey') || lowerKey.includes('api_key')) && strVal !== '[REDACTED]' && strVal.length > 5) {
+          return true;
+        }
+
+        // Đệ quy sâu vào object hoặc array con
+        if (val && typeof val === 'object') {
+          if (deepScan(val)) return true;
+        }
       }
+      return false;
+    }
+
+    if (record.detail && deepScan(record.detail)) {
+      return true;
     }
 
     // 3. Quét pattern băm mật khẩu Bcrypt ($2a$, $2b$, $2y$)
@@ -883,30 +914,50 @@ async function main() {
       return true;
     }
 
+    // 6. Quét API Key raw pattern
+    if (/ak_live_[A-Za-z0-9]{16,}/.test(recordStr)) {
+      return true;
+    }
+
     return false;
   }
 
   // TC-14-04: Security & Sensitive Data Redaction in Audit Logs (với Canary Fixtures chống False Positive)
   {
-    // BƯỚC 1: Canary Negative Test (Dữ liệu rò rỉ mẫu -> BẮT BUỘC hàm quét phải phát hiện được)
+    // BƯỚC 1: Canary Negative Test (Dữ liệu rò rỉ mẫu lồng sâu -> BẮT BUỘC hàm quét phải phát hiện được)
     const canaryLeakRecord = {
       id: 'canary-leak-01',
       action: 'user.login',
       actorId: '1',
       detail: {
+        auth: {
+          credentials: {
+            password: 'fixture-plaintext-password'
+          }
+        },
+        metadata: {
+          apiKey: 'ak_live_fixture_secret_token_12345'
+        },
         password_hash: '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklm',
         secret: 'raw_api_secret_token_12345'
       }
     };
     const canaryLeakDetected = containsSensitiveLeak(canaryLeakRecord);
 
-    // BƯỚC 2: Canary Redacted Test (Dữ liệu mẫu đã che mờ hợp lệ -> KHÔNG ĐƯỢC báo lỗi giả)
+    // BƯỚC 2: Canary Redacted Test (Dữ liệu mẫu lồng sâu đã che mờ hợp lệ -> KHÔNG ĐƯỢC báo lỗi giả)
     const canarySafeRecord = {
       id: 'canary-safe-01',
       action: 'user.login',
       actorId: '1',
       detail: {
-        password: '[REDACTED]',
+        auth: {
+          credentials: {
+            password: '[REDACTED]'
+          }
+        },
+        metadata: {
+          apiKey: '[REDACTED]'
+        },
         actorEmail: 'admin@example.com',
         hasPassword: true
       }
