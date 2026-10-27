@@ -23,6 +23,8 @@ import { marketplacePaths } from './marketplace-contract.js';
 import { ApiKeyService, SandboxService } from './consumer-service.js';
 import { consumerRouter } from './consumer-router.js';
 import { PlaygroundService, playgroundInput } from './playground-service.js';
+import type { ReportService } from './report-service.js';
+import { reportConsumerRouter, reportAdminRouter } from './report-router.js';
 import { marketplaceId } from './marketplace-service.js';
 import { consumerPaths } from './consumer-contract.js';
 
@@ -44,7 +46,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; reports?: ReportService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -107,6 +109,11 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
   if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
+  // US-15: Consumers file reports; Admins decide them.
+  if (options.reports) {
+    app.use('/api/consumer/reports', reportConsumerRouter(options.reports, requireAuth, requireRole('Consumer')));
+    app.use('/api/admin/reports', reportAdminRouter(options.reports, requireAuth, requireRole('Admin')));
+  }
   const playground = options.playground ?? (options.marketplace ? new PlaygroundService(options.marketplace.pool) : undefined);
   if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireRole('Consumer'),
     rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (_req, res) => res.locals.identity.user.id,
