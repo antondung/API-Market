@@ -1,5 +1,7 @@
 # Sprint 3 — Backend của Nguyễn Như Tùng Dương
 
+> Cập nhật 26/10/2026: Marketplace/Detail và schema #67 đã merge vào develop/main. Phần Sandbox/API Key/Playground/routing registry đang được hoàn thiện trên `codex/sprint3-consumer-backend`; hợp đồng mới tại [SPRINT-3-CONSUMER-HANDOFF.md](SPRINT-3-CONSUMER-HANDOFF.md). Các trạng thái “chưa triển khai/chưa merge” và kết quả 81 test bên dưới là lịch sử bàn giao 21/10, không phải trạng thái của bản bổ sung. Review/QA/staging vẫn cần bằng chứng trước khi đóng issue #12.
+
 Ngày bàn giao bước đầu: 21/10/2026. Theo issue #12. Nhánh `codex/sprint3-marketplace-detail`.
 
 ## Phạm vi đã triển khai

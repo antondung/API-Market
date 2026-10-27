@@ -844,16 +844,27 @@ async function main() {
   {
     const res = await apiRequest('GET', `/api/admin/audit-logs?targetType=api&targetId=${testApiId}`, { token: adminToken });
     const items = res.data?.data?.items || [];
-    // Ensure challenge tokens and secrets are NOT exposed in metadata
+    // Ensure challenge tokens and secrets are NOT exposed in detail, and verify logs actually exist (prevent false pass)
     let hasLeakedTokens = false;
+    const hasItems = items.length > 0;
     for (const item of items) {
-      const metaStr = JSON.stringify(item.metadata || {});
-      if (metaStr.includes('platform-verification=') || metaStr.includes('Password') || metaStr.includes('password_hash')) {
+      const detailStr = JSON.stringify(item.detail || {});
+      const recordStr = JSON.stringify(item);
+      if (
+        detailStr.includes('platform-verification=') ||
+        detailStr.includes('Password') ||
+        detailStr.includes('password_hash') ||
+        recordStr.includes('password_hash')
+      ) {
         hasLeakedTokens = true;
       }
     }
-    const passed = res.status === 200 && !hasLeakedTokens;
-    await recordResult('TC-14-04', 'US-14', 'Kiểm tra bảo mật: Không rò rỉ token DNS, mật khẩu trong Audit Log', passed, { hasLeakedTokens });
+    const passed = res.status === 200 && hasItems && !hasLeakedTokens;
+    await recordResult('TC-14-04', 'US-14', 'Kiểm tra bảo mật: Không rò rỉ token DNS, mật khẩu trong Audit Log', passed, {
+      status: res.status,
+      logCount: items.length,
+      hasLeakedTokens
+    });
   }
 
   // TC-14-05: Non-admin access to audit logs blocked -> 403

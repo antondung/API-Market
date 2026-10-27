@@ -20,6 +20,11 @@ import { adminReviewPaths } from './admin-review-contract.js';
 import type { MarketplaceService } from './marketplace-service.js';
 import { marketplaceRouter } from './marketplace-router.js';
 import { marketplacePaths } from './marketplace-contract.js';
+import { ApiKeyService, SandboxService } from './consumer-service.js';
+import { consumerRouter } from './consumer-router.js';
+import { PlaygroundService, playgroundInput } from './playground-service.js';
+import { marketplaceId } from './marketplace-service.js';
+import { consumerPaths } from './consumer-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -39,7 +44,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -81,7 +86,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
   const document = { ...baseDocument,
-    paths: { ...baseDocument.paths, ...(options.marketplace ? marketplacePaths : {}) } };
+    paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -101,6 +106,17 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   };
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
+  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
+  const playground = options.playground ?? (options.marketplace ? new PlaygroundService(options.marketplace.pool) : undefined);
+  if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireRole('Consumer'),
+    rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (_req, res) => res.locals.identity.user.id,
+      standardHeaders: 'draft-8', legacyHeaders: false,
+      handler: (_req, _res, next) => next(new ApiError(429, 'RATE_LIMITED', 'Too many Playground requests')) }),
+    async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      z.object({}).strict().parse(req.query);
+      res.json({ data: await playground.run(res.locals.identity.user.id, marketplaceId.parse(req.params.id), playgroundInput.parse(req.body)) });
+    });
   app.post('/api/auth/register', async (req, res) => {
     const input = registerSchema.parse(req.body);
     res.status(201).json({ data: await auth.register(input.email, input.password, input.role, input.name) });
