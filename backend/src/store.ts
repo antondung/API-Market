@@ -54,6 +54,10 @@ export interface AuthStore {
   listUsers(query: ListUsersQuery): Promise<ListUsersResult>;
   setUserActive(id: string, active: boolean): Promise<AdminUserRecord | undefined>;
   revokeAllSessions(userId: string): Promise<number>;
+  // Hồ sơ cá nhân (US-05)
+  updateProfile(id: string, name: string): Promise<User | undefined>;
+  updatePasswordHash(id: string, passwordHash: string): Promise<boolean>;
+  revokeOtherSessions(userId: string, keepSessionId: string): Promise<number>;
 }
 
 // Only for local demonstrations and tests; never a staging/production database.
@@ -119,6 +123,27 @@ export class MemoryAuthStore implements AuthStore {
     let revoked = 0;
     for (const session of this.sessions.values()) {
       if (session.userId === userId && !session.revoked) { session.revoked = true; revoked += 1; }
+    }
+    return revoked;
+  }
+  async updateProfile(id: string, name: string) {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+    user.name = name;
+    return { ...user };
+  }
+  async updatePasswordHash(id: string, passwordHash: string) {
+    const user = this.users.get(id);
+    if (!user) return false;
+    user.passwordHash = passwordHash;
+    return true;
+  }
+  async revokeOtherSessions(userId: string, keepSessionId: string) {
+    let revoked = 0;
+    for (const session of this.sessions.values()) {
+      if (session.userId === userId && session.id !== keepSessionId && !session.revoked) {
+        session.revoked = true; revoked += 1;
+      }
     }
     return revoked;
   }

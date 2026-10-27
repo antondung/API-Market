@@ -149,5 +149,21 @@ export class PostgresAuthStore implements AuthStore {
         'UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND revoked_at IS NULL', [userId]);
       return result.rowCount ?? 0;
     }
+    async updateProfile(id: string, name: string) {
+      const result = await this.pool.query('UPDATE users SET name=$1 WHERE id=$2 RETURNING id,email,name,is_active', [name, id]);
+      if (!result.rows[0]) return undefined;
+      const user = await this.findUserById(id);
+      return user;
+    }
+    async updatePasswordHash(id: string, passwordHash: string) {
+      const result = await this.pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [passwordHash, id]);
+      return (result.rowCount ?? 0) > 0;
+    }
+    async revokeOtherSessions(userId: string, keepSessionId: string) {
+      const result = await this.pool.query(
+        'UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND id::text<>$2 AND revoked_at IS NULL',
+        [userId, keepSessionId]);
+      return result.rowCount ?? 0;
+    }
     async close() { await this.pool.end(); }
   }

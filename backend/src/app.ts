@@ -31,6 +31,12 @@ const password = z.string().min(12).max(128);
 const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Provider']), name: z.string().trim().min(1).max(100).optional() }).strict();
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
+// US-05: profile and password changes. The password policy matches registration.
+const updateProfileSchema = z.object({ name: z.string().trim().min(1).max(100) }).strict();
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: password,
+}).strict();
 // Truy vấn danh sách người dùng cho Admin (US-04).
 const listUsersSchema = z.object({
   search: z.string().trim().max(254).optional(),
@@ -134,6 +140,17 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     res.status(204).end();
   });
   app.get('/api/auth/me', requireAuth, (_req, res) => { res.json({ data: res.locals.identity.user }); });
+
+  // US-05: the signed-in user edits their own profile and password.
+  app.patch('/api/auth/me', requireAuth, async (req, res) => {
+    const input = updateProfileSchema.parse(req.body);
+    res.json({ data: await auth.updateProfile(res.locals.identity.user.id, input.name) });
+  });
+  app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+    const input = changePasswordSchema.parse(req.body);
+    res.json({ data: await auth.changePassword(
+      res.locals.identity.user.id, input.currentPassword, input.newPassword, res.locals.identity.sessionId) });
+  });
 
     // =========================================
     // Admin quản lý người dùng (US-04)
