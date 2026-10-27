@@ -1,12 +1,14 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useApp } from '../../context/AppContext';
-import { StatusBadge, Badge } from '../../components/ui/Badge';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
+import type { Subscription } from '../../types';
 
 export const MySubscriptionsPage: React.FC = () => {
-  const { subscriptions, cancelSubscription } = useApp();
+  // Sprint 3: Paid commercial subscriptions backend is scheduled for Sprint 4.
+  // Isolated from legacy mock data to ensure zero fabricated subscriptions in consumer space.
+  const subscriptions: Subscription[] = [];
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -21,21 +23,32 @@ export const MySubscriptionsPage: React.FC = () => {
         </div>
         <Button
           variant="primary"
-          icon="add"
+          icon="explore"
           onClick={() => navigate('/marketplace')}
         >
-          {t('Subscribe to New API')}
+          {t('Explore Marketplace')}
         </Button>
+      </div>
+
+      {/* Honest Sprint 3 Status Banner */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-body-sm text-on-surface flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">info</span>
+        <div>
+          <strong className="text-on-surface font-semibold">Lộ trình triển khai (Sprint 3 & Sprint 4): </strong>
+          <span>
+            Tính năng Đăng ký gói cước thương mại trả phí (Paid Subscriptions) và chu kỳ thanh toán tự động dự kiến ra mắt trong Sprint 4. Trong Sprint 3, bạn có thể kiểm thử toàn bộ API đã công khai thông qua <strong>Gói dùng thử Sandbox (5 lượt gọi miễn phí / 24h)</strong> trực tiếp tại trang chi tiết API hoặc Playground.
+          </span>
+        </div>
       </div>
 
       {subscriptions.length === 0 ? (
         <div className="p-12 text-center bg-surface-container-low rounded-2xl border border-dashed border-outline-variant">
           <span className="material-symbols-outlined text-[48px] text-outline mb-2">subscriptions</span>
           <h3 className="text-headline-sm font-bold text-on-surface">{t('No Subscriptions Found')}</h3>
-          <p className="text-body-sm text-on-surface-variant mt-1 mb-4">
-            {t('Browse our catalog to subscribe to high-performance microservices and AI models.')}
+          <p className="text-body-sm text-on-surface-variant mt-1 mb-4 max-w-md mx-auto">
+            Chưa có gói thuê bao trả phí nào được kích hoạt. Hãy trải nghiệm dùng thử các API công khai với Sandbox Grants trước khi đăng ký gói chính thức.
           </p>
-          <Button variant="primary" onClick={() => navigate('/marketplace')}>
+          <Button variant="primary" icon="explore" onClick={() => navigate('/marketplace')}>
             {t('Explore Marketplace')}
           </Button>
         </div>
@@ -58,7 +71,9 @@ export const MySubscriptionsPage: React.FC = () => {
                       <Link to={`/api/${sub.apiId}`} className="text-headline-sm font-bold text-on-surface hover:text-primary transition-colors">
                         {sub.apiName}
                       </Link>
-                      <StatusBadge status={sub.status} />
+                      <Badge variant={sub.status === 'Active' ? 'success' : sub.status === 'Cancelled' ? 'danger' : 'neutral'}>
+                        {sub.status}
+                      </Badge>
                       <Badge variant="primary">{sub.planName}</Badge>
                     </div>
 
@@ -110,10 +125,12 @@ export const MySubscriptionsPage: React.FC = () => {
                   </Button>
                   {sub.status === 'Active' && (
                     <button
-                      onClick={() => cancelSubscription(sub.id)}
-                      className="text-body-sm text-error hover:underline font-medium px-2 py-1 mt-1"
+                      type="button"
+                      disabled
+                      title="Chức năng hủy thuê bao sẽ khả dụng khi backend kích hoạt thanh toán Sprint 4"
+                      className="text-body-sm text-on-surface-variant/60 cursor-not-allowed font-medium px-2 py-1 mt-1"
                     >
-                      {t('Cancel Subscription')}
+                      {t('Cancel Subscription')} (Sprint 4)
                     </button>
                   )}
                 </div>

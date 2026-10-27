@@ -18,8 +18,8 @@ export const PublicFooter: React.FC = () => {
           <p className="text-body-sm text-on-surface-variant max-w-sm mb-4 leading-relaxed">
             {t('Developer-first API marketplace, gateway, and management suite. Full lifecycle governance from exploration and testing to subscription and cost optimization.')}
           </p>
-          <div className="flex items-center gap-2 text-emerald-600 font-code-sm text-[12px] bg-emerald-500/10 px-3 py-1.5 rounded-lg w-fit border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <div className="flex items-center gap-2 text-emerald-800 font-code-sm text-[12px] bg-emerald-500/10 px-3 py-1.5 rounded-lg w-fit border border-emerald-500/20">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
             <span>{t('Gateway & Control Plane: All Systems Operational (99.99%)')}</span>
           </div>
         </div>

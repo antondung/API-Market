@@ -136,6 +136,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
           </Link>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? t('Thu gọn menu') : t('Mở rộng menu')}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors"
           >
             <span className="material-symbols-outlined text-[20px]">
@@ -236,6 +237,8 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="w-10 h-10 rounded-xl flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors relative"
+                aria-label={t('Notifications & Cost Guard Alerts')}
+                aria-expanded={showNotifications}
                 title={t('Notifications & Cost Guard Alerts')}
               >
                 <span className="material-symbols-outlined text-[22px]">notifications</span>
@@ -246,7 +249,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
 
               {/* Notification Popover */}
               {showNotifications && (
-                <div className="absolute right-0 top-12 w-80 sm:w-96 bg-surface-container-lowest border border-outline-variant/50 rounded-2xl shadow-xl z-50 overflow-hidden animate-scale-up">
+                <div className="absolute right-0 top-12 w-[min(20rem,calc(100vw-24px))] sm:w-96 bg-surface-container-lowest border border-outline-variant/50 rounded-2xl shadow-xl z-50 overflow-hidden animate-scale-up">
                   <div className="px-5 py-3.5 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between">
                     <span className="text-body-md font-bold text-on-surface flex items-center gap-2">
                       <span className="material-symbols-outlined text-[18px] text-primary">notifications_active</span>
