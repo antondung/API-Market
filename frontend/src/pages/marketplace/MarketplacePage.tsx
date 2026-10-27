@@ -258,11 +258,17 @@ export const MarketplacePage: React.FC = () => {
 
     return () => {
       controller.abort();
+    };
+  }, [fetchData]);
+
+  // Clean up debounce timer on component unmount
+  useEffect(() => {
+    return () => {
       if (debounceTimerRef.current !== null) {
         window.clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [fetchData]);
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / urlPageSize));
   const hasActiveFilters = Boolean(urlQ || (urlCategory && urlCategory !== 'All') || urlTag || urlPricing);

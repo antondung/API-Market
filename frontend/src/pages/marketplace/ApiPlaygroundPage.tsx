@@ -77,9 +77,31 @@ export const ApiPlaygroundPage: React.FC = () => {
   const activeUserIdRef = useRef<string | null>(currentUser?.id ?? null);
   activeUserIdRef.current = currentUser?.id ?? null;
 
+  const currentApiIdRef = useRef<string | undefined>(id);
+  currentApiIdRef.current = id;
+
+  const quotaSeqRef = useRef<number>(0);
+
   // Active execution request tracking for race condition prevention
   const activeExecutionControllerRef = useRef<AbortController | null>(null);
   const grantFetchControllerRef = useRef<AbortController | null>(null);
+
+  // Lifecycle expiry monitor: Automatically transition grant state if expiresAt passes while page is open
+  const [isGrantExpiredByTimer, setIsGrantExpiredByTimer] = useState(false);
+  useEffect(() => {
+    setIsGrantExpiredByTimer(false);
+    if (!grant || !grant.expiresAt) return;
+    const expiresTime = new Date(grant.expiresAt).getTime();
+    const remainingMs = expiresTime - Date.now();
+    if (remainingMs <= 0) {
+      setIsGrantExpiredByTimer(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setIsGrantExpiredByTimer(true);
+    }, remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [grant?.expiresAt]);
 
   // Execution state
   const [isExecuting, setIsExecuting] = useState(false);
@@ -276,7 +298,9 @@ export const ApiPlaygroundPage: React.FC = () => {
 
   // Claim Sandbox Grant handler
   const handleClaimGrant = async () => {
-    if (!id || !isConsumer) return;
+    if (!id || !isConsumer || isGrantClaiming) return;
+    const requestingApiId = id;
+    const requestingUserId = currentUser?.id;
     if (grantFetchControllerRef.current) {
       grantFetchControllerRef.current.abort();
       grantFetchControllerRef.current = null;
@@ -284,17 +308,24 @@ export const ApiPlaygroundPage: React.FC = () => {
     try {
       setIsGrantClaiming(true);
       setGrantError(null);
-      const data = await claimSandboxGrant(id);
-      setGrant(data);
-      setIsGrantLoading(false);
+      const data = await claimSandboxGrant(requestingApiId);
+      // Ensure the response belongs to the current API and user session
+      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId) {
+        setGrant(data);
+        setIsGrantLoading(false);
+      }
     } catch (err: any) {
-      if (err instanceof ApiError) {
-        setGrantError(err.message || t('Không thể kích hoạt Sandbox Grant.'));
-      } else {
-        setGrantError(t('Lỗi kết nối máy chủ'));
+      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId) {
+        if (err instanceof ApiError) {
+          setGrantError(err.message || t('Không thể kích hoạt Sandbox Grant.'));
+        } else {
+          setGrantError(t('Lỗi kết nối máy chủ'));
+        }
       }
     } finally {
-      setIsGrantClaiming(false);
+      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId) {
+        setIsGrantClaiming(false);
+      }
     }
   };
 
@@ -416,12 +447,12 @@ export const ApiPlaygroundPage: React.FC = () => {
     if (grantError) return 'ERROR';
     if (!grant) return 'NOT_CLAIMED';
     if (grant.revokedAt !== null) return 'REVOKED';
-    if (new Date(grant.expiresAt).getTime() <= Date.now()) return 'EXPIRED';
+    if (isGrantExpiredByTimer || new Date(grant.expiresAt).getTime() <= Date.now()) return 'EXPIRED';
     if (grant.remainingRequests <= 0 || !grant.available || grant.usedRequests >= grant.maxRequests) {
       return 'EXHAUSTED';
     }
     return 'ACTIVE';
-  }, [isConsumer, isGrantLoading, grantError, grant]);
+  }, [isConsumer, isGrantLoading, grantError, grant, isGrantExpiredByTimer]);
 
   // Strict eligibility: grant must be active and user must be Consumer
   const isGrantEligible = isConsumer && grantStatus === 'ACTIVE';
@@ -433,7 +464,7 @@ export const ApiPlaygroundPage: React.FC = () => {
     if (!isConsumer) return t('Chỉ tài khoản Consumer mới có quyền sử dụng Playground');
     if (grantStatus === 'LOADING') return t('Đang kiểm tra quyền Sandbox...');
     if (grantStatus === 'NOT_CLAIMED') return t('Chưa kích hoạt Sandbox Grant. Vui lòng nhận grant trước khi thử nghiệm.');
-    if (grantStatus === 'EXHAUSTED') return t('Hạn mức Sandbox đã hết (0 lượt còn lại). Vui lòng nâng cấp gói.');
+    if (grantStatus === 'EXHAUSTED') return t('Hạn mức Sandbox đã hết (0/5 lượt còn lại trong chu kỳ 24h).');
     if (grantStatus === 'EXPIRED') return t('Sandbox Grant đã hết hạn (24 giờ).');
     if (grantStatus === 'REVOKED') return t('Sandbox Grant đã bị thu hồi.');
     if (grantStatus === 'ERROR') return t('Lỗi kiểm tra quyền Sandbox.');
@@ -488,6 +519,7 @@ export const ApiPlaygroundPage: React.FC = () => {
         }
       }
 
+      const currentSeq = ++quotaSeqRef.current;
       const res = await executePlayground(api.id, {
         endpointId: selectedEndpoint.id,
         pathParams: Object.keys(cleanPathParams).length > 0 ? cleanPathParams : undefined,
@@ -496,7 +528,7 @@ export const ApiPlaygroundPage: React.FC = () => {
         body: parsedBody,
       }, controller.signal);
 
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || currentSeq < quotaSeqRef.current) return;
 
       // Update state with live response
       setExecutionResponse({

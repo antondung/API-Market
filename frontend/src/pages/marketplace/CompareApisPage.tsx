@@ -177,8 +177,13 @@ export const CompareApisPage: React.FC = () => {
     setApiId1(val);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      next.set('api1', val);
-      next.set('api', val);
+      if (val) {
+        next.set('api1', val);
+        next.set('api', val);
+      } else {
+        next.delete('api1');
+        next.delete('api');
+      }
       return next;
     });
   };
@@ -187,7 +192,11 @@ export const CompareApisPage: React.FC = () => {
     setApiId2(val);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      next.set('api2', val);
+      if (val) {
+        next.set('api2', val);
+      } else {
+        next.delete('api2');
+      }
       return next;
     });
   };

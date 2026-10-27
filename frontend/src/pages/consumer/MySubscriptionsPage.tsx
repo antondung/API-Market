@@ -1,12 +1,14 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useApp } from '../../context/AppContext';
-import { StatusBadge, Badge } from '../../components/ui/Badge';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
+import type { Subscription } from '../../types';
 
 export const MySubscriptionsPage: React.FC = () => {
-  const { subscriptions } = useApp();
+  // Sprint 3: Paid commercial subscriptions backend is scheduled for Sprint 4.
+  // Isolated from legacy mock data to ensure zero fabricated subscriptions in consumer space.
+  const subscriptions: Subscription[] = [];
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -69,7 +71,9 @@ export const MySubscriptionsPage: React.FC = () => {
                       <Link to={`/api/${sub.apiId}`} className="text-headline-sm font-bold text-on-surface hover:text-primary transition-colors">
                         {sub.apiName}
                       </Link>
-                      <StatusBadge status={sub.status} />
+                      <Badge variant={sub.status === 'Active' ? 'success' : sub.status === 'Cancelled' ? 'danger' : 'neutral'}>
+                        {sub.status}
+                      </Badge>
                       <Badge variant="primary">{sub.planName}</Badge>
                     </div>
 

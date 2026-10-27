@@ -13,16 +13,23 @@ export const ConsumerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [keys, setKeys] = useState<ConsumerApiKey[]>([]);
+  const [totalKeys, setTotalKeys] = useState<number | null>(null);
   const [isKeysLoading, setIsKeysLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     listConsumerApiKeys(1, 100)
       .then(res => {
-        if (isMounted) setKeys(res.items);
+        if (isMounted) {
+          setKeys(res.items);
+          setTotalKeys(res.total);
+        }
       })
       .catch(() => {
-        if (isMounted) setKeys([]);
+        if (isMounted) {
+          setKeys([]);
+          setTotalKeys(0);
+        }
       })
       .finally(() => {
         if (isMounted) setIsKeysLoading(false);
@@ -33,6 +40,7 @@ export const ConsumerDashboardPage: React.FC = () => {
   }, []);
 
   const activeKeys = keys.filter(k => k.isActive);
+  const hasMoreKeysThanFetched = totalKeys !== null && totalKeys > keys.length;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -116,10 +124,12 @@ export const ConsumerDashboardPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[22px]">vpn_key</span>
             </div>
             <div className="text-3xl font-extrabold text-on-surface font-code-md">
-              {isKeysLoading ? '...' : `${activeKeys.length} ${t('Keys')}`}
+              {isKeysLoading ? '...' : (hasMoreKeysThanFetched ? `${activeKeys.length}+ ${t('Keys')}` : `${activeKeys.length} ${t('Keys')}`)}
             </div>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              {t('Secured with SHA-256 hash in Control Plane DB.')}
+              {hasMoreKeysThanFetched
+                ? `${t('Trang 1 hiển thị')} ${activeKeys.length} ${t('khóa hoạt động trong tổng số')} ${totalKeys} ${t('khóa')}.`
+                : t('Secured with SHA-256 hash in Control Plane DB.')}
             </p>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">

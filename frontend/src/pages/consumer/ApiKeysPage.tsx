@@ -12,6 +12,7 @@ import {
   rotateConsumerApiKey,
   revokeConsumerApiKey,
   type ConsumerApiKey,
+  type CreateApiKeyResult,
 } from '../../services/consumerApi';
 import { ApiError } from '../../services/authApi';
 
@@ -147,22 +148,22 @@ export const ApiKeysPage: React.FC = () => {
       return;
     }
 
+    let createdResult: CreateApiKeyResult | null = null;
     try {
       setIsSubmitting(true);
       setCreateError(null);
-      const res = await createConsumerApiKey(trimmedApiId, newKeyLabel.trim() || undefined);
+      createdResult = await createConsumerApiKey(trimmedApiId, newKeyLabel.trim() || undefined);
       setCreateModalOpen(false);
       setNewKeyApiId('');
       setNewKeyLabel('');
       // Reveal one-time secret
       setRevealedSecretData({
-        secret: res.key,
-        keyPrefix: res.keyPrefix,
-        apiId: res.apiId,
-        label: res.label,
+        secret: createdResult.key,
+        keyPrefix: createdResult.keyPrefix,
+        apiId: createdResult.apiId,
+        label: createdResult.label,
         isRotated: false,
       });
-      await fetchKeys(page);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
@@ -177,26 +178,34 @@ export const ApiKeysPage: React.FC = () => {
       } else {
         setCreateError(t('Không thể tạo API Key.'));
       }
+      return;
     } finally {
       setIsSubmitting(false);
+    }
+
+    // Refresh list independently after successful creation to prevent masking successful secret generation
+    try {
+      await fetchKeys(page);
+    } catch {
+      // List refresh failure does not invalidate the created key
     }
   };
 
   const handleRotateKey = async () => {
     if (!rotateModalKey) return;
+    let rotatedResult: CreateApiKeyResult | null = null;
     try {
       setIsSubmitting(true);
       setActionError(null);
-      const res = await rotateConsumerApiKey(rotateModalKey.id);
+      rotatedResult = await rotateConsumerApiKey(rotateModalKey.id);
       setRotateModalKey(null);
       setRevealedSecretData({
-        secret: res.key,
-        keyPrefix: res.keyPrefix,
-        apiId: res.apiId,
-        label: res.label,
+        secret: rotatedResult.key,
+        keyPrefix: rotatedResult.keyPrefix,
+        apiId: rotatedResult.apiId,
+        label: rotatedResult.label,
         isRotated: true,
       });
-      await fetchKeys(page);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
@@ -207,8 +216,16 @@ export const ApiKeysPage: React.FC = () => {
       } else {
         setActionError(t('Không thể xoay vòng khóa.'));
       }
+      return;
     } finally {
       setIsSubmitting(false);
+    }
+
+    // Refresh list independently
+    try {
+      await fetchKeys(page);
+    } catch {
+      // List refresh failure does not invalidate the rotated key
     }
   };
 
@@ -219,15 +236,22 @@ export const ApiKeysPage: React.FC = () => {
       setActionError(null);
       await revokeConsumerApiKey(revokeModalKey.id);
       setRevokeModalKey(null);
-      await fetchKeys(page);
     } catch (err) {
       if (err instanceof ApiError) {
         setActionError(err.message || t('Lỗi khi thu hồi khóa.'));
       } else {
         setActionError(t('Không thể thu hồi khóa.'));
       }
+      return;
     } finally {
       setIsSubmitting(false);
+    }
+
+    // Refresh list independently
+    try {
+      await fetchKeys(page);
+    } catch {
+      // List refresh failure
     }
   };
 

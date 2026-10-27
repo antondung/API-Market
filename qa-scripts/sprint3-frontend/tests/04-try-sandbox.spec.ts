@@ -14,12 +14,15 @@ test.describe('Phase 5 — Try Sandbox & Guided Testing', () => {
     // Verify Sandbox title / breadcrumb
     await expect(page.getByRole('link', { name: 'Cloud Payment Engine' })).toBeVisible();
 
-    // Verify step wizard or controls are visible
+    // Verify step wizard is visible
     const steps = page.locator('ol, ul, nav, [role="tablist"], [data-testid="wizard-steps"]');
     await expect(steps.first()).toBeVisible();
+
+    // Verify Step 1 content is active
+    await expect(page.getByText(/Sandbox Grant & Thông tin Xác thực|Yêu cầu Khóa Xác thực/i).first()).toBeVisible();
   });
 
-  test('validates credential requirement when trying to trigger request', async ({ page }) => {
+  test('validates credential guidance and distinguishes Sandbox Grant from API Key', async ({ page }) => {
     await setupMarketplaceRoutes(page, {
       details: { [mockPaymentApiDetail.id]: mockPaymentApiDetail },
     });
@@ -27,30 +30,41 @@ test.describe('Phase 5 — Try Sandbox & Guided Testing', () => {
     await page.goto(`/api/${mockPaymentApiDetail.id}/try-sandbox`);
 
     // Check for API Key input or prompt
-    const apiKeyField = page.locator('input[type="password"], input[placeholder*="API Key"], input[placeholder*="X-API-Key"]');
-    if (await apiKeyField.isVisible()) {
-      await expect(apiKeyField).toBeVisible();
-    }
+    const apiKeyField = page.getByPlaceholder(/Nhập API Key của bạn|YOUR_API_KEY/i);
+    await expect(apiKeyField).toBeVisible();
+
+    // Explains difference between Sandbox grant and permanent API key
+    await expect(page.getByText(/Sandbox Grant dùng cho kiểm thử nhanh|Quản lý API Keys/i).first()).toBeVisible();
   });
 
-  test('verifies honest Sprint 4 disabled state for live upstream execution', async ({ page }) => {
+  test('navigates through 3-step wizard and connects to live Playground execution', async ({ page }) => {
     await setupMarketplaceRoutes(page, {
       details: { [mockPaymentApiDetail.id]: mockPaymentApiDetail },
     });
 
     await page.goto(`/api/${mockPaymentApiDetail.id}/try-sandbox`);
 
-    // Check if execute button is disabled or explains Sprint 4 gateway routing
-    const runBtn = page.getByRole('button', { name: /Chạy thử|Execute|Gửi yêu cầu|Run/i });
-    if (await runBtn.isVisible()) {
-      // Either disabled or clicking opens informational message about Sprint 4 gateway
-      const isDisabled = await runBtn.isDisabled();
-      if (!isDisabled) {
-        await runBtn.click().catch(() => {});
-        // Expect disclaimer or mock response
-        await expect(page.locator('body')).toContainText(/Gateway|Sprint 4|Thử nghiệm|Mô phỏng/i);
-      }
-    }
+    // Step 1 -> Step 2
+    const toStep2Btn = page.getByRole('button', { name: /Tiếp tục: Chọn Endpoint/i });
+    await expect(toStep2Btn).toBeVisible();
+    await toStep2Btn.click();
+
+    // Step 2 selector
+    const epSelect = page.locator('#sandbox-endpoint-select');
+    await expect(epSelect).toBeVisible();
+
+    // Step 2 -> Step 3
+    const toStep3Btn = page.getByRole('button', { name: /Tiếp tục: Xem cURL & Chạy thử/i });
+    await expect(toStep3Btn).toBeVisible();
+    await toStep3Btn.click();
+
+    // Step 3 shows live Playground execution bridge and generated cURL
+    const playgroundBtn = page.getByRole('button', { name: /Mở Playground để chạy thử/i });
+    await expect(playgroundBtn).toBeVisible();
+
+    // Click Playground button navigates to /api/:id/playground
+    await playgroundBtn.click();
+    await expect(page).toHaveURL(new RegExp(`/api/${mockPaymentApiDetail.id}/playground`));
   });
 
   test('generates valid and safe cURL snippet from sandbox parameters', async ({ page }) => {
@@ -60,12 +74,15 @@ test.describe('Phase 5 — Try Sandbox & Guided Testing', () => {
 
     await page.goto(`/api/${mockPaymentApiDetail.id}/try-sandbox`);
 
+    // Navigate to step 3 where cURL is displayed
+    await page.getByRole('button', { name: /Tiếp tục: Chọn Endpoint/i }).click();
+    await page.getByRole('button', { name: /Tiếp tục: Xem cURL & Chạy thử/i }).click();
+
     const codeSnippet = page.locator('pre');
-    if (await codeSnippet.isVisible()) {
-      const text = await codeSnippet.innerText();
-      const validation = validateCurlSnippet(text);
-      expect(validation.errors).toEqual([]);
-      expect(validation.hasBrokenContinuation).toBe(false);
-    }
+    await expect(codeSnippet.first()).toBeVisible();
+    const text = await codeSnippet.first().innerText();
+    const validation = validateCurlSnippet(text);
+    expect(validation.errors).toEqual([]);
+    expect(validation.hasBrokenContinuation).toBe(false);
   });
 });

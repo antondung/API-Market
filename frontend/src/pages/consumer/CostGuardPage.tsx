@@ -1,22 +1,33 @@
 import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
 import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
+import type { CostGuardNotification } from '../../types';
 
 export const CostGuardPage: React.FC = () => {
-  const { budget, notifications, markNotificationRead, markAllNotificationsRead } = useApp();
+  // Sprint 3: Automated billing budget cutoffs and spend tracking are scheduled for Sprint 4.
+  // Isolated from legacy mock data to ensure zero simulated billing spend.
   const { t } = useLanguage();
 
-  const [budgetCap, setBudgetCap] = useState(budget.monthlyBudgetUsd.toString());
-  const [hardCutoff, setHardCutoff] = useState(budget.hardCutoffAt100);
+  const [budgetCap, setBudgetCap] = useState('100');
+  const [hardCutoff, setHardCutoff] = useState(true);
   const [filterType, setFilterType] = useState<'all' | 'warning' | 'critical'>('all');
 
-  const spentPercent = Math.min(100, Math.round((budget.spentUsd / budget.monthlyBudgetUsd) * 100));
+  const spentUsd = 0;
+  const monthlyBudgetUsd = 100;
+  const spentPercent = 0;
 
-  const filteredNotifs = notifications.filter(n => {
-    if (filterType === 'all') return true;
-    return n.type === filterType;
-  });
+  const [notifications, setNotifications] = useState<CostGuardNotification[]>([]);
+  const filteredNotifs = filterType === 'all'
+    ? notifications
+    : notifications.filter(n => n.type === filterType);
+
+  const markAllNotificationsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const markNotificationRead = (id: string) => {
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+  };
 
   return (
     <div className="space-y-8">
@@ -118,10 +129,10 @@ export const CostGuardPage: React.FC = () => {
             </span>
             <div className="flex items-baseline justify-between mb-3">
               <span className="text-3xl font-extrabold text-on-surface font-code-md">
-                ${budget.spentUsd.toFixed(2)}
+                ${spentUsd.toFixed(2)}
               </span>
               <span className="text-body-sm text-on-surface-variant font-code-md">
-                / ${budget.monthlyBudgetUsd.toFixed(2)} ({spentPercent}%)
+                / ${monthlyBudgetUsd.toFixed(2)} ({spentPercent}%)
               </span>
             </div>
             <div className="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden">

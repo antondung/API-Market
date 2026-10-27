@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
 import { MethodBadge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { CodeBlock } from '../../components/ui/CodeBlock';
@@ -7,7 +6,9 @@ import { useLanguage } from '../../i18n';
 import type { RequestLog } from '../../types';
 
 export const RequestHistoryPage: React.FC = () => {
-  const { requestLogs } = useApp();
+  // Sprint 3: Dedicated consumer telemetry stream service is being finalized.
+  // Isolated from legacy mock logs to ensure zero simulated gateway traffic.
+  const requestLogs: RequestLog[] = [];
   const { t } = useLanguage();
 
   const [selectedStatus, setSelectedStatus] = useState<string>('all');

@@ -338,4 +338,181 @@ test.describe('Phase 15 — Consumer API Keys Lifecycle & Secret Reveal', () => 
     await expect(page.getByText('Decommission Target Key')).not.toBeVisible();
     expect(deletedKeyId).toBe('key-revoke-1');
   });
+
+  test('handles 409 Conflict when active key already exists for API ID', async ({ page }) => {
+    await setupMarketplaceRoutes(page, { user: consumerUser });
+
+    await page.route('**/api/consumer/api-keys*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: { items: [], total: 0, page: 1, pageSize: 20 },
+          }),
+        });
+      } else if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: {
+              code: 'CONFLICT',
+              message: 'Một khóa đang hoạt động đã tồn tại cho API này.',
+            },
+          }),
+        });
+      }
+    });
+
+    await page.goto('/dashboard/keys');
+    const openCreateBtn = page.getByRole('button', { name: /Tạo API Key mới/i }).first();
+    await openCreateBtn.click();
+    await page.getByPlaceholder(/e\.g\. 1/i).fill('1');
+    await page.getByRole('button', { name: /Tạo Khóa/i }).click();
+
+    await expect(page.getByText(/Một khóa đang hoạt động đã tồn tại cho API này/i)).toBeVisible();
+  });
+
+  test('handles 403 Forbidden when non-consumer attempts key creation', async ({ page }) => {
+    await setupMarketplaceRoutes(page, { user: consumerUser });
+
+    await page.route('**/api/consumer/api-keys*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: { items: [], total: 0, page: 1, pageSize: 20 },
+          }),
+        });
+      } else if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: {
+              code: 'FORBIDDEN',
+              message: 'Chỉ Consumer mới có quyền tạo API Key.',
+            },
+          }),
+        });
+      }
+    });
+
+    await page.goto('/dashboard/keys');
+    const openCreateBtn = page.getByRole('button', { name: /Tạo API Key mới/i }).first();
+    await openCreateBtn.click();
+    await page.getByPlaceholder(/e\.g\. 1/i).fill('2');
+    await page.getByRole('button', { name: /Tạo Khóa/i }).click();
+
+    await expect(page.getByText(/Chỉ Consumer mới có quyền tạo API Key/i)).toBeVisible();
+  });
+
+  test('preserves revealed secret even if follow-up list refresh fails', async ({ page }) => {
+    let createCalled = false;
+    await setupMarketplaceRoutes(page, { user: consumerUser });
+
+    await page.route('**/api/consumer/api-keys*', async (route) => {
+      if (route.request().method() === 'GET') {
+        if (!createCalled) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              data: { items: [], total: 0, page: 1, pageSize: 20 },
+            }),
+          });
+        } else {
+          // Simulate transient 500 error on subsequent list fetch
+          await route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              error: { code: 'SERVER_ERROR', message: 'Database query timeout' },
+            }),
+          });
+        }
+      } else if (route.request().method() === 'POST') {
+        createCalled = true;
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              id: 'k-survives-list-error',
+              apiId: '5',
+              key: 'ak_live_survives_list_error_token_9999',
+              keyPrefix: 'ak_live_surv',
+              label: 'Resilient Key',
+              isActive: true,
+              revokedAt: null,
+              createdAt: new Date().toISOString(),
+              lastUsedAt: null,
+            },
+          }),
+        });
+      }
+    });
+
+    await page.goto('/dashboard/keys');
+    const openCreateBtn = page.getByRole('button', { name: /Tạo API Key mới/i }).first();
+    await openCreateBtn.click();
+    await page.getByPlaceholder(/e\.g\. 1/i).fill('5');
+    await page.getByRole('button', { name: /Tạo Khóa/i }).click();
+
+    // Secret must be revealed regardless of follow-up list failure
+    await expect(page.getByRole('heading', { name: /Khóa API Của Bạn Đã Sẵn Sàng/i })).toBeVisible();
+    await expect(page.getByText('ak_live_survives_list_error_token_9999')).toBeVisible();
+  });
+
+  test('clears revealed secret immediately upon session invalidation event', async ({ page }) => {
+    await setupMarketplaceRoutes(page, { user: consumerUser });
+
+    await page.route('**/api/consumer/api-keys*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: { items: [], total: 0, page: 1, pageSize: 20 },
+          }),
+        });
+      } else if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              id: 'k-invalidate',
+              apiId: '9',
+              key: 'ak_live_transient_wipe_target_xyz',
+              keyPrefix: 'ak_live_tran',
+              label: 'Wipe Key',
+              isActive: true,
+              revokedAt: null,
+              createdAt: new Date().toISOString(),
+              lastUsedAt: null,
+            },
+          }),
+        });
+      }
+    });
+
+    await page.goto('/dashboard/keys');
+    const openCreateBtn = page.getByRole('button', { name: /Tạo API Key mới/i }).first();
+    await openCreateBtn.click();
+    await page.getByPlaceholder(/e\.g\. 1/i).fill('9');
+    await page.getByRole('button', { name: /Tạo Khóa/i }).click();
+
+    await expect(page.getByText('ak_live_transient_wipe_target_xyz')).toBeVisible();
+
+    // Dispatch session-invalidated event (e.g. logout)
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('apihub:session-invalidated'));
+    });
+
+    // Secret must be completely wiped from the DOM
+    await expect(page.getByText('ak_live_transient_wipe_target_xyz')).not.toBeVisible();
+  });
 });
