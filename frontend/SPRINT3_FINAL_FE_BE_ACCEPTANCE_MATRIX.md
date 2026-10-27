@@ -15,8 +15,8 @@
 | **Marketplace Catalog** | `GET` | `/api/marketplace/apis` | `200 OK` | Debounce 300ms, hiển thị Skeleton, phân trang an toàn | **ĐẠT** |
 | **API Detail & Version** | `GET` | `/api/marketplace/apis/:id` | `200 OK`, `404 Not Found` | Xử lý 404 thân thiện, cô lập phiên bản không fallback | **ĐẠT** |
 | **Sandbox Grant Status** | `GET` | `/api/consumer/apis/:apiId/sandbox` | `200 OK`, `401 Unauthorized`, `404 Not Found` | Không polling dồn dập, tự đếm ngược thời gian hết hạn | **ĐẠT** |
-| **Sandbox Claim Grant** | `POST` | `/api/consumer/apis/:apiId/sandbox` | `200 OK`, `201 Created`, `400 Bad Request` | Unconditional claim reset, sequence guard `quotaSeqRef` | **ĐẠT** |
-| **Playground Execution** | `POST` | `/api/marketplace/apis/:id/playground` | `200 OK`, `429 Rate Limit`, `502/504 Timeout` | Dual AbortController, `quotaSeqRef`, đối soát quota sau 502/504 | **ĐẠT** |
+| **Sandbox Claim Grant** | `POST` | `/api/consumer/apis/:apiId/sandbox` | `200 OK`, `201 Created`, `400 Bad Request` | Unconditional claim reset, generation guard `activeClaimSeqRef`, microtask double-click lock | **ĐẠT** |
+| **Playground Execution** | `POST` | `/api/marketplace/apis/:id/playground` | `200 OK`, `429 Rate Limit`, `502/504 Timeout` | Dual AbortController, `quotaSeqRef`, đối soát quota sau 502/504 (hiển thị "Quota: Cần xác minh" khi đối soát lỗi) | **ĐẠT** |
 | **Consumer API Keys List**| `GET` | `/api/consumer/api-keys` | `200 OK`, `401 Unauthorized` | Phân trang 20 mục, hiển thị tiền tố `ak_live_...`, che dấu bí mật, phân biệt lỗi với 0 khóa | **ĐẠT** |
 | **Create Consumer API Key**| `POST`| `/api/consumer/api-keys` | `201 Created`, `409 Conflict`, `403 Forbidden` | Tách biệt mutation và refresh; modal hiện secret 1 lần duy nhất | **ĐẠT** |
 | **Rotate API Key** | `POST` | `/api/consumer/api-keys/:id/rotate` | `200 OK`, `404 Not Found` | Cảnh báo vô hiệu hóa khóa cũ trước khi xác nhận rotate | **ĐẠT** |

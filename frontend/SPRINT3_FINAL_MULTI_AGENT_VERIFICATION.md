@@ -29,6 +29,9 @@
 ### Vai trò 3: Sandbox & Playground Specialist
 - **Nhiệm vụ chính:** Kiến trúc cỗ máy trạng thái Sandbox, ngăn chặn race condition và bảo vệ thực thi kiểm thử trực tiếp.
 - **Các hành động đã thực hiện:**
+  - Triển khai bảo vệ định danh thế hệ `activeClaimSeqRef` trong `ApiPlaygroundPage.tsx`: Khi người dùng claim sandbox cho API A rồi chuyển nhanh sang API B và bắt đầu claim B, promise A hoàn thành muộn (thành công hoặc thất bại) không thể gọi `setIsGrantClaiming(false)`, set lỗi hay ghi đè grant của API B.
+  - Ngăn chặn microtask double-click: Kiểm tra đồng bộ `activeClaimSeqRef.current !== 0` chặn hoàn toàn duplicate claim request được gửi đồng thời từ các click chuột dồn dập.
+  - Xử lý đối soát hạn ngạch trung thực: Khi gặp lỗi 502/504 hoặc đứt gãy mạng, hệ thống chạy background reconciliation để đọc lại Sandbox Grant; nếu reconciliation thất bại, giao diện hiển thị nhãn `Quota: Cần xác minh` kèm thông báo cảnh báo thay vì tự khẳng định quota còn nguyên vẹn.
   - Triển khai bộ đếm thế hệ `quotaSeqRef` trong `ApiPlaygroundPage.tsx`: Đảm bảo các phản hồi hạn ngạch (quota) đến chậm hoặc sai thứ tự không ghi đè lên trạng thái của lần thực thi mới nhất.
   - Tích hợp bộ đếm thời gian thực `isGrantExpiredByTimer`: Tự động chuyển đổi giao diện sang trạng thái hết hạn (`EXPIRED`) ngay khi thời gian hiệu lực của Sandbox Grant kết thúc mà không cần gửi polling liên tục lên Gateway.
   - Bảo đảm bộ sinh mã cURL an toàn: Các tham số người dùng được đóng gói bằng quy chuẩn POSIX sh escaping, chống chèn mã độc (command injection) và ngăn ngừa lỗi gãy dòng do ký tự xuống dòng Windows (`\r\n`).
@@ -44,10 +47,11 @@
 ### Vai trò 5: QA Automation & Verification Engineer
 - **Nhiệm vụ chính:** Tác giả và bảo trì bộ kiểm thử tự động, kiểm chứng hồi quy, rà soát vệ sinh kho mã nguồn và xác nhận bản dựng production.
 - **Các hành động đã thực hiện:**
+  - Tác giả 5 deferred-promise regression tests trong `frontend/src/pages/marketplace/ApiPlaygroundPage.test.tsx`: Kiểm chứng triệt để race condition khi chuyển API trong lúc claim, claim A thất bại muộn khi B đang pending, claim B thành công trước khi A hoàn tất, chặn double-click, và hiển thị trạng thái unverified quota khi reconciliation thất bại.
   - Tái cấu trúc `qa-scripts/sprint3-frontend/tests/04-try-sandbox.spec.ts`: Loại bỏ toàn bộ các câu lệnh khẳng định có điều kiện mềm, kiểm thử liên tục từ Bước 1 đến Bước 3 và chuyển tiếp sang Playground.
   - Mở rộng `qa-scripts/sprint3-frontend/tests/15-consumer-api-keys.spec.ts`: Bổ sung 4 ca kiểm thử tiêu cực và kiên cường (xử lý 409 Conflict, 403 Forbidden, phục hồi lỗi làm mới danh sách và xóa secret khi hết phiên).
-  - Xác nhận toàn bộ 312 unit tests Vitest và 109 Playwright Chromium E2E tests vượt qua 100%.
-  - Chạy kịch bản vệ sinh mã nguồn `./scripts/kiem-tra-kho-ma-nguon.ps1`: Đạt kết quả 335/335 tệp sạch hoàn toàn.
+  - Xác nhận toàn bộ 325 unit tests Vitest (31 test files) và 109 Playwright Chromium E2E tests (15 spec files) vượt qua 100%.
+  - Chạy kịch bản vệ sinh mã nguồn `./scripts/kiem-tra-kho-ma-nguon.ps1`: Đạt kết quả 338/338 tệp sạch hoàn toàn (0 lỗi, 0 cảnh báo).
 
 ---
 

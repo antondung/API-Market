@@ -27,13 +27,13 @@ Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (P
 
 | Hạng mục kiểm định | Tiêu chuẩn chất lượng | Kết quả thực tế | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **Unit & Integration Test (Vitest)** | 100% pass | **312 / 312 tests PASS** (31 test files) | **ĐẠT** |
-| **E2E Playwright Suite (Chromium)** | 100% pass | **109 / 109 tests PASS** (16 spec files) | **ĐẠT** |
-| **Production Build (`vite build`)** | Không lỗi TypeScript / Bundler | **Thành công (2.34s, 522 modules)** | **ĐẠT** |
-| **Tiếp cận người dùng (WCAG 2.2 AA)** | Không lỗi nghiêm trọng | **0 Critical, 0 Serious violations** | **ĐẠT** |
+| **Unit & Integration Test (Vitest)** | 100% pass | **325 / 325 tests PASS** (31 test files) | **ĐẠT** |
+| **E2E Playwright Suite (Chromium)** | 100% pass | **109 / 109 tests PASS** (15 spec files) | **ĐẠT** |
+| **Production Build (`vite build`)** | Không lỗi TypeScript / Bundler | **Thành công (1.81s, 522 modules)** | **ĐẠT** |
+| **Tiếp cận người dùng (WCAG 2.2 AA)** | Không lỗi nghiêm trọng | **0 Critical, 0 Serious violations** (7/7 a11y tests pass) | **ĐẠT** |
 | **Độ tương phản màu sắc (Contrast Ratio)** | >= 4.5:1 với văn bản thường | **Đạt từ 4.6:1 đến 7.2:1** | **ĐẠT** |
-| **Tương thích Responsive (10 Viewports)** | 0px tràn ngang (320px - 1920px) | **0px overflow trên toàn bộ màn hình** | **ĐẠT** |
-| **Vệ sinh kho mã nguồn (`kiem-tra`)** | Không ký tự BOM, trailing spaces | **0 lỗi / 335 tệp kiểm tra** | **ĐẠT** |
+| **Tương thích Responsive (10 Viewports)** | 0px tràn ngang (320px - 1920px) | **0px overflow trên 10 viewports** (31/31 tests pass) | **ĐẠT** |
+| **Vệ sinh kho mã nguồn (`kiem-tra`)** | Không ký tự BOM, trailing spaces | **0 lỗi / 338 tệp kiểm tra** | **ĐẠT** |
 
 ---
 
@@ -46,11 +46,12 @@ Sprint 3 Frontend tập trung vào phân hệ Sàn giao dịch API công khai (P
 5. `frontend/src/pages/consumer/UsageQuotaPage.tsx`: Loại bỏ phụ thuộc mock state từ AppContext; giải thích kiến trúc phân biệt Quota và Rate Limit.
 6. `frontend/src/pages/consumer/CostGuardPage.tsx`: Loại bỏ phụ thuộc mock state từ AppContext; vô hiệu hóa các nút kích hoạt giả lập.
 7. `frontend/src/pages/consumer/RequestHistoryPage.tsx`: Loại bỏ phụ thuộc mock state từ AppContext; bảo đảm tính toàn vẹn dữ liệu.
-8. `frontend/src/pages/marketplace/ApiPlaygroundPage.tsx`: Bổ sung `quotaSeqRef` chống out-of-order response và bộ hẹn giờ tự động kích hoạt trạng thái hết hạn grant.
+8. `frontend/src/pages/marketplace/ApiPlaygroundPage.tsx`: Bổ sung thế hệ bảo vệ định danh `activeClaimSeqRef` ngăn race condition khi đổi API trong lúc claim, chặn microtask double-click, và hiển thị trạng thái `Quota: Cần xác minh` khi đối soát thất bại sau 502/504 timeout.
 9. `frontend/src/pages/marketplace/CompareApisPage.tsx`: Xóa tham số URL khi bỏ chọn API so sánh, ngăn chặn lỗi trạng thái so sánh thừa.
 10. `frontend/src/pages/marketplace/MarketplacePage.tsx`: Cô lập dọn dẹp timer debounce tìm kiếm vào unmount lifecycle của component.
-11. `qa-scripts/sprint3-frontend/tests/04-try-sandbox.spec.ts`: Tái cấu trúc bộ kiểm thử wizard 3 bước, loại bỏ kiểm tra có điều kiện mềm, kết nối trực tiếp với Playground bridge.
-12. `qa-scripts/sprint3-frontend/tests/15-consumer-api-keys.spec.ts`: Bổ sung 4 ca kiểm thử tiêu cực (409 Conflict, 403 Forbidden, phục hồi lỗi làm mới danh sách, dọn dẹp bộ nhớ khi hủy phiên).
+11. `frontend/src/pages/marketplace/ApiPlaygroundPage.test.tsx`: Bổ sung 5 deferred-promise regression tests kiểm chứng race condition đổi API, hoàn thành muộn, double-click lock, và unverified quota state (21/21 tests pass).
+12. `qa-scripts/sprint3-frontend/tests/04-try-sandbox.spec.ts`: Tái cấu trúc bộ kiểm thử wizard 3 bước, loại bỏ kiểm tra có điều kiện mềm, kết nối trực tiếp với Playground bridge.
+13. `qa-scripts/sprint3-frontend/tests/15-consumer-api-keys.spec.ts`: Bổ sung 4 ca kiểm thử tiêu cực (409 Conflict, 403 Forbidden, phục hồi lỗi làm mới danh sách, dọn dẹp bộ nhớ khi hủy phiên).
 
 ---
 

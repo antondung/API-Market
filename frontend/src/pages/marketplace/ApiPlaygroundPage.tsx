@@ -81,6 +81,9 @@ export const ApiPlaygroundPage: React.FC = () => {
   currentApiIdRef.current = id;
 
   const quotaSeqRef = useRef<number>(0);
+  const activeClaimSeqRef = useRef<number>(0);
+  const [isQuotaReconciling, setIsQuotaReconciling] = useState(false);
+  const [reconciliationFailed, setReconciliationFailed] = useState(false);
 
   // Active execution request tracking for race condition prevention
   const activeExecutionControllerRef = useRef<AbortController | null>(null);
@@ -248,7 +251,10 @@ export const ApiPlaygroundPage: React.FC = () => {
 
   // Read Sandbox Grant Quota for authenticated Consumer
   useEffect(() => {
+    activeClaimSeqRef.current = 0;
     setIsGrantClaiming(false);
+    setIsQuotaReconciling(false);
+    setReconciliationFailed(false);
     if (!id || !isConsumer) {
       setGrant(null);
       setGrantError(null);
@@ -298,9 +304,9 @@ export const ApiPlaygroundPage: React.FC = () => {
     };
   }, [id, isConsumer, currentUser?.id]);
 
-  // Claim Sandbox Grant handler
+  // Claim Sandbox Grant handler with request identity/generation guard
   const handleClaimGrant = async () => {
-    if (!id || !isConsumer || isGrantClaiming) return;
+    if (!id || !isConsumer || isGrantClaiming || activeClaimSeqRef.current !== 0) return;
     const requestingApiId = id;
     const requestingUserId = currentUser?.id;
     if (grantFetchControllerRef.current) {
@@ -308,17 +314,26 @@ export const ApiPlaygroundPage: React.FC = () => {
       grantFetchControllerRef.current = null;
     }
     const claimSeq = ++quotaSeqRef.current;
+    activeClaimSeqRef.current = claimSeq;
     try {
       setIsGrantClaiming(true);
       setGrantError(null);
       const data = await claimSandboxGrant(requestingApiId);
-      // Ensure the response belongs to the current API and user session and is the latest sequence
-      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId && claimSeq >= quotaSeqRef.current) {
+      // Ensure the response belongs to the active claim generation, current API and user session
+      if (
+        activeClaimSeqRef.current === claimSeq &&
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId
+      ) {
         setGrant(data);
         setIsGrantLoading(false);
       }
     } catch (err: any) {
-      if (currentApiIdRef.current === requestingApiId && activeUserIdRef.current === requestingUserId) {
+      if (
+        activeClaimSeqRef.current === claimSeq &&
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId
+      ) {
         if (err instanceof ApiError) {
           setGrantError(err.message || t('Không thể kích hoạt Sandbox Grant.'));
         } else {
@@ -326,8 +341,11 @@ export const ApiPlaygroundPage: React.FC = () => {
         }
       }
     } finally {
-      // Always reset claiming state regardless of whether API switched mid-flight
-      setIsGrantClaiming(false);
+      // ONLY the active claim generation resets claiming state
+      if (activeClaimSeqRef.current === claimSeq) {
+        activeClaimSeqRef.current = 0;
+        setIsGrantClaiming(false);
+      }
     }
   };
 
@@ -499,6 +517,8 @@ export const ApiPlaygroundPage: React.FC = () => {
     try {
       setIsExecuting(true);
       setExecutionError(null);
+      setReconciliationFailed(false);
+      setIsQuotaReconciling(false);
 
       // Clean query params (drop empty values)
       const cleanQuery: Record<string, string> = {};
@@ -576,12 +596,21 @@ export const ApiPlaygroundPage: React.FC = () => {
       const isAmbiguousError = status === 502 || status === 504 || typeof status === 'undefined';
       if (isAmbiguousError && api?.id && currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id) {
         const reconcileSeq = ++quotaSeqRef.current;
+        setIsQuotaReconciling(true);
+        setReconciliationFailed(false);
         getSandboxGrant(api.id).then(reconciledGrant => {
           if (currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id && reconcileSeq >= quotaSeqRef.current) {
             setGrant(reconciledGrant);
+            setReconciliationFailed(false);
           }
         }).catch(() => {
-          // Background reconciliation error ignored
+          if (currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id && reconcileSeq >= quotaSeqRef.current) {
+            setReconciliationFailed(true);
+          }
+        }).finally(() => {
+          if (currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id && reconcileSeq >= quotaSeqRef.current) {
+            setIsQuotaReconciling(false);
+          }
         });
       }
     } finally {
@@ -628,6 +657,14 @@ export const ApiPlaygroundPage: React.FC = () => {
               grantStatus === 'LOADING' ? (
                 <span className="px-2.5 py-0.5 rounded-full text-label-sm font-semibold border bg-surface-container-high text-on-surface-variant animate-pulse">
                   {t('Đang tải Quota...')}
+                </span>
+              ) : isQuotaReconciling ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-sky-500/15 text-sky-800 dark:text-sky-200 border-sky-500/30 animate-pulse">
+                  {t('Đang đối soát Quota...')}
+                </span>
+              ) : reconciliationFailed ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/30" title={t('Hạn ngạch có thể đã thay đổi do lỗi mạng/timeout. Cần xác minh lại.')}>
+                  {t('Quota: Cần xác minh')}
                 </span>
               ) : grantStatus === 'ACTIVE' && grant ? (
                 <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500/30">
@@ -976,7 +1013,12 @@ export const ApiPlaygroundPage: React.FC = () => {
 
             {executionError && (
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-body-xs text-red-600 dark:text-red-400">
-                {executionError}
+                <div>{executionError}</div>
+                {reconciliationFailed && (
+                  <div className="mt-1.5 text-amber-700 dark:text-amber-300 font-medium">
+                    {t('Không thể đối soát hạn ngạch sau lỗi kết nối. Hạn ngạch hiển thị cần xác minh lại.')}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -984,19 +1026,23 @@ export const ApiPlaygroundPage: React.FC = () => {
           {/* Action Trigger */}
           <div className="pt-4 mt-6 border-t border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-body-xs text-on-surface-variant">
-              {grantStatus === 'ACTIVE' && grant
-                ? `${t('Lượt gọi còn lại:')} ${grant.remainingRequests}/${grant.maxRequests}`
-                : grantStatus === 'EXHAUSTED'
-                  ? t('Hạn mức Sandbox đã hết (0 lượt còn lại)')
-                  : grantStatus === 'NOT_CLAIMED'
-                    ? t('Chưa kích hoạt Sandbox Grant')
-                    : grantStatus === 'EXPIRED'
-                      ? t('Sandbox Grant đã hết hạn')
-                      : grantStatus === 'REVOKED'
-                        ? t('Sandbox Grant đã bị thu hồi')
-                        : grantStatus === 'LOADING'
-                          ? t('Đang tải thông tin Sandbox...')
-                          : t('Định tuyến kiểm thử qua SafeProxy')}
+              {reconciliationFailed
+                ? t('Hạn ngạch chưa thể xác minh sau lỗi kết nối')
+                : isQuotaReconciling
+                  ? t('Đang đối soát hạn ngạch...')
+                  : grantStatus === 'ACTIVE' && grant
+                    ? `${t('Lượt gọi còn lại:')} ${grant.remainingRequests}/${grant.maxRequests}`
+                    : grantStatus === 'EXHAUSTED'
+                      ? t('Hạn mức Sandbox đã hết (0 lượt còn lại)')
+                      : grantStatus === 'NOT_CLAIMED'
+                        ? t('Chưa kích hoạt Sandbox Grant')
+                        : grantStatus === 'EXPIRED'
+                          ? t('Sandbox Grant đã hết hạn')
+                          : grantStatus === 'REVOKED'
+                            ? t('Sandbox Grant đã bị thu hồi')
+                            : grantStatus === 'LOADING'
+                              ? t('Đang tải thông tin Sandbox...')
+                              : t('Định tuyến kiểm thử qua SafeProxy')}
             </span>
             <Button
               variant="primary"

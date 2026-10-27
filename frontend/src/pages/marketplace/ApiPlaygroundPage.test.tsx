@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { ApiPlaygroundPage } from './ApiPlaygroundPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
@@ -575,5 +575,326 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
     await new Promise(r => setTimeout(r, 50));
     expect(screen.getByText(/Quota:\s*1\/5/)).toBeDefined();
     expect(screen.getByText(/Còn lại: 1 requests/i)).toBeDefined();
+  });
+
+  it('prevents double-click from initiating two claim requests for the same API', async () => {
+    let resolveClaim!: (val: any) => void;
+    const claimPromise = new Promise(resolve => {
+      resolveClaim = resolve;
+    });
+
+    const claimSpy = vi.spyOn(consumerApi, 'claimSandboxGrant').mockReturnValue(claimPromise as any);
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') return mockApiDetail;
+      return { ...mockApiDetail, id: 'api-pg-2', name: 'API Two' };
+    });
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue(null as any);
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    const claimBtn = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    // Rapid double-click
+    fireEvent.click(claimBtn);
+    fireEvent.click(claimBtn);
+
+    expect(claimSpy).toHaveBeenCalledTimes(1);
+
+    resolveClaim({
+      id: 'g-claimed',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 0,
+      remainingRequests: 5,
+      available: true,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: null,
+    });
+  });
+
+  it('keeps isGrantClaiming true when Claim A completes while Claim B is still pending', async () => {
+    let resolveClaimA!: (val: any) => void;
+    const claimPromiseA = new Promise(resolve => {
+      resolveClaimA = resolve;
+    });
+    let resolveClaimB!: (val: any) => void;
+    const claimPromiseB = new Promise(resolve => {
+      resolveClaimB = resolve;
+    });
+
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') return mockApiDetail;
+      return { ...mockApiDetail, id: 'api-pg-2', name: 'API Two' };
+    });
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue(null as any);
+    vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation(async (apiId) => {
+      if (apiId === 'api-pg-1') return claimPromiseA as any;
+      return claimPromiseB as any;
+    });
+
+    let navigateFn: any;
+    const TestNavigator: React.FC = () => {
+      const navigate = useNavigate();
+      navigateFn = navigate;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-pg-1/playground']}>
+        <TestNavigator />
+        <Routes>
+          <Route path="/api/:id/playground" element={<ApiPlaygroundPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    const claimBtnA = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtnA);
+
+    // Switch to api-pg-2
+    act(() => {
+      navigateFn('/api/api-pg-2/playground');
+    });
+
+    await screen.findByText('API Two');
+    const claimBtnB = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtnB);
+
+    // Claim B is now in-flight
+    expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+    // Now resolve Claim A while B is still pending
+    act(() => {
+      resolveClaimA({
+        id: 'grant-a',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      });
+    });
+
+    // Claim B MUST STILL BE CLAIMING! (Claim A's finally must NOT set isGrantClaiming to false)
+    expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+    // Now resolve Claim B
+    act(() => {
+      resolveClaimB({
+        id: 'grant-b',
+        apiId: 'api-pg-2',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*5\/5/)).toBeDefined();
+      expect(screen.queryByRole('button', { name: /Đang kích hoạt.../i })).toBeNull();
+    });
+  });
+
+  it('ignores late Claim A failure while Claim B is pending without polluting error or resetting claiming state', async () => {
+    let rejectClaimA!: (err: any) => void;
+    const claimPromiseA = new Promise((_, reject) => {
+      rejectClaimA = reject;
+    });
+    let resolveClaimB!: (val: any) => void;
+    const claimPromiseB = new Promise(resolve => {
+      resolveClaimB = resolve;
+    });
+
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') return mockApiDetail;
+      return { ...mockApiDetail, id: 'api-pg-2', name: 'API Two' };
+    });
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue(null as any);
+    vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation(async (apiId) => {
+      if (apiId === 'api-pg-1') return claimPromiseA as any;
+      return claimPromiseB as any;
+    });
+
+    let navigateFn: any;
+    const TestNavigator: React.FC = () => {
+      const navigate = useNavigate();
+      navigateFn = navigate;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-pg-1/playground']}>
+        <TestNavigator />
+        <Routes>
+          <Route path="/api/:id/playground" element={<ApiPlaygroundPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    const claimBtnA = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtnA);
+
+    act(() => {
+      navigateFn('/api/api-pg-2/playground');
+    });
+
+    await screen.findByText('API Two');
+    const claimBtnB = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtnB);
+
+    // Claim B is claiming
+    expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+    // Reject Claim A late
+    act(() => {
+      rejectClaimA(new ApiError(500, 'CLAIM_A_FAILED', 'Failed to claim A'));
+    });
+
+    // Should NOT show Claim A's error on API B
+    expect(screen.queryByText('Failed to claim A')).toBeNull();
+    // Claim B should still be claiming
+    expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+    // Now resolve Claim B
+    act(() => {
+      resolveClaimB({
+        id: 'grant-b',
+        apiId: 'api-pg-2',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*5\/5/)).toBeDefined();
+    });
+  });
+
+  it('prevents late Claim A completion from overwriting previously succeeded Claim B grant', async () => {
+    let resolveClaimA!: (val: any) => void;
+    const claimPromiseA = new Promise(resolve => {
+      resolveClaimA = resolve;
+    });
+
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+      if (id === 'api-pg-1') return mockApiDetail;
+      return { ...mockApiDetail, id: 'api-pg-2', name: 'API Two' };
+    });
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue(null as any);
+    vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation(async (apiId) => {
+      if (apiId === 'api-pg-1') return claimPromiseA as any;
+      return {
+        id: 'grant-b-fast',
+        apiId: 'api-pg-2',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      };
+    });
+
+    let navigateFn: any;
+    const TestNavigator: React.FC = () => {
+      const navigate = useNavigate();
+      navigateFn = navigate;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-pg-1/playground']}>
+        <TestNavigator />
+        <Routes>
+          <Route path="/api/:id/playground" element={<ApiPlaygroundPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    const claimBtnA = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtnA);
+
+    act(() => {
+      navigateFn('/api/api-pg-2/playground');
+    });
+
+    await screen.findByText('API Two');
+    const claimBtnB = await screen.findByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtnB);
+
+    // Claim B completes immediately
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
+    });
+
+    // Now Claim A completes late
+    act(() => {
+      resolveClaimA({
+        id: 'grant-a-late',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: '2026-10-28T00:00:00.000Z',
+        revokedAt: null,
+      });
+    });
+
+    // Verify API 2 still has Quota: 4/5, NOT overwritten by Claim A (5/5)
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
+  });
+
+  it('displays unverified quota badge and notice when post-timeout reconciliation fails', async () => {
+    let grantCallCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCallCount++;
+      if (grantCallCount === 1) {
+        return {
+          id: 'g-initial',
+          apiId: 'api-pg-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: '2026-10-28T00:00:00.000Z',
+          revokedAt: null,
+        };
+      }
+      throw new ApiError(500, 'RECONCILE_FAILED', 'Cannot connect to control plane');
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(504, 'GATEWAY_TIMEOUT', 'Gateway Timeout')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*5\/5/)).toBeDefined();
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Expect gateway error
+    expect(await screen.findByText(/Lỗi Gateway Upstream/i)).toBeDefined();
+
+    // Verify unverified status is rendered instead of assuming quota is 5/5
+    await waitFor(() => {
+      expect(screen.getByText(/Quota: Cần xác minh/i)).toBeDefined();
+      expect(screen.getByText(/Không thể đối soát hạn ngạch sau lỗi kết nối/i)).toBeDefined();
+    });
   });
 });
