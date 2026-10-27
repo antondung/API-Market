@@ -114,7 +114,7 @@ test('Sprint 3 schema protects gateway routes, sandbox counters and hashed API k
   } finally { await f.close(); }
 });
 
-test('Marketplace first page is measured against 1,000 published APIs', async (t) => {
+test('Marketplace first page records before/after index evidence over 1,000 published APIs', async (t) => {
   const f = await fixture();
   try {
     const { providerId } = await seedPublishedApi(f.store, 'benchmark');
@@ -129,18 +129,56 @@ test('Marketplace first page is measured against 1,000 published APIs', async (t
       await f.store.pool.query("UPDATE apis SET status=$1 WHERE provider_id=$2 AND name LIKE 'Benchmark API %' AND status <> 'Published'", [status, providerId]);
     }
 
+    const query = `SELECT id, name, category, published_at
+                   FROM apis
+                   WHERE status='Published' AND category=$1
+                   ORDER BY published_at DESC, id DESC
+                   LIMIT 20`;
+    const explain = async () => {
+      const result = await f.store.pool.query(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`, ['Benchmark']);
+      const report = result.rows[0]!['QUERY PLAN'][0] as {
+        Plan: Record<string, unknown>;
+        'Planning Time': number;
+        'Execution Time': number;
+      };
+      return report;
+    };
+    const planText = (plan: Record<string, unknown>) => JSON.stringify(plan);
+
+    // Measure the same query without the two ordering/filter indexes first.
+    // The schema is disposable and is dropped at the end of this test.
+    await f.store.pool.query('DROP INDEX idx_apis_marketplace_category_published');
+    await f.store.pool.query('DROP INDEX idx_apis_marketplace_published_newest');
+    await f.store.pool.query('ANALYZE apis');
+    const before = await explain();
+
+    await f.store.pool.query(`
+      CREATE INDEX idx_apis_marketplace_published_newest
+        ON apis (published_at DESC, id DESC)
+        INCLUDE (provider_id, name, category)
+        WHERE status = 'Published'
+    `);
+    await f.store.pool.query(`
+      CREATE INDEX idx_apis_marketplace_category_published
+        ON apis (category, published_at DESC, id DESC)
+        WHERE status = 'Published'
+    `);
+    await f.store.pool.query('ANALYZE apis');
+    const after = await explain();
+
     const beganAt = performance.now();
-    const page = await f.store.pool.query(
-      `SELECT id, name, category, published_at
-       FROM apis
-       WHERE status='Published' AND category=$1
-       ORDER BY published_at DESC, id DESC
-       LIMIT 20`,
-      ['Benchmark'],
-    );
-    const elapsedMs = performance.now() - beganAt;
+    const page = await f.store.pool.query(query, ['Benchmark']);
+    const clientElapsedMs = performance.now() - beganAt;
     assert.equal(page.rows.length, 20);
     assert.ok(page.rows.every(row => row.category === 'Benchmark'));
-    t.diagnostic(`Marketplace first-page query over 1,000 published APIs: ${elapsedMs.toFixed(2)} ms`);
+    assert.match(planText(before.Plan), /Seq Scan/);
+    assert.match(planText(after.Plan), /idx_apis_marketplace_(category_published|published_newest)/);
+    t.diagnostic(
+      `Marketplace 1,000 APIs before index: ${before['Execution Time'].toFixed(3)} ms; `
+      + `after index: ${after['Execution Time'].toFixed(3)} ms; `
+      + `client query after index: ${clientElapsedMs.toFixed(2)} ms`,
+    );
+    t.diagnostic(`Before plan: ${planText(before.Plan)}`);
+    t.diagnostic(`After plan: ${planText(after.Plan)}`);
   } finally { await f.close(); }
 });
