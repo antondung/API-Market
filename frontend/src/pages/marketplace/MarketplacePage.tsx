@@ -64,9 +64,11 @@ export const MarketplacePage: React.FC = () => {
   // Local search input for immediate typing response
   const [searchInput, setSearchInput] = useState(urlQ);
   const [prevUrlQ, setPrevUrlQ] = useState(urlQ);
-  if (urlQ !== prevUrlQ) {
+  if (urlQ !== prevUrlQ && searchInput.trim() !== urlQ) {
     setPrevUrlQ(urlQ);
     setSearchInput(urlQ);
+  } else if (urlQ !== prevUrlQ) {
+    setPrevUrlQ(urlQ);
   }
 
   // Keyboard shortcut: Cmd+K / Ctrl+K to focus search
@@ -299,6 +301,7 @@ export const MarketplacePage: React.FC = () => {
               value={searchInput}
               onChange={handleSearchInputChange}
               placeholder={t('Search APIs by name, description...')}
+              aria-label={t('Search APIs by name, description...')}
               className="w-full bg-transparent text-body-md text-on-surface placeholder:text-outline focus:outline-none"
             />
             {searchInput && (
@@ -489,6 +492,7 @@ export const MarketplacePage: React.FC = () => {
                 <button
                   type="button"
                   aria-label="Grid view"
+                  aria-pressed={viewMode === 'grid'}
                   onClick={() => setViewMode('grid')}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                     viewMode === 'grid'
@@ -501,6 +505,7 @@ export const MarketplacePage: React.FC = () => {
                 <button
                   type="button"
                   aria-label="List view"
+                  aria-pressed={viewMode === 'list'}
                   onClick={() => setViewMode('list')}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                     viewMode === 'list'
@@ -706,15 +711,15 @@ export const MarketplacePage: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-1.5">
                           {api.hasFreePlan && api.hasPaidPlan ? (
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 font-medium">
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-800 font-medium">
                               {t('Free & Paid Plans')}
                             </span>
                           ) : api.hasFreePlan ? (
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 font-medium">
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-800 font-medium">
                               {t('Free Tier Available')}
                             </span>
                           ) : api.hasPaidPlan ? (
-                            <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 font-medium">
+                            <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-800 font-medium">
                               {t('Paid Plans Only')}
                             </span>
                           ) : (
@@ -766,7 +771,7 @@ export const MarketplacePage: React.FC = () => {
           {!error && !isLoading && total > 0 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-outline-variant/30">
               <div className="text-body-sm text-on-surface-variant">
-                {t('Hiển thị')} {(urlPage - 1) * urlPageSize + 1}–
+                {t('Hiển thị')} {total === 0 ? 0 : Math.min((urlPage - 1) * urlPageSize + 1, total)}–
                 {Math.min(urlPage * urlPageSize, total)} / {total} API
               </div>
 

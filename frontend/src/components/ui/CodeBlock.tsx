@@ -45,7 +45,12 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <div className="p-4 overflow-x-auto text-[13px] leading-relaxed font-code-md max-h-[460px]">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label={title || language || 'Code snippet'}
+        className="p-4 overflow-x-auto text-[13px] leading-relaxed font-code-md max-h-[460px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+      >
         <pre className="m-0 text-slate-200">
           <code>{code}</code>
         </pre>

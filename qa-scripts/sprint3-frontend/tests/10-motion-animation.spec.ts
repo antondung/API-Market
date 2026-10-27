@@ -26,7 +26,7 @@ test.describe('Phase 9 — Animation, Motion & Reduced Motion', () => {
 
     await page.goto(`/api/${mockPaymentApiDetail.id}`);
 
-    const tabs = page.locator('[role="tab"]');
+    const tabs = page.locator('[role="tab"], button[aria-pressed]');
     if ((await tabs.count()) >= 2) {
       const tab1 = tabs.nth(0);
       const tab2 = tabs.nth(1);
@@ -34,9 +34,9 @@ test.describe('Phase 9 — Animation, Motion & Reduced Motion', () => {
       await tab2.click();
       await page.waitForTimeout(200);
 
-      // Verify second tab has selected state
-      const isSelected = await tab2.getAttribute('aria-selected');
-      expect(isSelected === 'true' || (await tab2.isVisible())).toBe(true);
+      // Verify second tab has selected/pressed state
+      const isSelected = (await tab2.getAttribute('aria-selected')) || (await tab2.getAttribute('aria-pressed'));
+      expect(isSelected).toBe('true');
     }
   });
 

@@ -29,12 +29,23 @@ export const RequestHistoryPage: React.FC = () => {
         </p>
       </div>
 
+      {/* Honest Status Banner */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-body-sm text-on-surface flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">info</span>
+        <div>
+          <strong className="text-on-surface font-semibold">Hiện trạng chức năng Sprint 3: </strong>
+          <span>
+            Hệ thống Gateway Data Plane thực thi an toàn qua SafeProxy với DNS pinning và chống SSRF. Dịch vụ lưu trữ nhật ký truy vấn cá nhân (Consumer Telemetry Stream) đang được hoàn thiện. Bạn có thể kiểm tra chi tiết phản hồi và độ trễ tức thời trực tiếp tại <strong>API Playground</strong>.
+          </span>
+        </div>
+      </div>
+
       {/* Redaction Notice */}
       <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-start gap-3">
         <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">visibility_off</span>
         <div className="text-body-sm text-on-surface-variant leading-relaxed">
           <strong className="text-on-surface font-semibold">{t('Sensitive Data Redaction Active:')} </strong>
-          Theo quy định bảo mật US-24, các header <code className="text-primary font-code-md">Authorization</code>, cookie và token payload được tự động che thành <code className="bg-surface-container-high px-1.5 py-0.5 rounded font-code-sm text-on-surface">[REDACTED]</code> trước khi lưu vào nhật ký PostgreSQL.
+          Theo quy định bảo mật US-24, các header <code className="text-primary font-code-md">Authorization</code>, cookie và token payload được tự động che thành <code className="bg-surface-container-high px-1.5 py-0.5 rounded font-code-sm text-on-surface">[REDACTED]</code> trước khi lưu vào nhật ký lưu trữ.
         </div>
       </div>
 
@@ -45,6 +56,7 @@ export const RequestHistoryPage: React.FC = () => {
           {['all', '200', '401', '403', '429'].map(st => (
             <button
               key={st}
+              type="button"
               onClick={() => setSelectedStatus(st)}
               className={`px-3 py-1 rounded-lg text-body-sm transition-colors uppercase font-medium ${
                 selectedStatus === st
@@ -117,8 +129,7 @@ export const RequestHistoryPage: React.FC = () => {
                   <td className="px-5 py-3.5">
                     <span className={`px-2 py-0.5 rounded text-code-sm font-bold ${
                       log.statusCode === 200 ? 'bg-emerald-500/10 text-emerald-600' :
-                      log.statusCode === 429 ? 'bg-amber-500/10 text-amber-700' :
-                      'bg-error-container text-on-error-container'
+                      log.statusCode === 429 ? 'bg-amber-500/10 text-amber-700' : 'bg-error-container text-on-error-container'
                     }`}>
                       {log.statusCode}
                     </span>
@@ -130,9 +141,13 @@ export const RequestHistoryPage: React.FC = () => {
                     {log.ipAddress}
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    <span className="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary">
-                      chevron_right
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setActiveLog(log); }}
+                      className="text-primary hover:underline font-code-sm text-xs"
+                    >
+                      {t('Details')}
+                    </button>
                   </td>
                 </tr>
               ))
@@ -141,51 +156,43 @@ export const RequestHistoryPage: React.FC = () => {
         </table>
       </div>
 
-      {/* Log Inspection Modal */}
-      <Modal
-        isOpen={!!activeLog}
-        onClose={() => setActiveLog(null)}
-        title={`${t('Inspect API Request & Gateway Redaction')}: ${activeLog?.endpoint}`}
-        description={`Log ID: ${activeLog?.id} • Processed via API Gateway Data Plane`}
-        maxWidth="2xl"
-      >
-        {activeLog && (
+      {/* Detail Modal */}
+      {activeLog && (
+        <Modal
+          isOpen={true}
+          onClose={() => setActiveLog(null)}
+          title={`Chi tiết Telemetry: ${activeLog.endpoint}`}
+        >
           <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-surface-container rounded-xl border border-outline-variant/20 text-body-sm">
+            <div className="grid grid-cols-2 gap-3 text-body-sm">
               <div>
-                <span className="text-[11px] text-on-surface-variant uppercase font-semibold block">{t('Method')}</span>
-                <MethodBadge method={activeLog.method} />
+                <span className="text-on-surface-variant block text-xs">Mã yêu cầu (Request ID):</span>
+                <span className="font-code-sm font-bold text-on-surface">{activeLog.id}</span>
               </div>
               <div>
-                <span className="text-[11px] text-on-surface-variant uppercase font-semibold block">{t('Status')}</span>
-                <span className="font-bold font-code-md text-on-surface">{activeLog.statusCode}</span>
+                <span className="text-on-surface-variant block text-xs">Thời gian:</span>
+                <span className="font-code-sm text-on-surface">{new Date(activeLog.timestamp).toISOString()}</span>
               </div>
               <div>
-                <span className="text-[11px] text-on-surface-variant uppercase font-semibold block">{t('Latency')}</span>
-                <span className="font-bold font-code-md text-emerald-600">{activeLog.latencyMs} ms</span>
+                <span className="text-on-surface-variant block text-xs">Trạng thái HTTP:</span>
+                <span className="font-code-sm font-bold text-emerald-600">{activeLog.statusCode}</span>
               </div>
               <div>
-                <span className="text-[11px] text-on-surface-variant uppercase font-semibold block">Response Size</span>
-                <span className="font-bold font-code-md text-on-surface">{activeLog.responseSizeKb} KB</span>
+                <span className="text-on-surface-variant block text-xs">Độ trễ Gateway:</span>
+                <span className="font-code-sm font-bold text-emerald-600">{activeLog.latencyMs} ms</span>
               </div>
             </div>
 
             <div>
-              <h4 className="text-body-sm font-bold text-on-surface mb-2">{t('Sanitized Request Headers')}</h4>
+              <span className="text-body-sm font-semibold text-on-surface block mb-1">Headers đã Redacted:</span>
               <CodeBlock
                 code={JSON.stringify(activeLog.redactedHeaders, null, 2)}
                 language="json"
-                title="Headers (Redacted per US-24)"
               />
             </div>
-
-            <div className="text-body-sm text-on-surface-variant p-3 bg-surface-container rounded-xl border border-outline-variant/20">
-              <span className="font-semibold text-on-surface block mb-1">Client User Agent:</span>
-              <span className="font-code-sm">{activeLog.userAgent}</span>
-            </div>
           </div>
-        )}
-      </Modal>
+        </Modal>
+      )}
     </div>
   );
 };

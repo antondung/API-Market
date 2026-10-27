@@ -211,7 +211,7 @@ export const ApiDetailPage: React.FC = () => {
     );
   }
 
-  const selectedVersionObj = api.versions.find(v => v.id === selectedVersionId) || api.versions[0];
+  const selectedVersionObj = api.versions?.find(v => v.id === selectedVersionId) || api.versions?.[0];
 
   return (
     <PageReveal className="pt-20 pb-16 px-4 sm:px-6 lg:px-12 max-w-7xl mx-auto min-h-screen">
@@ -245,7 +245,7 @@ export const ApiDetailPage: React.FC = () => {
                 )}
                 <Badge variant="success" size="sm">Published</Badge>
                 {api.hasFreePlan && (
-                  <span className="px-2 py-0.5 text-xs rounded-md bg-emerald-500/10 text-emerald-600 font-medium">
+                  <span className="px-2 py-0.5 text-xs rounded-md bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 font-semibold">
                     {t('Free Tier')}
                   </span>
                 )}
@@ -707,12 +707,12 @@ export const ApiDetailPage: React.FC = () => {
                 <dt className="text-body-sm font-semibold text-on-surface mb-1">{t('Xử lý dữ liệu cá nhân (Processes Personal Data)')}</dt>
                 <dd className="text-body-md text-on-surface">
                   {api.legal.processesPersonalData ? (
-                    <span className="text-amber-600 font-medium flex items-center gap-1">
+                    <span className="text-amber-800 dark:text-amber-200 font-semibold flex items-center gap-1">
                       <span className="material-symbols-outlined text-[18px]">warning</span>
                       {t('Có xử lý dữ liệu cá nhân')}
                     </span>
                   ) : (
-                    <span className="text-emerald-600 font-medium flex items-center gap-1">
+                    <span className="text-emerald-800 dark:text-emerald-200 font-semibold flex items-center gap-1">
                       <span className="material-symbols-outlined text-[18px]">check_circle</span>
                       {t('Không xử lý dữ liệu cá nhân')}
                     </span>
@@ -837,8 +837,11 @@ export const ApiDetailPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-body-sm font-medium text-on-surface block mb-1">{t('Mô tả chi tiết & bằng chứng')}</label>
+            <label htmlFor="report-description-input" className="text-body-sm font-medium text-on-surface block mb-1">
+              {t('Mô tả chi tiết & bằng chứng')}
+            </label>
             <textarea
+              id="report-description-input"
               rows={4}
               value={reportDescription}
               onChange={(e) => setReportDescription(e.target.value)}

@@ -1,8 +1,8 @@
 # API-MARKET Sprint 3 Frontend QA - Test Execution Matrix
 
 **Branch:** `feature/sprint3-frontend-marketplace`
-**Execution Date:** 2026-10-25
-**Engine:** Playwright v1.64.1 / Node.js v20+ / Windows 11
+**Execution Date:** 2026-10-27
+**Engine:** Playwright v1.64.1 / Node.js v20+ / Windows 11 / Vitest v5.0.4
 **Runner Config:** `qa-scripts/sprint3-frontend/playwright.config.ts`
 
 ---
@@ -11,15 +11,16 @@
 
 | Metric | Measured Value | Target / Threshold | Status |
 | :--- | :--- | :--- | :--- |
-| **Total Test Suites** | 14 test specification files | 14 files | PASS |
-| **Chromium Full Suite** | 101 / 101 tests passed | 100% pass | PASS |
-| **Cross-Browser Smoke Matrix** | 39 / 39 passed (13 Chromium, 13 Firefox, 13 WebKit) | 100% pass | PASS |
+| **Total Test Suites** | 15 Playwright spec files + 31 Vitest unit test files | 15 spec files / 31 unit files | PASS |
+| **Playwright Full Suite (Chromium)** | 105 / 105 tests passed | 100% pass | PASS |
+| **Vitest Unit & Component Suite** | 312 / 312 tests passed (31 files) | 100% pass | PASS |
+| **Cross-Browser Smoke Matrix** | 42 / 42 passed (14 Chromium, 14 Firefox, 14 WebKit) | 100% pass | PASS |
 | **Specialized Matrix Projects** | 4 / 4 passed (mobile, tablet, reduced-motion, dark-theme) | 100% pass | PASS |
 | **WCAG 2.2 Critical Violations** | 0 critical violations across all audited pages | 0 critical | PASS |
 | **WCAG 2.2 Serious Violations** | 0 serious violations across all audited pages | 0 serious | PASS |
 | **Horizontal Overflow** | 0px across 10 viewports (320px to 1920px) | 0px overflow | PASS |
-| **Repository Integrity** | 297 files scanned, 0 platform defects (`kiem-tra-kho-ma-nguon.ps1`) | Clean | PASS |
-| **Frontend Production Build** | `tsc -b && vite build` succeeded in 3.68s | 0 build errors | PASS |
+| **Repository Integrity** | 330 files scanned, 0 platform defects (`kiem-tra-kho-ma-nguon.ps1`) | Clean | PASS |
+| **Frontend Production Build** | `tsc -b && vite build` succeeded in 2.09s (522 modules) | 0 build errors | PASS |
 
 ---
 
@@ -41,9 +42,9 @@
 | **Phase 12** | Network Resilience & Error Recovery | `12-network-resilience.spec.ts` | 4 tests (Offline recovery, differentiated 503 service unavailable, malformed HTML response recovery, infinite request storm prevention) | PASS |
 | **Phase 13** | Security & Data Integrity | `13-security-data-integrity.spec.ts` | 4 tests (Credential masking, POSIX argument injection prevention, browser anti-SSRF enforcement, session invalidation memory wipe) | PASS |
 | **Phase 14** | Edge Cases, Invariants & Boundaries | Integrated across 01, 02, 05, 07, 12, 14 | Numeric ID `/^[1-9][0-9]{0,9}$/`, 3-state legal, pagination limits (0, 1, 13, 50, 250), self-compare guard | PASS |
-| **Phase 15** | State Management & Concurrency | `01-marketplace.spec.ts:187`<br>`05-pricing.spec.ts:197`<br>`10-motion-animation.spec.ts:62` | Race condition handlers, late response cancellation, rapid tab click debounce | PASS |
+| **Phase 15** | Consumer API Keys Lifecycle & Secret Reveal | `15-consumer-api-keys.spec.ts` | 4 tests (Honest empty state, key creation with one-time reveal, key rotation warning with new secret, permanent key revocation) | PASS |
 | **Phase 16** | Cross-Platform & Device Emulation | Matrix test configurations in `playwright.config.ts` | Mobile Chrome (Pixel 7), Tablet (iPad Mini), Desktop Chrome, Firefox, WebKit | PASS |
-| **Phase 17** | Defect Reporting & Remediation | `FINDINGS.md` | Concrete remediation of mobile overflow, axe-core form controls, and strict mode locator collisions | PASS |
+| **Phase 17** | Defect Reporting & Remediation | `FINDINGS.md` | Concrete remediation of mobile overflow, axe-core form controls, WCAG contrast tokens, and strict mode locator collisions | PASS |
 | **Phase 18** | Comprehensive QA Sign-Off | `SPRINT3_COMPREHENSIVE_FRONTEND_QA_REPORT.md` | Final authoritative hardening and sign-off report | PASS |
 
 ---

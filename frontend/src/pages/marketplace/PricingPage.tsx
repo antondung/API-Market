@@ -349,7 +349,15 @@ export const PricingPage: React.FC = () => {
           </div>
           <h2 className="text-headline-sm font-bold text-on-surface mb-2">{t('Không thể tải dữ liệu bảng giá')}</h2>
           <p className="text-body-md text-on-surface-variant mb-6">{error}</p>
-          <Button variant="primary" onClick={() => navigate(0)}>{t('Thử lại')}</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setError(null);
+              setRetryTrigger(c => c + 1);
+            }}
+          >
+            {t('Thử lại')}
+          </Button>
         </div>
       )}
 
@@ -521,6 +529,7 @@ export const PricingPage: React.FC = () => {
             variant="secondary"
             size="sm"
             icon={showFeatureMatrix ? 'expand_less' : 'expand_more'}
+            aria-expanded={showFeatureMatrix}
             onClick={() => setShowFeatureMatrix(!showFeatureMatrix)}
           >
             {showFeatureMatrix ? t('Thu gọn bảng') : t('Xem chi tiết')}
@@ -605,6 +614,7 @@ export const PricingPage: React.FC = () => {
               >
                 <button
                   type="button"
+                  aria-expanded={isExpanded}
                   onClick={() => setExpandedFaq(isExpanded ? null : index)}
                   className="w-full p-5 text-left font-semibold text-body-md text-on-surface flex items-center justify-between gap-4 cursor-pointer hover:bg-surface-container/50 transition-colors"
                 >

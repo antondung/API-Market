@@ -45,7 +45,7 @@ export const PublicNavbar: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="text-headline-sm font-headline-sm font-bold text-primary tracking-tight leading-none whitespace-nowrap">API HUB</span>
-            <span className="text-[10px] uppercase font-semibold tracking-widest text-on-surface-variant/70 whitespace-nowrap">{t('Marketplace')}</span>
+            <span className="text-[10px] uppercase font-semibold tracking-widest text-on-surface-variant whitespace-nowrap">{t('Marketplace')}</span>
           </div>
         </Link>
 
@@ -113,7 +113,9 @@ export const PublicNavbar: React.FC = () => {
             type="button"
             onClick={() => setMobileMenuOpen(prev => !prev)}
             aria-label="Toggle navigation menu"
-            className="w-9 h-9 rounded-xl border border-outline-variant/40 bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high focus:outline-none"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation"
+            className="w-9 h-9 rounded-xl border border-outline-variant/40 bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <span className="material-symbols-outlined text-[20px]">
               {mobileMenuOpen ? 'close' : 'menu'}
@@ -125,7 +127,7 @@ export const PublicNavbar: React.FC = () => {
 
       {/* Mobile Drawer Navigation */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-outline-variant/20 bg-surface/98 backdrop-blur-2xl px-4 py-4 space-y-3 animate-fade-in shadow-lg">
+        <div id="mobile-navigation" className="md:hidden border-t border-outline-variant/20 bg-surface/98 backdrop-blur-2xl px-4 py-4 space-y-3 animate-fade-in shadow-lg">
           <nav className="flex flex-col space-y-2">
             {mainLinks.map(link => {
               const isActive = location.pathname === link.path;

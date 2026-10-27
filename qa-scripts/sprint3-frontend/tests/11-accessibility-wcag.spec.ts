@@ -19,8 +19,9 @@ test.describe('Phase 11 — Accessibility Audit (WCAG 2.2 & Keyboard)', () => {
       console.log(`[A11y /marketplace] Found ${result.violationsCount} violations:`, result.violations.map((v) => v.id));
     }
 
-    // Critical accessibility violations must be 0
+    // Critical and serious accessibility violations must be 0
     expect(result.criticalCount).toBe(0);
+    expect(result.seriousCount).toBe(0);
   });
 
   test('axe-core audit on API Detail route (/api/:id)', async ({ page }) => {
@@ -31,7 +32,11 @@ test.describe('Phase 11 — Accessibility Audit (WCAG 2.2 & Keyboard)', () => {
     await page.waitForLoadState('networkidle');
 
     const result = await runA11yAudit(page);
+    if (result.violationsCount > 0) {
+      console.log(`[A11y /api/:id] Violations:`, JSON.stringify(result.violations.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes })), null, 2));
+    }
     expect(result.criticalCount).toBe(0);
+    expect(result.seriousCount).toBe(0);
   });
 
   test('axe-core audit on Playground route (/api/:id/playground)', async ({ page }) => {
@@ -42,7 +47,11 @@ test.describe('Phase 11 — Accessibility Audit (WCAG 2.2 & Keyboard)', () => {
     await page.waitForLoadState('networkidle');
 
     const result = await runA11yAudit(page);
+    if (result.violationsCount > 0) {
+      console.log(`[A11y /playground] Violations:`, JSON.stringify(result.violations.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes })), null, 2));
+    }
     expect(result.criticalCount).toBe(0);
+    expect(result.seriousCount).toBe(0);
   });
 
   test('axe-core audit on Compare route (/compare)', async ({ page }) => {
@@ -57,7 +66,11 @@ test.describe('Phase 11 — Accessibility Audit (WCAG 2.2 & Keyboard)', () => {
     await page.waitForLoadState('networkidle');
 
     const result = await runA11yAudit(page);
+    if (result.violationsCount > 0) {
+      console.log(`[A11y /compare] Violations:`, JSON.stringify(result.violations.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes })), null, 2));
+    }
     expect(result.criticalCount).toBe(0);
+    expect(result.seriousCount).toBe(0);
   });
 
   test('axe-core audit on Pricing route (/pricing)', async ({ page }) => {
@@ -69,6 +82,7 @@ test.describe('Phase 11 — Accessibility Audit (WCAG 2.2 & Keyboard)', () => {
 
     const result = await runA11yAudit(page);
     expect(result.criticalCount).toBe(0);
+    expect(result.seriousCount).toBe(0);
   });
 
   test('keyboard journey: can navigate through search and focus first interactive element', async ({ page }) => {

@@ -248,6 +248,6 @@ test.describe('Phase 3 — Marketplace Catalog & Homepage', () => {
 
     // If Ctrl+K shortcut is wired, it will focus searchInput
     const isFocused = await searchInput.evaluate((el) => document.activeElement === el);
-    expect(typeof isFocused).toBe('boolean');
+    expect(isFocused).toBe(true);
   });
 });

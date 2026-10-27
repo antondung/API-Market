@@ -35,6 +35,14 @@ export const CompareApisPage: React.FC = () => {
   const [apiId1, setApiId1] = useState<string>(() => queryApiId1 || '');
   const [apiId2, setApiId2] = useState<string>(() => queryApiId2 || '');
 
+  useEffect(() => {
+    if (queryApiId1 && queryApiId1 !== apiId1) setApiId1(queryApiId1);
+  }, [queryApiId1]);
+
+  useEffect(() => {
+    if (queryApiId2 && queryApiId2 !== apiId2) setApiId2(queryApiId2);
+  }, [queryApiId2]);
+
   const [detail1, setDetail1] = useState<MarketplaceApiDetail | null>(null);
   const [detail2, setDetail2] = useState<MarketplaceApiDetail | null>(null);
   const [loading1, setLoading1] = useState(false);
@@ -187,7 +195,7 @@ export const CompareApisPage: React.FC = () => {
   const renderPersonalDataProcessing = (val: boolean | null | undefined) => {
     if (val === true) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 text-body-xs font-semibold">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 text-body-xs font-semibold">
           <span className="material-symbols-outlined text-[16px]">check_circle</span>
           {t('Có')}
         </span>
@@ -768,9 +776,9 @@ export const CompareApisPage: React.FC = () => {
                     </Link>
                   </div>
                 ) : (
-                  <span className="text-xs text-on-surface-variant italic">API 1 chưa tải</span>
+                  <span className="text-xs text-on-surface-variant italic">{t('API 1 chưa tải')}</span>
                 )}
-                <span className="text-on-surface-variant/40 font-bold">VS</span>
+                <span className="text-on-surface font-black px-2 py-0.5 rounded bg-surface-container-high text-xs">VS</span>
                 {detail2 ? (
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-on-surface truncate max-w-[120px]">{detail2.name}</span>
@@ -779,7 +787,7 @@ export const CompareApisPage: React.FC = () => {
                     </Link>
                   </div>
                 ) : (
-                  <span className="text-xs text-on-surface-variant italic">API 2 chưa tải</span>
+                  <span className="text-xs text-on-surface-variant italic">{t('API 2 chưa tải')}</span>
                 )}
               </div>
             </div>

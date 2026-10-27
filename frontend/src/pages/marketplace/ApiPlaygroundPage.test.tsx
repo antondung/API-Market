@@ -138,10 +138,14 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
 
     // Wait for execution to finish
     await waitFor(() => {
-      expect(executeSpy).toHaveBeenCalledWith('api-pg-1', expect.objectContaining({
-        endpointId: 'ep-get',
-        pathParams: expect.objectContaining({ userId: 'u-123' }),
-      }));
+      expect(executeSpy).toHaveBeenCalledWith(
+        'api-pg-1',
+        expect.objectContaining({
+          endpointId: 'ep-get',
+          pathParams: expect.objectContaining({ userId: 'u-123' }),
+        }),
+        expect.any(AbortSignal)
+      );
     });
 
     // Verifies live response rendered: upstream status 200, latency 42 ms, remaining requests 3
@@ -279,5 +283,111 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
     await waitFor(() => {
       expect(input.value).toBe('');
     });
+  });
+
+  it('strictly disables Send Request button when grant is NOT_CLAIMED and enables claiming inline', async () => {
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockRejectedValue({ status: 404, message: 'Not found' });
+    const claimSpy = vi.spyOn(consumerApi, 'claimSandboxGrant').mockResolvedValueOnce({
+      id: 'g-claimed',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 0,
+      remainingRequests: 5,
+      available: true,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: null,
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    // Send button must be strictly disabled when grant is null / not claimed
+    await waitFor(() => {
+      const sendButton = screen.getByRole('button', { name: /Send Request/i });
+      expect(sendButton.hasAttribute('disabled')).toBe(true);
+    });
+
+    // Unclaimed banner should be visible with claim action
+    expect(screen.getAllByText('Chưa kích hoạt Sandbox Grant').length).toBeGreaterThan(0);
+    const claimBtn = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtn);
+
+    await waitFor(() => {
+      expect(claimSpy).toHaveBeenCalledWith('api-pg-1');
+      const sendButton = screen.getByRole('button', { name: /Send Request/i });
+      expect(sendButton.hasAttribute('disabled')).toBe(false);
+    });
+  });
+
+  it('strictly disables Send Request button when grant is EXPIRED', async () => {
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue({
+      id: 'g-expired',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 1,
+      remainingRequests: 4,
+      available: true,
+      expiresAt: '2020-01-01T00:00:00.000Z', // Expired in past
+      revokedAt: null,
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    await waitFor(() => {
+      const sendButton = screen.getByRole('button', { name: /Send Request/i });
+      expect(sendButton.hasAttribute('disabled')).toBe(true);
+      expect(screen.getAllByText(/Sandbox Grant đã hết hạn/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it('strictly disables Send Request button when grant is REVOKED', async () => {
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue({
+      id: 'g-revoked',
+      apiId: 'api-pg-1',
+      maxRequests: 5,
+      usedRequests: 1,
+      remainingRequests: 4,
+      available: true,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      revokedAt: '2026-10-21T00:00:00.000Z', // Revoked
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    await waitFor(() => {
+      const sendButton = screen.getByRole('button', { name: /Send Request/i });
+      expect(sendButton.hasAttribute('disabled')).toBe(true);
+      expect(screen.getAllByText(/Sandbox Grant đã bị thu hồi/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it('aborts active execution controller when switching endpoints to prevent race conditions', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.spyOn(consumerApi, 'executePlayground').mockImplementation((_id, _input, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {
+        // Leave pending
+      });
+    });
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal?.aborted).toBe(false);
+    });
+
+    // Switch endpoint while request is in flight
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: 'ep-post' } });
+
+    // Active controller signal must be aborted immediately
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });

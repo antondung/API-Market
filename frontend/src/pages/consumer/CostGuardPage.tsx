@@ -4,28 +4,14 @@ import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
 
 export const CostGuardPage: React.FC = () => {
-  const { budget, updateBudget, notifications, markNotificationRead, markAllNotificationsRead } = useApp();
+  const { budget, notifications, markNotificationRead, markAllNotificationsRead } = useApp();
   const { t } = useLanguage();
 
   const [budgetCap, setBudgetCap] = useState(budget.monthlyBudgetUsd.toString());
   const [hardCutoff, setHardCutoff] = useState(budget.hardCutoffAt100);
   const [filterType, setFilterType] = useState<'all' | 'warning' | 'critical'>('all');
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   const spentPercent = Math.min(100, Math.round((budget.spentUsd / budget.monthlyBudgetUsd) * 100));
-
-  const handleSaveBudget = (e: React.FormEvent) => {
-    e.preventDefault();
-    const val = parseFloat(budgetCap);
-    if (!isNaN(val) && val > 0) {
-      updateBudget({
-        monthlyBudgetUsd: val,
-        hardCutoffAt100: hardCutoff
-      });
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2000);
-    }
-  };
 
   const filteredNotifs = notifications.filter(n => {
     if (filterType === 'all') return true;
@@ -41,6 +27,17 @@ export const CostGuardPage: React.FC = () => {
         </p>
       </div>
 
+      {/* Honest Status Banner */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-body-sm text-on-surface flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">info</span>
+        <div>
+          <strong className="text-on-surface font-semibold">Hiện trạng chức năng Sprint 3: </strong>
+          <span>
+            Chính sách Cost Guard và cơ chế ngắt tự động (100% Hard Cutoff) đang được phát triển cho Sprint 4 cùng hệ thống thanh toán. Giao diện dưới đây hiển thị cấu hình xem trước, không thực hiện lưu thay đổi giả lập lên trình duyệt.
+          </span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left 1 Col: Budget & Guard Controls */}
         <div className="space-y-6">
@@ -53,12 +50,12 @@ export const CostGuardPage: React.FC = () => {
               {t('Safeguard against runaway API loop scripts or unexpected invoice spikes.')}
             </p>
 
-            <form onSubmit={handleSaveBudget} className="space-y-4">
+            <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
               <div>
                 <label className="text-body-sm font-medium text-on-surface block mb-1">
                   {t('Monthly Spend Limit ($ USD)')}
                 </label>
-                <div className="flex items-center bg-surface-container rounded-xl border border-outline-variant/40 px-3 py-2">
+                <div className="flex items-center bg-surface-container rounded-xl border border-outline-variant/40 px-3 py-2 opacity-80">
                   <span className="text-body-md text-on-surface-variant font-bold mr-1.5">$</span>
                   <input
                     type="number"
@@ -66,21 +63,23 @@ export const CostGuardPage: React.FC = () => {
                     step="5"
                     value={budgetCap}
                     onChange={(e) => setBudgetCap(e.target.value)}
-                    className="w-full bg-transparent text-body-md font-bold text-on-surface outline-none"
+                    disabled
+                    className="w-full bg-transparent text-body-md font-bold text-on-surface outline-none cursor-not-allowed"
                   />
                 </div>
               </div>
 
               {/* Hard Cutoff Toggle */}
-              <div className="p-3.5 rounded-xl bg-surface-container border border-outline-variant/30 flex items-start gap-3">
+              <div className="p-3.5 rounded-xl bg-surface-container border border-outline-variant/30 flex items-start gap-3 opacity-80">
                 <input
                   type="checkbox"
                   id="hardCutoff"
                   checked={hardCutoff}
                   onChange={(e) => setHardCutoff(e.target.checked)}
-                  className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer"
+                  disabled
+                  className="rounded accent-primary w-4 h-4 mt-0.5 cursor-not-allowed"
                 />
-                <label htmlFor="hardCutoff" className="cursor-pointer select-none text-body-sm">
+                <label htmlFor="hardCutoff" className="cursor-not-allowed select-none text-body-sm">
                   <strong className="text-on-surface font-semibold block">{t('100% Hard Cutoff')}</strong>
                   <span className="text-on-surface-variant text-[12px] leading-relaxed block mt-0.5">
                     {t('API Gateway will immediately reject subsequent calls with HTTP 429 when budget cap is exhausted.')}
@@ -99,8 +98,15 @@ export const CostGuardPage: React.FC = () => {
                 </div>
               </div>
 
-              <Button type="submit" variant="primary" size="md" className="w-full">
-                {savedSuccess ? t('Policy saved successfully!') : t('Save Guard Policy')}
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                disabled
+                title="Tính năng sẽ mở trong Sprint 4 khi hệ thống thanh toán hoàn thiện"
+                className="w-full"
+              >
+                {t('Save Guard Policy')} (Sprint 4)
               </Button>
             </form>
           </div>
@@ -142,6 +148,7 @@ export const CostGuardPage: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setFilterType('all')}
                   className={`px-3 py-1 rounded-lg text-body-sm transition-colors ${
                     filterType === 'all' ? 'bg-primary-container text-on-primary-container font-medium' : 'text-on-surface-variant hover:bg-surface-container'
@@ -150,6 +157,7 @@ export const CostGuardPage: React.FC = () => {
                   {t('All Alerts')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setFilterType('warning')}
                   className={`px-3 py-1 rounded-lg text-body-sm transition-colors ${
                     filterType === 'warning' ? 'bg-primary-container text-on-primary-container font-medium' : 'text-on-surface-variant hover:bg-surface-container'
@@ -158,6 +166,7 @@ export const CostGuardPage: React.FC = () => {
                   {t('Warning')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setFilterType('critical')}
                   className={`px-3 py-1 rounded-lg text-body-sm transition-colors ${
                     filterType === 'critical' ? 'bg-primary-container text-on-primary-container font-medium' : 'text-on-surface-variant hover:bg-surface-container'
@@ -165,19 +174,26 @@ export const CostGuardPage: React.FC = () => {
                 >
                   {t('Critical')}
                 </button>
-                <button
-                  onClick={markAllNotificationsRead}
-                  className="text-body-sm text-primary hover:underline ml-2"
-                >
-                  {t('Mark all read')}
-                </button>
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={markAllNotificationsRead}
+                    className="text-body-sm text-primary hover:underline ml-2"
+                  >
+                    {t('Mark all read')}
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="space-y-3">
               {filteredNotifs.length === 0 ? (
                 <div className="p-12 text-center text-body-sm text-on-surface-variant">
-                  {t('No cost alerts in current window')}
+                  <span className="material-symbols-outlined text-[36px] text-outline mb-2 block">notifications_off</span>
+                  <p className="font-semibold text-on-surface">Không có thông báo cảnh báo chi phí</p>
+                  <p className="text-body-sm text-on-surface-variant/80 mt-1 max-w-sm mx-auto">
+                    Khi lưu lượng tiếp cận các ngưỡng 50% hoặc 80% ngân sách, Gateway sẽ kích hoạt cảnh báo thời gian thực tại đây.
+                  </p>
                 </div>
               ) : (
                 filteredNotifs.map(n => (
@@ -198,17 +214,14 @@ export const CostGuardPage: React.FC = () => {
                         {n.type === 'critical' ? 'report' : n.type === 'warning' ? 'warning' : 'notifications'}
                       </span>
                     </div>
-
                     <div className="flex-1">
-                      <div className="flex items-center justify-between gap-2 mb-0.5">
-                        <h4 className="text-body-md font-bold text-on-surface">{t(n.title)}</h4>
-                        <span className="text-code-sm text-on-surface-variant font-code-sm whitespace-nowrap">
-                          {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-body-md font-bold text-on-surface">{n.title}</h4>
+                        <span className="text-[11px] font-code-sm text-on-surface-variant">
+                          {new Date(n.timestamp).toLocaleTimeString()}
                         </span>
                       </div>
-                      <p className="text-body-sm text-on-surface-variant leading-relaxed">
-                        {t(n.message)}
-                      </p>
+                      <p className="text-body-sm text-on-surface-variant">{n.message}</p>
                     </div>
                   </div>
                 ))
@@ -216,7 +229,6 @@ export const CostGuardPage: React.FC = () => {
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

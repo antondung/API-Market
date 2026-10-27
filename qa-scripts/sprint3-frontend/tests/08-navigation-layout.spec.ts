@@ -79,26 +79,31 @@ test.describe('Phase 8 — Navigation & Layout Integrity', () => {
     await page.goto('/marketplace');
 
     // Find language switcher button or dropdown
-    const langBtn = page.getByRole('button', { name: /Tiếng Việt|English|VI|EN/i });
-    if (await langBtn.isVisible()) {
-      await langBtn.click();
-      // Select other language if menu opens
-      const enOption = page.locator('text=/English|EN/i');
-      if (await enOption.isVisible()) {
-        await enOption.first().click();
-        await page.waitForTimeout(300);
-      }
-    }
+    const langBtn = page.getByTitle(/Chuyển đổi ngôn ngữ|Switch Language/i);
+    await expect(langBtn.first()).toBeVisible();
+    await langBtn.first().click();
+
+    // Select English option
+    const enOption = page.getByRole('button', { name: 'English' });
+    await expect(enOption).toBeVisible();
+    await enOption.click();
+    await page.waitForTimeout(300);
+
+    await expect(page.locator('body')).not.toBeEmpty();
   });
 
   test('handles unknown routes gracefully with 404 or redirect', async ({ page }) => {
     await setupMarketplaceRoutes(page);
 
     await page.goto('/some-unknown-random-route-404');
+    await page.waitForLoadState('networkidle');
 
-    // Verify page does not crash to blank white screen
+    // Verify page does not crash to blank white screen and handles unknown route gracefully
     await expect(page.locator('body')).not.toBeEmpty();
-    const has404 = await page.getByText(/404|Không tìm thấy trang|Page not found/i).count();
-    expect(has404).toBeGreaterThanOrEqual(0);
+    const isRedirectedOr404 =
+      page.url().includes('/marketplace') ||
+      page.url().endsWith('/') ||
+      (await page.getByText(/404|Không tìm thấy trang|Page not found/i).count()) > 0;
+    expect(isRedirectedOr404).toBe(true);
   });
 });

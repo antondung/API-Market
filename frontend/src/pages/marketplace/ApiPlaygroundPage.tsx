@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { MethodBadge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -18,6 +18,7 @@ import { ApiError } from '../../services/authApi';
 import {
   executePlayground,
   getSandboxGrant,
+  claimSandboxGrant,
   type PlaygroundResult,
   type SandboxGrant,
 } from '../../services/consumerApi';
@@ -30,6 +31,15 @@ import {
 interface ExecutionResponseState extends PlaygroundResult {
   timestamp: string;
 }
+
+export type PlaygroundGrantStatus =
+  | 'LOADING'
+  | 'NOT_CLAIMED'
+  | 'ACTIVE'
+  | 'EXHAUSTED'
+  | 'EXPIRED'
+  | 'REVOKED'
+  | 'ERROR';
 
 export const ApiPlaygroundPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -58,8 +68,18 @@ export const ApiPlaygroundPage: React.FC = () => {
   const [requestBody, setRequestBody] = useState('{\n  "query": "test"\n}');
   const [jsonValidStatus, setJsonValidStatus] = useState<string | null>(null);
 
-  // Sandbox grant & Authoritative Quota
+  // Sandbox grant & Authoritative Quota State Machine
   const [grant, setGrant] = useState<SandboxGrant | null>(null);
+  const [isGrantLoading, setIsGrantLoading] = useState(false);
+  const [isGrantClaiming, setIsGrantClaiming] = useState(false);
+  const [grantError, setGrantError] = useState<string | null>(null);
+
+  const activeUserIdRef = useRef<string | null>(currentUser?.id ?? null);
+  activeUserIdRef.current = currentUser?.id ?? null;
+
+  // Active execution request tracking for race condition prevention
+  const activeExecutionControllerRef = useRef<AbortController | null>(null);
+  const grantFetchControllerRef = useRef<AbortController | null>(null);
 
   // Execution state
   const [isExecuting, setIsExecuting] = useState(false);
@@ -69,6 +89,14 @@ export const ApiPlaygroundPage: React.FC = () => {
   // Security lifecycle: Wipe sensitive credentials on unmount, API switch, or logout
   useEffect(() => {
     const handleLogout = () => {
+      if (activeExecutionControllerRef.current) {
+        activeExecutionControllerRef.current.abort();
+        activeExecutionControllerRef.current = null;
+      }
+      if (grantFetchControllerRef.current) {
+        grantFetchControllerRef.current.abort();
+        grantFetchControllerRef.current = null;
+      }
       setApiKeyInput('');
       setShowApiKeyInput(false);
       setHeaderParams({});
@@ -76,10 +104,20 @@ export const ApiPlaygroundPage: React.FC = () => {
       setExecutionResponse(null);
       setExecutionError(null);
       setGrant(null);
+      setGrantError(null);
+      setIsGrantLoading(false);
     };
 
     window.addEventListener('apihub:session-invalidated', handleLogout);
     return () => {
+      if (activeExecutionControllerRef.current) {
+        activeExecutionControllerRef.current.abort();
+        activeExecutionControllerRef.current = null;
+      }
+      if (grantFetchControllerRef.current) {
+        grantFetchControllerRef.current.abort();
+        grantFetchControllerRef.current = null;
+      }
       setApiKeyInput('');
       setShowApiKeyInput(false);
       setHeaderParams({});
@@ -190,25 +228,43 @@ export const ApiPlaygroundPage: React.FC = () => {
   useEffect(() => {
     if (!id || !isConsumer) {
       setGrant(null);
+      setGrantError(null);
+      setIsGrantLoading(false);
       return;
     }
 
+    if (grantFetchControllerRef.current) {
+      grantFetchControllerRef.current.abort();
+    }
     const controller = new AbortController();
+    grantFetchControllerRef.current = controller;
+    const requestingUserId = currentUser?.id;
     setIsGrantLoading(true);
+    setGrantError(null);
 
     getSandboxGrant(id, controller.signal)
       .then(data => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && activeUserIdRef.current === requestingUserId) {
           setGrant(data);
+          setGrantError(null);
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted) {
+      .catch((err: any) => {
+        if (controller.signal.aborted || activeUserIdRef.current !== requestingUserId) return;
+        const status = err?.status ?? (err instanceof ApiError ? err.status : undefined);
+        if (status === 404) {
           setGrant(null);
+          setGrantError(null);
+        } else if (status === 403) {
+          setGrant(null);
+          setGrantError(t('Tài khoản Consumer không có quyền truy cập Sandbox này.'));
+        } else {
+          setGrant(null);
+          setGrantError(err?.message || t('Lỗi kiểm tra trạng thái Sandbox grant.'));
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && activeUserIdRef.current === requestingUserId) {
           setIsGrantLoading(false);
         }
       });
@@ -216,7 +272,31 @@ export const ApiPlaygroundPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [id, isConsumer]);
+  }, [id, isConsumer, currentUser?.id]);
+
+  // Claim Sandbox Grant handler
+  const handleClaimGrant = async () => {
+    if (!id || !isConsumer) return;
+    if (grantFetchControllerRef.current) {
+      grantFetchControllerRef.current.abort();
+      grantFetchControllerRef.current = null;
+    }
+    try {
+      setIsGrantClaiming(true);
+      setGrantError(null);
+      const data = await claimSandboxGrant(id);
+      setGrant(data);
+      setIsGrantLoading(false);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setGrantError(err.message || t('Không thể kích hoạt Sandbox Grant.'));
+      } else {
+        setGrantError(t('Lỗi kết nối máy chủ'));
+      }
+    } finally {
+      setIsGrantClaiming(false);
+    }
+  };
 
   const selectedEndpoint = useMemo(() => {
     if (!api || !api.endpoints) return null;
@@ -224,6 +304,12 @@ export const ApiPlaygroundPage: React.FC = () => {
   }, [api, selectedEndpointId]);
 
   const handleEndpointSelect = (newId: string) => {
+    // Abort active in-flight playground request when switching endpoints to prevent race conditions
+    if (activeExecutionControllerRef.current) {
+      activeExecutionControllerRef.current.abort();
+      activeExecutionControllerRef.current = null;
+    }
+    setIsExecuting(false);
     setSelectedEndpointId(newId);
     const ep = api?.endpoints.find(e => e.id === newId);
     if (ep) {
@@ -323,21 +409,40 @@ export const ApiPlaygroundPage: React.FC = () => {
     }
   };
 
-  // Eligibility evaluation for Send Request
-  const isQuotaExhausted = grant !== null && (grant.remainingRequests <= 0 || !grant.available);
+  // Sandbox grant & Authoritative Quota State Machine
+  const grantStatus: PlaygroundGrantStatus = useMemo(() => {
+    if (!isConsumer) return 'NOT_CLAIMED';
+    if (isGrantLoading) return 'LOADING';
+    if (grantError) return 'ERROR';
+    if (!grant) return 'NOT_CLAIMED';
+    if (grant.revokedAt !== null) return 'REVOKED';
+    if (new Date(grant.expiresAt).getTime() <= Date.now()) return 'EXPIRED';
+    if (grant.remainingRequests <= 0 || !grant.available || grant.usedRequests >= grant.maxRequests) {
+      return 'EXHAUSTED';
+    }
+    return 'ACTIVE';
+  }, [isConsumer, isGrantLoading, grantError, grant]);
 
-  const sendButtonDisabled = !isConsumer || isExecuting || !selectedEndpoint || isQuotaExhausted;
+  // Strict eligibility: grant must be active and user must be Consumer
+  const isGrantEligible = isConsumer && grantStatus === 'ACTIVE';
+
+  const sendButtonDisabled = !isGrantEligible || isExecuting || !selectedEndpoint;
 
   const sendButtonTooltip = useMemo(() => {
     if (!isAuthenticated) return t('Yêu cầu đăng nhập tài khoản Consumer để thực thi');
     if (!isConsumer) return t('Chỉ tài khoản Consumer mới có quyền sử dụng Playground');
-    if (isQuotaExhausted) return t('Hạn mức Sandbox đã hết (0 lượt còn lại). Vui lòng nâng cấp gói.');
+    if (grantStatus === 'LOADING') return t('Đang kiểm tra quyền Sandbox...');
+    if (grantStatus === 'NOT_CLAIMED') return t('Chưa kích hoạt Sandbox Grant. Vui lòng nhận grant trước khi thử nghiệm.');
+    if (grantStatus === 'EXHAUSTED') return t('Hạn mức Sandbox đã hết (0 lượt còn lại). Vui lòng nâng cấp gói.');
+    if (grantStatus === 'EXPIRED') return t('Sandbox Grant đã hết hạn (24 giờ).');
+    if (grantStatus === 'REVOKED') return t('Sandbox Grant đã bị thu hồi.');
+    if (grantStatus === 'ERROR') return t('Lỗi kiểm tra quyền Sandbox.');
     return undefined;
-  }, [isAuthenticated, isConsumer, isQuotaExhausted, t]);
+  }, [isAuthenticated, isConsumer, grantStatus, t]);
 
   // Execute Playground Request
   const handleSendRequest = async () => {
-    if (!api || !selectedEndpoint || !isConsumer) return;
+    if (!api || !selectedEndpoint || !isGrantEligible) return;
 
     // Validate body if non-GET
     let parsedBody: unknown = undefined;
@@ -351,6 +456,12 @@ export const ApiPlaygroundPage: React.FC = () => {
         return;
       }
     }
+
+    if (activeExecutionControllerRef.current) {
+      activeExecutionControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeExecutionControllerRef.current = controller;
 
     try {
       setIsExecuting(true);
@@ -383,7 +494,9 @@ export const ApiPlaygroundPage: React.FC = () => {
         query: Object.keys(cleanQuery).length > 0 ? cleanQuery : undefined,
         headers: Object.keys(cleanHeaders).length > 0 ? cleanHeaders : undefined,
         body: parsedBody,
-      });
+      }, controller.signal);
+
+      if (controller.signal.aborted) return;
 
       // Update state with live response
       setExecutionResponse({
@@ -391,26 +504,23 @@ export const ApiPlaygroundPage: React.FC = () => {
         timestamp: new Date().toISOString(),
       });
 
-      // Update local grant quota authoritatively
-      setGrant(prev => prev ? {
-        ...prev,
-        remainingRequests: res.remainingRequests,
-        usedRequests: prev.maxRequests - res.remainingRequests,
-        available: res.remainingRequests > 0,
-      } : {
-        id: 'runtime-grant',
-        apiId: api.id,
-        maxRequests: 5,
-        usedRequests: 5 - res.remainingRequests,
-        remainingRequests: res.remainingRequests,
-        available: res.remainingRequests > 0,
-        expiresAt: new Date(Date.now() + 86400000).toISOString(),
-        revokedAt: null,
+      // Update local grant quota authoritatively: strictly rely on backend res.remainingRequests
+      setGrant(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          remainingRequests: res.remainingRequests,
+          usedRequests: Math.max(0, prev.maxRequests - res.remainingRequests),
+          available: res.remainingRequests > 0,
+        };
       });
 
       // Automatically switch right panel to response tab
       setRightPanelTab('response');
-    } catch (err) {
+    } catch (err: any) {
+      if (controller.signal.aborted || err?.name === 'AbortError') {
+        return;
+      }
       if (err instanceof ApiError) {
         if (err.status === 401) {
           setExecutionError(t('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.'));
@@ -427,7 +537,9 @@ export const ApiPlaygroundPage: React.FC = () => {
         setExecutionError(t('Lỗi kết nối máy chủ'));
       }
     } finally {
-      setIsExecuting(false);
+      if (!controller.signal.aborted) {
+        setIsExecuting(false);
+      }
     }
   };
 
@@ -464,14 +576,32 @@ export const ApiPlaygroundPage: React.FC = () => {
             <h1 className="text-headline-lg font-headline-lg font-bold text-on-surface">
               {t('API Playground & Gateway Sandbox')}
             </h1>
-            {grant && (
-              <span className={`px-2.5 py-0.5 rounded-full text-label-sm font-semibold border ${
-                grant.remainingRequests > 0
-                  ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-              }`}>
-                {t('Quota:')} {grant.remainingRequests}/{grant.maxRequests}
-              </span>
+            {isConsumer && (
+              grantStatus === 'LOADING' ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-semibold border bg-surface-container-high text-on-surface-variant animate-pulse">
+                  {t('Đang tải Quota...')}
+                </span>
+              ) : grantStatus === 'ACTIVE' && grant ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500/30">
+                  {t('Quota:')} {grant.remainingRequests}/{grant.maxRequests}
+                </span>
+              ) : grantStatus === 'EXHAUSTED' && grant ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/30">
+                  {t('Quota:')} 0/{grant.maxRequests} ({t('Exhausted')})
+                </span>
+              ) : grantStatus === 'EXPIRED' ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/30">
+                  {t('Expired')}
+                </span>
+              ) : grantStatus === 'REVOKED' ? (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-bold border bg-red-500/15 text-red-800 dark:text-red-200 border-red-500/30">
+                  {t('Revoked')}
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full text-label-sm font-semibold border bg-surface-container-high text-on-surface-variant border-outline-variant/30">
+                  {t('No Grant Yet')}
+                </span>
+              )
             )}
           </div>
         </div>
@@ -518,6 +648,71 @@ export const ApiPlaygroundPage: React.FC = () => {
               {t('Đăng nhập Consumer')}
             </Button>
           </Link>
+        </div>
+      )}
+
+      {/* Grant State Machine Action Banners for Consumer */}
+      {isConsumer && grantStatus === 'NOT_CLAIMED' && (
+        <div className="mb-6 p-4 rounded-2xl bg-surface-container-high border border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-body-sm text-on-surface-variant">
+            <strong className="text-on-surface block mb-0.5">{t('Chưa kích hoạt Sandbox Grant')}</strong>
+            {t('Kích hoạt để nhận 5 lượt gọi thử nghiệm miễn phí lưu trữ an toàn trên máy chủ (hiệu lực 24 giờ).')}
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            icon="science"
+            disabled={isGrantClaiming}
+            onClick={handleClaimGrant}
+          >
+            {isGrantClaiming ? t('Đang kích hoạt...') : t('Kích hoạt Sandbox Grant')}
+          </Button>
+        </div>
+      )}
+
+      {isConsumer && grantStatus === 'EXHAUSTED' && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-body-sm text-amber-900 dark:text-amber-200">
+            <strong className="block mb-0.5">{t('Hạn mức Sandbox đã hết (0 lượt còn lại)')}</strong>
+            {t('Bạn đã sử dụng hết 5 lượt gọi thử nghiệm. Vui lòng đăng ký gói chính thức hoặc sử dụng API Key cá nhân để tiếp tục.')}
+          </div>
+          <Link to={`/api/${api.id}`}>
+            <Button variant="primary" size="sm" icon="payments">
+              {t('Xem các gói dịch vụ')}
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {isConsumer && grantStatus === 'EXPIRED' && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
+          <div className="text-body-sm text-amber-900 dark:text-amber-200">
+            <strong className="block mb-0.5">{t('Sandbox Grant đã hết hạn')}</strong>
+            {t('Thời hạn 24 giờ của Sandbox grant đã kết thúc. Vui lòng đăng ký gói dịch vụ chính thức.')}
+          </div>
+          <Link to={`/api/${api.id}`}>
+            <Button variant="primary" size="sm" icon="payments">
+              {t('Xem các gói')}
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {isConsumer && grantStatus === 'REVOKED' && (
+        <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-between gap-3">
+          <div className="text-body-sm text-red-700 dark:text-red-300">
+            <strong className="block mb-0.5">{t('Sandbox Grant đã bị thu hồi')}</strong>
+            {t('Quyền truy cập thử nghiệm cho API này đã bị vô hiệu hóa.')}
+          </div>
+        </div>
+      )}
+
+      {isConsumer && grantStatus === 'ERROR' && (
+        <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-between gap-3">
+          <div className="text-body-sm text-red-700 dark:text-red-300">
+            <strong className="block mb-0.5">{t('Lỗi kiểm tra quyền Sandbox')}</strong>
+            {grantError}
+          </div>
         </div>
       )}
 
@@ -707,7 +902,7 @@ export const ApiPlaygroundPage: React.FC = () => {
                       </label>
                       <div className="flex items-center gap-2">
                         {jsonValidStatus && (
-                          <span className={`text-[11px] font-medium ${jsonValidStatus.startsWith('Lỗi') ? 'text-error' : 'text-emerald-600'}`}>
+                          <span className={`text-[11px] font-bold ${jsonValidStatus.startsWith('Lỗi') ? 'text-error' : 'text-emerald-800 dark:text-emerald-200'}`}>
                             {jsonValidStatus}
                           </span>
                         )}
@@ -741,9 +936,19 @@ export const ApiPlaygroundPage: React.FC = () => {
           {/* Action Trigger */}
           <div className="pt-4 mt-6 border-t border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-body-xs text-on-surface-variant">
-              {grant
+              {grantStatus === 'ACTIVE' && grant
                 ? `${t('Lượt gọi còn lại:')} ${grant.remainingRequests}/${grant.maxRequests}`
-                : t('Định tuyến kiểm thử qua SafeProxy')}
+                : grantStatus === 'EXHAUSTED'
+                  ? t('Hạn mức Sandbox đã hết (0 lượt còn lại)')
+                  : grantStatus === 'NOT_CLAIMED'
+                    ? t('Chưa kích hoạt Sandbox Grant')
+                    : grantStatus === 'EXPIRED'
+                      ? t('Sandbox Grant đã hết hạn')
+                      : grantStatus === 'REVOKED'
+                        ? t('Sandbox Grant đã bị thu hồi')
+                        : grantStatus === 'LOADING'
+                          ? t('Đang tải thông tin Sandbox...')
+                          : t('Định tuyến kiểm thử qua SafeProxy')}
             </span>
             <Button
               variant="primary"
@@ -840,10 +1045,10 @@ export const ApiPlaygroundPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className={`px-2.5 py-1 rounded-lg text-body-xs font-bold ${
                           executionResponse.status >= 200 && executionResponse.status < 300
-                            ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                            ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30'
                             : executionResponse.status >= 400 && executionResponse.status < 500
-                              ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                              : 'bg-red-500/10 text-red-600 border border-red-500/20'
+                              ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/30'
+                              : 'bg-red-500/15 text-red-800 dark:text-red-200 border border-red-500/30'
                         }`}>
                           {executionResponse.status}
                         </span>
@@ -898,7 +1103,7 @@ export const ApiPlaygroundPage: React.FC = () => {
                   <div>
                     <div className="text-body-xs text-on-surface-variant mb-2 flex items-center justify-between">
                       <span>{t('Dự kiến kết quả phản hồi (Expected 200 OK):')}</span>
-                      {Boolean(selectedEndpoint?.responseExample) && <span className="text-emerald-600 font-bold text-xs">200 OK</span>}
+                      {Boolean(selectedEndpoint?.responseExample) && <span className="text-emerald-800 dark:text-emerald-200 font-bold text-xs">200 OK</span>}
                     </div>
                     <CodeBlock
                       code={

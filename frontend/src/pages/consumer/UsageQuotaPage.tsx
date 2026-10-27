@@ -1,19 +1,42 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
 
 export const UsageQuotaPage: React.FC = () => {
   const { subscriptions } = useApp();
   const { t } = useLanguage();
+  const navigate = useNavigate();
 
   return (
     <div className="space-y-8">
-      <div className="pb-6 border-b border-outline-variant/30">
-        <h1 className="text-headline-lg font-bold text-on-surface">{t('API Usage, Quota & Rate Limits')}</h1>
-        <p className="text-body-md text-on-surface-variant">
-          {t('Real-time metrics tracking monthly request allowances versus instantaneous burst rate limits.')}
-        </p>
+      <div className="pb-6 border-b border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-headline-lg font-bold text-on-surface">{t('API Usage, Quota & Rate Limits')}</h1>
+          <p className="text-body-md text-on-surface-variant">
+            {t('Real-time metrics tracking monthly request allowances versus instantaneous burst rate limits.')}
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          icon="explore"
+          onClick={() => navigate('/marketplace')}
+        >
+          {t('Explore Marketplace')}
+        </Button>
+      </div>
+
+      {/* Honest Status Banner */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-body-sm text-on-surface flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">info</span>
+        <div>
+          <strong className="text-on-surface font-semibold">Cơ chế quản lý hạn ngạch Sprint 3: </strong>
+          <span>
+            Hạn ngạch gói cước hàng tháng (Monthly Billing Quota) sẽ liên kết với các gói trả phí trong Sprint 4. Hiện tại trong Sprint 3, các lượt gọi kiểm thử được quản lý qua <strong>Gói dùng thử Sandbox (5 lượt gọi/API/24h)</strong> được lưu trữ an toàn trong cơ sở dữ liệu PostgreSQL.
+          </span>
+        </div>
       </div>
 
       {/* Critical Concept Callout: Quota != Rate Limit */}
@@ -42,8 +65,11 @@ export const UsageQuotaPage: React.FC = () => {
             <span className="material-symbols-outlined text-[44px] text-outline mb-3 block">pie_chart</span>
             <h3 className="text-body-lg font-bold text-on-surface mb-1">{t('Chưa có đăng ký API')}</h3>
             <p className="text-body-sm text-on-surface-variant max-w-md mx-auto mb-5">
-              {t('Bạn chưa kích hoạt gói thuê bao nào. Khám phá chợ API để đăng ký gói dịch vụ và bắt đầu sử dụng.')}
+              Chưa có gói cước thương mại nào được kích hoạt. Hãy trải nghiệm dùng thử các API công khai với Sandbox Grants trước khi đăng ký gói chính thức.
             </p>
+            <Button variant="primary" icon="explore" onClick={() => navigate('/marketplace')}>
+              {t('Explore Marketplace')}
+            </Button>
           </div>
         ) : (
           subscriptions.map(sub => {

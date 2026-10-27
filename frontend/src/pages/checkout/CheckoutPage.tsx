@@ -94,7 +94,7 @@ export const CheckoutPage: React.FC = () => {
           {t('Vui lòng đăng nhập để xem thông tin đăng ký và kích hoạt gói.')}
         </p>
         <Link
-          to="/login"
+          to={`/login?redirect=${encodeURIComponent(`/checkout/${apiId}/${planId}`)}`}
           className="inline-flex items-center justify-center font-label-md px-4 py-2 text-body-md rounded-xl font-medium bg-primary text-on-primary hover:bg-primary/90 shadow-sm"
         >
           {t('Đăng nhập')}
@@ -246,7 +246,7 @@ export const CheckoutPage: React.FC = () => {
             >
               {plan.priceMonthly === 0
                 ? t('Activate Free Sandbox Tier')
-                : `${t('Đăng ký gói')} (${formatPrice(plan.priceMonthly, plan.currency)} - Chờ Sprint 4)`}
+                : `${t('Đăng ký gói')} - ${t('Xác nhận đăng ký')} (${formatPrice(plan.priceMonthly, plan.currency)} - Chờ Sprint 4)`}
             </Button>
           </div>
         </div>

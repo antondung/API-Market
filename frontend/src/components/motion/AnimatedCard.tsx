@@ -16,10 +16,22 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
 }) => {
   const shouldReduceMotion = useReducedMotion();
 
+  const handleKeyDown = onClick
+    ? (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }
+    : undefined;
+
   if (shouldReduceMotion || !hoverLift) {
     return (
       <div
         onClick={onClick}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onKeyDown={handleKeyDown}
         className={`bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 transition-colors duration-150 ${className}`}
       >
         {children}
@@ -30,6 +42,9 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   return (
     <motion.div
       onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={handleKeyDown}
       whileHover={{ y: -3, transition: { duration: 0.18, ease: 'easeOut' } }}
       whileTap={onClick ? { scale: 0.99 } : undefined}
       className={`bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-outline-variant/60 transition-colors duration-150 ${className}`}
