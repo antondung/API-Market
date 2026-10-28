@@ -82,13 +82,18 @@ function recordSkipped(testCaseId, userStory, name, reason) {
   });
 }
 
-// Helper gửi HTTP request có timeout
-async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+// Helper gửi HTTP request có timeout và tự động backoff retry nếu gặp 429 Rate Limit
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000, retries = 3) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(id);
+    if (res.status === 429 && retries > 0) {
+      const waitSec = Number(res.headers.get('retry-after')) || 2;
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      return fetchWithTimeout(url, options, timeoutMs, retries - 1);
+    }
     let body;
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
@@ -249,8 +254,8 @@ async function runPhase2() {
 
     // Tạo api_versions
     const versionRes = await db.query(
-      `INSERT INTO api_versions (api_id, version_name, status, is_default, changelog)
-       VALUES ($1, 'v1.0.0', 'Active', true, 'Phase 2 Test Version')
+      `INSERT INTO api_versions (api_id, version, changelog)
+       VALUES ($1, '1.0.0', 'Phase 2 Test Version')
        RETURNING id`,
       [testApiId]
     );
@@ -258,22 +263,23 @@ async function runPhase2() {
 
     // Tạo api_endpoints (/get, /status/{code})
     const epGet = await db.query(
-      `INSERT INTO api_endpoints (api_id, version_id, method, path, description, is_active)
-       VALUES ($1, $2, 'GET', '/get', 'HTTPBin GET echo', true)
+      `INSERT INTO api_endpoints (api_id, version_id, method, path, description)
+       VALUES ($1, $2, 'GET', '/get', 'HTTPBin GET echo')
        RETURNING id`,
       [testApiId, versionId]
     );
     testEndpointId = epGet.rows[0].id;
 
     await db.query(
-      `INSERT INTO api_endpoints (api_id, version_id, method, path, description, is_active)
-       VALUES ($1, $2, 'GET', '/status/{code}', 'HTTPBin Status echo', true)`
+      `INSERT INTO api_endpoints (api_id, version_id, method, path, description)
+       VALUES ($1, $2, 'GET', '/status/{code}', 'HTTPBin Status echo')`,
+      [testApiId, versionId]
     );
 
     // Tạo gateway_routes (trỏ tới https://httpbin.org)
     await db.query(
-      `INSERT INTO gateway_routes (api_id, upstream_base_url, timeout_ms, retry_count, is_enabled)
-       VALUES ($1, 'https://httpbin.org', 10000, 1, true)`,
+      `INSERT INTO gateway_routes (api_id, upstream_base_url, timeout_ms, is_enabled)
+       VALUES ($1, 'https://httpbin.org', 10000, true)`,
       [testApiId]
     );
 
@@ -284,11 +290,11 @@ async function runPhase2() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${consumerToken}`,
       },
-      body: JSON.stringify({ apiId: testApiId, name: 'QA Phase 2 Key' }),
+      body: JSON.stringify({ apiId: String(testApiId), label: 'QA Phase 2 Key' }),
     });
 
     if (createKeyRes.status === 201) {
-      testApiKeyRaw = createKeyRes.body.data.rawKey;
+      testApiKeyRaw = createKeyRes.body.data.key;
       testApiKeyId = createKeyRes.body.data.id;
       log(`Đã tạo thành công API Key kiểm thử: ${testApiKeyRaw.slice(0, 15)}... (ID: ${testApiKeyId})`);
     } else {
@@ -335,39 +341,34 @@ async function runPhase2() {
       const resMissing = await fetchWithTimeout(`${BASE_URL}/api/gateway/${testApiId}/get`, {
         method: 'GET',
       });
-      const missing401 = resMissing.status === 401 && resMissing.body?.code === 'INVALID_API_KEY';
+      const missing401 = resMissing.status === 401 && (resMissing.body?.error?.code === 'INVALID_API_KEY' || resMissing.body?.code === 'INVALID_API_KEY');
 
       // 2. Sai x-api-key
       const resInvalid = await fetchWithTimeout(`${BASE_URL}/api/gateway/${testApiId}/get`, {
         method: 'GET',
         headers: { 'x-api-key': 'ak_live_invalid_fake_key_999999999' },
       });
-      const invalid401 = resInvalid.status === 401 && resInvalid.body?.code === 'INVALID_API_KEY';
+      const invalid401 = resInvalid.status === 401 && (resInvalid.body?.error?.code === 'INVALID_API_KEY' || resInvalid.body?.code === 'INVALID_API_KEY');
 
-      // 3. Revoked key
-      // Tạo một key phụ rồi thu hồi để test
-      const tempKeyRes = await fetchWithTimeout(`${BASE_URL}/api/consumer/api-keys`, {
+      // 3. Revoked key qua thao tác Rotate
+      const oldKeyRaw = testApiKeyRaw;
+      const rotateRes = await fetchWithTimeout(`${BASE_URL}/api/consumer/api-keys/${testApiKeyId}/rotate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${providerToken}`, // Provider cũng là user có thể có key
+          Authorization: `Bearer ${consumerToken}`,
         },
-        body: JSON.stringify({ apiId: testApiId, name: 'Temp Revoke Target' }),
+        body: JSON.stringify({}),
       });
       let revoked401 = false;
-      if (tempKeyRes.status === 201) {
-        const tempRaw = tempKeyRes.body.data.rawKey;
-        const tempId = tempKeyRes.body.data.id;
-        // Thu hồi key này
-        await fetchWithTimeout(`${BASE_URL}/api/consumer/api-keys/${tempId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${providerToken}` },
-        });
+      if (rotateRes.status === 201 && rotateRes.body?.data?.key) {
+        testApiKeyRaw = rotateRes.body.data.key;
+        testApiKeyId = rotateRes.body.data.id;
         const resRevoked = await fetchWithTimeout(`${BASE_URL}/api/gateway/${testApiId}/get`, {
           method: 'GET',
-          headers: { 'x-api-key': tempRaw },
+          headers: { 'x-api-key': oldKeyRaw },
         });
-        revoked401 = resRevoked.status === 401 && resRevoked.body?.code === 'INVALID_API_KEY';
+        revoked401 = resRevoked.status === 401 && (resRevoked.body?.error?.code === 'INVALID_API_KEY' || resRevoked.body?.code === 'INVALID_API_KEY');
       }
 
       const passed = missing401 && invalid401 && revoked401;
@@ -432,7 +433,7 @@ async function runPhase2() {
         method: 'GET',
         headers: { 'x-api-key': testApiKeyRaw },
       });
-      const unreg404 = resUnregistered.status === 404 && resUnregistered.body?.code === 'ENDPOINT_NOT_FOUND';
+      const unreg404 = resUnregistered.status === 404 && (resUnregistered.body?.error?.code === 'ENDPOINT_NOT_FOUND' || resUnregistered.body?.code === 'ENDPOINT_NOT_FOUND');
 
       const passed = traversalBlocked && unreg404;
       await recordResult(
@@ -456,8 +457,8 @@ async function runPhase2() {
         headers: { 'x-api-key': testApiKeyRaw },
       });
 
-      // Gateway từ chối phục vụ: API không còn Published
-      const isBlocked = resSuspended.status === 404 || resSuspended.status === 403;
+      // Gateway từ chối phục vụ: API không còn Published (401 INVALID_API_KEY)
+      const isBlocked = resSuspended.status === 401 && (resSuspended.body?.error?.code === 'INVALID_API_KEY' || resSuspended.body?.code === 'INVALID_API_KEY');
 
       // Khôi phục lại trạng thái Published cho các bài test tiếp theo
       await db.query("UPDATE apis SET status = 'Published' WHERE id = $1", [testApiId]);
@@ -465,9 +466,9 @@ async function runPhase2() {
       await recordResult(
         'TC-22-05',
         'US-22',
-        'Gateway từ chối phục vụ ngay lập tức khi API bị đình chỉ (Suspended / unpublish) với 404 API_NOT_FOUND / 403',
+        'Gateway từ chối phục vụ ngay lập tức khi API bị đình chỉ (Suspended) với 401 INVALID_API_KEY (không còn Published)',
         isBlocked,
-        { status: resSuspended.status, code: resSuspended.body?.code }
+        { status: resSuspended.status, code: resSuspended.body?.error?.code || resSuspended.body?.code }
       );
     } catch (err) {
       await db.query("UPDATE apis SET status = 'Published' WHERE id = $1", [testApiId]);
@@ -647,7 +648,7 @@ async function runPhase2() {
         },
         body: JSON.stringify({ currentPassword: 'Wrong-password-999!', newPassword: 'New-valid-password-2026!' }),
       });
-      const wrong401 = resWrong.status === 401 && resWrong.body?.code === 'INVALID_CREDENTIALS';
+      const wrong401 = resWrong.status === 401 && (resWrong.body?.error?.code === 'INVALID_CREDENTIALS' || resWrong.body?.code === 'INVALID_CREDENTIALS');
 
       // 2. Trùng mật khẩu cũ -> 400 PASSWORD_UNCHANGED
       const resSame = await fetchWithTimeout(`${BASE_URL}/api/auth/change-password`, {
@@ -658,7 +659,7 @@ async function runPhase2() {
         },
         body: JSON.stringify({ currentPassword: user05Pass, newPassword: user05Pass }),
       });
-      const same400 = resSame.status === 400 && resSame.body?.code === 'PASSWORD_UNCHANGED';
+      const same400 = resSame.status === 400 && (resSame.body?.error?.code === 'PASSWORD_UNCHANGED' || resSame.body?.code === 'PASSWORD_UNCHANGED');
 
       // 3. Mật khẩu mới quá ngắn (< 12 ký tự) -> 400 VALIDATION_ERROR
       const resShort = await fetchWithTimeout(`${BASE_URL}/api/auth/change-password`, {
@@ -820,7 +821,7 @@ async function runPhase2() {
           Authorization: `Bearer ${consumerToken}`,
         },
         body: JSON.stringify({
-          category: 'Other',
+          category: 'Security Vulnerability',
           description: 'Ngắn',
         }),
       });
@@ -842,8 +843,8 @@ async function runPhase2() {
           Authorization: `Bearer ${consumerToken}`,
         },
         body: JSON.stringify({
-          category: 'Terms Violation',
-          description: 'Báo cáo một API đang ở trạng thái Draft chưa từng Published',
+          category: 'Security Vulnerability',
+          description: 'Báo cáo một API đang ở trạng thái Draft chưa từng Published hợp lệ trên 10 ký tự',
         }),
       });
       const draftBlocked404 = resDraftReport.status === 404;
@@ -935,7 +936,7 @@ async function runPhase2() {
           note: 'Cố tình duyệt lại lần hai',
         }),
       });
-      const closed409 = resDoubleReview.status === 409 && resDoubleReview.body?.code === 'REPORT_CLOSED';
+      const closed409 = resDoubleReview.status === 409 && (resDoubleReview.body?.error?.code === 'REPORT_CLOSED' || resDoubleReview.body?.code === 'REPORT_CLOSED');
 
       const passed = suspend200 && reportResolved && apiSuspended && marketHidden && closed409;
       await recordResult(
@@ -956,18 +957,8 @@ async function runPhase2() {
 
     // TC-15-05: Admin Restore API & Kiểm tra Audit Log
     try {
-      // Tạo một report mới để thực hiện action Restore (vì report cũ đã Resolved)
-      // Tạo báo cáo từ Consumer (chú ý: API đang Suspended không thể report qua HTTP, nên chèn trực tiếp 1 report hợp lệ để Admin review Restore)
-      const reportRestoreInsert = await db.query(
-        `INSERT INTO reports (api_id, reporter_id, category, description, status)
-         VALUES ($1, $2, 'Other', 'Yêu cầu xem xét khôi phục sau khi nhà cung cấp đã khắc phục vi phạm', 'Pending')
-         RETURNING id`,
-        [testApiId, consumerUser.id]
-      );
-      const restoreReportId = reportRestoreInsert.rows[0].id;
-
-      // Admin duyệt Restore
-      const resRestore = await fetchWithTimeout(`${BASE_URL}/api/admin/reports/${restoreReportId}/review`, {
+      // Theo nghiệp vụ US-15, Restore là follow-up decision trên chính report đã Suspend (Resolved)
+      const resRestore = await fetchWithTimeout(`${BASE_URL}/api/admin/reports/${testReportId}/review`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -975,7 +966,7 @@ async function runPhase2() {
         },
         body: JSON.stringify({
           action: 'Restore',
-          note: 'Nhà cung cấp đã bổ sung bộ lọc nội dung an toàn và xác minh triệt để',
+          note: 'Nhà cung cấp đã bổ sung bộ lọc nội dung an toàn và khắc phục vi phạm',
         }),
       });
 

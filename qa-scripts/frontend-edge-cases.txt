@@ -1,10 +1,10 @@
-================================================================================
+--------------------------------------------------------------------------------
 HƯỚNG DẪN TEST CASE BIÊN & E2E PLAYWRIGHT CHO FRONTEND (SPRINT 3)
 Người gửi: Trần Hà Thảo Vân (QA Lead - @vuonghathaovan-gif - Issue #15)
 Người nhận: Nguyễn Hải Dương (Frontend Lead - @haiduong - PR #85)
 Phạm vi: US-18 (Playground & Anti-SSRF), US-19 (Sandbox Grant Quota), Edge Cases
 Ngày lập: 28/10/2026
-================================================================================
+--------------------------------------------------------------------------------
 
 Chào Dương,
 Team QA đã hoàn tất đối soát các luồng chính của Frontend Sprint 3 (327 Vitest, 34 E2E Playwright PASS). Để chuẩn bị cho buổi nghiệm thu tổng lực Sprint 3 và ngăn ngừa các lỗi biên (Edge Cases / Race Conditions) tiềm ẩn trên môi trường thực tế, QA gửi bạn tài liệu hướng dẫn và mã mẫu Playwright cho 3 trường hợp biên quan trọng sau đây để phối hợp tích hợp vào `qa-scripts/sprint3-frontend/tests/`:
@@ -161,9 +161,9 @@ test('FE-EDGE-03: Renders input fields for path parameters with hyphen and dot c
 });
 ```
 
-================================================================================
+--------------------------------------------------------------------------------
 KẾT LUẬN & ĐỀ XUẤT:
 - Đội ngũ QA đã cấu hình sẵn các bài test API backend tương ứng (US-22, US-15 Edge Cases) trong `qa-scripts/sprint3-phase2-runner.js`.
 - File hướng dẫn này được lưu trực tiếp tại `qa-scripts/frontend-edge-cases.txt` để Dương và team FE tiện tham khảo và bổ sung vào test suite Playwright.
 - Bất kỳ thắc mắc nào về định dạng response hoặc mock data, hãy ping Vân để phối hợp giải quyết ngay nhé!
-================================================================================
+--------------------------------------------------------------------------------

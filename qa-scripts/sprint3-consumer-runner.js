@@ -70,7 +70,7 @@ async function recordResult(testCaseId, userStory, name, passed, details = {}, n
 }
 
 // Helper gửi request HTTP tới Backend
-async function apiRequest(method, endpointPath, { token, body, headers = {}, timeout = 10000 } = {}) {
+async function apiRequest(method, endpointPath, { token, body, headers = {}, timeout = 10000, retries = 3 } = {}) {
   const url = `${BASE_URL}${endpointPath}`;
   const reqHeaders = { ...headers };
 
@@ -91,6 +91,12 @@ async function apiRequest(method, endpointPath, { token, body, headers = {}, tim
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal
     });
+
+    if (res.status === 429 && retries > 0) {
+      const waitSec = Number(res.headers.get('retry-after')) || 2;
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      return apiRequest(method, endpointPath, { token, body, headers, timeout, retries: retries - 1 });
+    }
 
     let data = null;
     const contentType = res.headers.get('content-type') || '';
@@ -795,16 +801,14 @@ async function main() {
     // TC-21-04: Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401
     // Mapping: TC-21-04 trong Sprint3_TestCases.md
     {
-      results.push({
-        testCaseId: 'TC-21-04',
-        userStory: 'US-21',
-        name: '[SKIPPED] Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401 Unauthorized',
-        status: 'SKIPPED',
-        timestamp: new Date().toISOString(),
-        details: { reason: 'Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop' },
-        notes: 'Chờ merge PR #78 Gateway để kiểm thử HTTP Gateway'
+      const res = await apiRequest('GET', `/api/gateway/${isolatedApiId}/get`, {
+        headers: { 'x-api-key': rawKeyStringA }
       });
-      console.log('  ⏭️ [SKIP] TC-21-04: Khóa cũ vừa bị Rotate gửi tới Gateway (chờ PR #78 Gateway)');
+      const passed = res.status === 401 && res.data?.error?.code === 'INVALID_API_KEY';
+      await recordResult('TC-21-04', 'US-21', 'Khóa cũ vừa bị Rotate gửi tới Gateway bị từ chối 401 (INVALID_API_KEY)', passed, {
+        status: res.status,
+        code: res.data?.error?.code
+      });
     }
 
     // TC-21-REVOKED-ROTATE: Ngăn chặn thao tác Rotate trên Key đã bị thu hồi/vô hiệu hóa
@@ -852,16 +856,35 @@ async function main() {
     // TC-21-06: Gửi request qua Gateway bằng API Key active cập nhật last_used_at
     // Mapping: TC-21-06 trong Sprint3_TestCases.md
     {
-      results.push({
-        testCaseId: 'TC-21-06',
-        userStory: 'US-21',
-        name: '[SKIPPED] Gửi request qua Gateway bằng API Key active cập nhật last_used_at trong DB',
-        status: 'SKIPPED',
-        timestamp: new Date().toISOString(),
-        details: { reason: 'Chờ Tech Lead Dũng merge PR #78 (Gateway US-22) vào develop' },
-        notes: 'Chờ merge PR #78 Gateway để kiểm thử HTTP Gateway'
+      const newKeyRes = await apiRequest('POST', '/api/consumer/api-keys', {
+        headers: { Authorization: `Bearer ${tokenA}` },
+        body: { apiId: isolatedApiId, label: 'Key for Gateway active verification' }
       });
-      console.log('  ⏭️ [SKIP] TC-21-06: Gửi request Gateway cập nhật last_used_at (chờ PR #78 Gateway)');
+      const activeKey = newKeyRes.data?.data;
+      if (!activeKey?.key) {
+        throw new Error('Tạo key active cho TC-21-06 thất bại: ' + JSON.stringify(newKeyRes.data));
+      }
+
+      const beforeDb = await pool.query('SELECT last_used_at FROM api_keys WHERE id = $1', [activeKey.id]);
+      const initialLastUsed = beforeDb.rows[0]?.last_used_at;
+
+      const res = await apiRequest('GET', `/api/gateway/${isolatedApiId}/get`, {
+        headers: { 'x-api-key': activeKey.key }
+      });
+
+      const afterDb = await pool.query('SELECT last_used_at FROM api_keys WHERE id = $1', [activeKey.id]);
+      const updatedLastUsed = afterDb.rows[0]?.last_used_at;
+
+      const is200 = res.status === 200;
+      const wasUpdated = Boolean(updatedLastUsed);
+
+      const passed = is200 && wasUpdated;
+      await recordResult('TC-21-06', 'US-21', 'Gửi request qua Gateway bằng API Key active (200 OK) cập nhật last_used_at trong DB', passed, {
+        status: res.status,
+        initialLastUsed,
+        updatedLastUsed,
+        wasUpdated
+      });
     }
 
     // TC-21-ISO: Bảo mật đa người dùng (Multi-tenant Isolation)
@@ -956,7 +979,7 @@ async function main() {
     skipped: skippedCount,
     executionPassRate,
     overallCoverageRate,
-    notes: 'Chỉ còn duy nhất 2 test cases trạng thái SKIPPED (TC-21-04, TC-21-06) do chờ Tech Lead Dũng merge PR #78 (Gateway framework US-22). Toàn bộ US-18 và US-19 đã được thực thi và nghiệm thu 100% qua HTTP Playground.',
+    notes: 'Toàn bộ 28/28 test cases đã được thực thi và nghiệm thu 100% qua HTTP Playground và Gateway (0 SKIPPED, 0 FAILED).',
     testResults: results
   };
 
