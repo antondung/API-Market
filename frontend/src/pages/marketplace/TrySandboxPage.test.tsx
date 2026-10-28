@@ -6,6 +6,17 @@ import { TrySandboxPage } from './TrySandboxPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
 import * as consumerApi from '../../services/consumerApi';
 import type { MarketplaceApiDetail } from '../../services/marketplaceTypes';
+import { ApiError } from '../../services/authApi';
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: any) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 let mockCurrentUser: { id: string; email: string; role: string } | null = {
   id: 'user-consumer-1',
@@ -20,8 +31,10 @@ vi.mock('../../context/AuthContext', () => ({
   }),
 }));
 
+const mockT = (key: string) => key;
+
 vi.mock('../../i18n', () => ({
-  useLanguage: () => ({ t: (key: string) => key }),
+  useLanguage: () => ({ t: mockT }),
 }));
 
 const getFutureExpiry = (offsetMs = 86400000) => new Date(Date.now() + offsetMs).toISOString();
@@ -470,5 +483,470 @@ describe('TrySandboxPage Security, Sandbox Grant Lifecycle & Quota UI', () => {
       expect(screen.getByText('Expired')).toBeDefined();
       expect(screen.getByText('Sandbox Grant đã hết hạn')).toBeDefined();
     }, { timeout: 2000 });
+  });
+
+  describe('Deferred Promise Regression Tests (Race Conditions & Generation Identity)', () => {
+    const mockApiDetailB: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      id: 'api-sandbox-2',
+      name: 'Second API Sandbox',
+    };
+
+    const renderWithNavigator = (initialApiId = 'api-sandbox-1') => {
+      let navigateFn: any;
+      const TestNavigator = () => {
+        navigateFn = useNavigate();
+        return null;
+      };
+
+      const result = render(
+        <MemoryRouter initialEntries={[`/api/${initialApiId}/try-sandbox`]}>
+          <TestNavigator />
+          <Routes>
+            <Route path="/api/:id/try-sandbox" element={<TrySandboxPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      return { ...result, navigate: (path: string) => act(() => { navigateFn(path); }) };
+    };
+
+    it('1. Claim A pending -> đổi B -> claim B pending -> A success -> B vẫn loading', async () => {
+      const deferredA = createDeferred<consumerApi.SandboxGrant>();
+      const deferredB = createDeferred<consumerApi.SandboxGrant>();
+
+      const claimSpy = vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation((apiId) => {
+        if (apiId === 'api-sandbox-1') return deferredA.promise;
+        if (apiId === 'api-sandbox-2') return deferredB.promise;
+        return Promise.reject(new Error(`Unexpected apiId ${apiId}`));
+      });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+        if (id === 'api-sandbox-2') return mockApiDetailB;
+        return mockApiDetail;
+      });
+
+      const { navigate } = renderWithNavigator('api-sandbox-1');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // Claim A pending
+      const claimBtnA = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+      fireEvent.click(claimBtnA);
+      expect(claimSpy).toHaveBeenCalledWith('api-sandbox-1');
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // Switch to B
+      navigate('/api/api-sandbox-2/try-sandbox');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Second API Sandbox').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // Claim B pending
+      const claimBtnB = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+      fireEvent.click(claimBtnB);
+      expect(claimSpy).toHaveBeenCalledWith('api-sandbox-2');
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // A success
+      await act(async () => {
+        deferredA.resolve({
+          id: 'grant-a',
+          apiId: 'api-sandbox-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      // B vẫn loading
+      const claimingBtnB = screen.getByRole('button', { name: /Đang kích hoạt.../i });
+      expect(claimingBtnB).toBeDefined();
+      expect((claimingBtnB as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByText(/Active Grant/i)).toBeNull();
+
+      // B resolves cleanly
+      await act(async () => {
+        deferredB.resolve({
+          id: 'grant-b',
+          apiId: 'api-sandbox-2',
+          maxRequests: 10,
+          usedRequests: 2,
+          remainingRequests: 8,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Active Grant/i)).toBeDefined();
+        expect(screen.getByText('8')).toBeDefined();
+      });
+    });
+
+    it('2. Claim A pending -> đổi B -> claim B pending -> A failure -> B vẫn loading, không nhận error A', async () => {
+      const deferredA = createDeferred<consumerApi.SandboxGrant>();
+      const deferredB = createDeferred<consumerApi.SandboxGrant>();
+
+      vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation((apiId) => {
+        if (apiId === 'api-sandbox-1') return deferredA.promise;
+        if (apiId === 'api-sandbox-2') return deferredB.promise;
+        return Promise.reject(new Error(`Unexpected apiId ${apiId}`));
+      });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+        if (id === 'api-sandbox-2') return mockApiDetailB;
+        return mockApiDetail;
+      });
+
+      const { navigate } = renderWithNavigator('api-sandbox-1');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // Claim A pending
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // Switch to B
+      navigate('/api/api-sandbox-2/try-sandbox');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Second API Sandbox').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // Claim B pending
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // A fails with 403 ApiError
+      await act(async () => {
+        deferredA.reject(new ApiError(403, 'FORBIDDEN', 'Chỉ tài khoản Consumer đang hoạt động mới có quyền yêu cầu Sandbox grant.'));
+      });
+
+      // B vẫn loading, không nhận error A
+      const claimingBtnB = screen.getByRole('button', { name: /Đang kích hoạt.../i });
+      expect(claimingBtnB).toBeDefined();
+      expect((claimingBtnB as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByText('Chỉ tài khoản Consumer đang hoạt động mới có quyền yêu cầu Sandbox grant.')).toBeNull();
+
+      // B resolves cleanly
+      await act(async () => {
+        deferredB.resolve({
+          id: 'grant-b-ok',
+          apiId: 'api-sandbox-2',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Active Grant/i)).toBeDefined();
+      });
+    });
+
+    it('3. B success -> A success muộn -> grant B giữ nguyên', async () => {
+      const deferredA = createDeferred<consumerApi.SandboxGrant>();
+      const deferredB = createDeferred<consumerApi.SandboxGrant>();
+
+      vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation((apiId) => {
+        if (apiId === 'api-sandbox-1') return deferredA.promise;
+        if (apiId === 'api-sandbox-2') return deferredB.promise;
+        return Promise.reject(new Error(`Unexpected apiId ${apiId}`));
+      });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+        if (id === 'api-sandbox-2') return mockApiDetailB;
+        return mockApiDetail;
+      });
+
+      const { navigate } = renderWithNavigator('api-sandbox-1');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // Claim A pending
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+
+      // Switch to B
+      navigate('/api/api-sandbox-2/try-sandbox');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Second API Sandbox').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // Claim B pending
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+
+      // B succeeds first with remaining=4, max=5
+      await act(async () => {
+        deferredB.resolve({
+          id: 'grant-b-preserved',
+          apiId: 'api-sandbox-2',
+          maxRequests: 5,
+          usedRequests: 1,
+          remainingRequests: 4,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Active Grant/i)).toBeDefined();
+        expect(screen.getByText('4')).toBeDefined();
+      });
+
+      // A succeeds muộn with remaining=8, max=10
+      await act(async () => {
+        deferredA.resolve({
+          id: 'grant-a-late',
+          apiId: 'api-sandbox-1',
+          maxRequests: 10,
+          usedRequests: 2,
+          remainingRequests: 8,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      // Grant B giữ nguyên
+      expect(screen.getByText(/Active Grant/i)).toBeDefined();
+      expect(screen.getByText('4')).toBeDefined();
+      expect(screen.queryByText('8')).toBeNull();
+    });
+
+    it('4. A -> B -> A, claim cũ không được áp dụng lên request mới dù API ID và user ID trùng', async () => {
+      const deferredA1 = createDeferred<consumerApi.SandboxGrant>();
+      const deferredA2 = createDeferred<consumerApi.SandboxGrant>();
+      let aCallCount = 0;
+
+      vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation((apiId) => {
+        if (apiId === 'api-sandbox-1') {
+          aCallCount++;
+          return aCallCount === 1 ? deferredA1.promise : deferredA2.promise;
+        }
+        return Promise.reject(new Error(`Unexpected apiId ${apiId}`));
+      });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id) => {
+        if (id === 'api-sandbox-2') return mockApiDetailB;
+        return mockApiDetail;
+      });
+
+      const { navigate } = renderWithNavigator('api-sandbox-1');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // 1. Claim A1 pending on API 1
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+      expect(aCallCount).toBe(1);
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // 2. Switch to B
+      navigate('/api/api-sandbox-2/try-sandbox');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Second API Sandbox').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // 3. Switch back to A
+      navigate('/api/api-sandbox-1/try-sandbox');
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+      await screen.findByText('Chưa kích hoạt Sandbox Grant');
+
+      // 4. Claim A2 pending on API 1 (same API ID, same user ID)
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+      expect(aCallCount).toBe(2);
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // 5. Late A1 resolves with stale remaining=8, max=10
+      await act(async () => {
+        deferredA1.resolve({
+          id: 'grant-a1-stale',
+          apiId: 'api-sandbox-1',
+          maxRequests: 10,
+          usedRequests: 2,
+          remainingRequests: 8,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      // Old claim A1 must NOT be applied to request A2
+      expect(screen.queryByText(/Active Grant/i)).toBeNull();
+      expect(screen.queryByText('8')).toBeNull();
+      const pendingBtn = screen.getByRole('button', { name: /Đang kích hoạt.../i });
+      expect(pendingBtn).toBeDefined();
+      expect((pendingBtn as HTMLButtonElement).disabled).toBe(true);
+
+      // 6. Fresh A2 resolves with remaining=4, max=5
+      await act(async () => {
+        deferredA2.resolve({
+          id: 'grant-a2-fresh',
+          apiId: 'api-sandbox-1',
+          maxRequests: 5,
+          usedRequests: 1,
+          remainingRequests: 4,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Active Grant/i)).toBeDefined();
+        expect(screen.getByText('4')).toBeDefined();
+      });
+    });
+
+    it('5. Logout/account switch khi claim pending -> stale response không được ghi đè', async () => {
+      // 5a. Logout invalidation test
+      const deferred1 = createDeferred<consumerApi.SandboxGrant>();
+      vi.spyOn(consumerApi, 'claimSandboxGrant').mockReturnValue(deferred1.promise);
+
+      const { unmount } = renderPage();
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // Session invalidated (logout)
+      act(() => {
+        window.dispatchEvent(new Event('apihub:session-invalidated'));
+      });
+
+      // Late response arrives
+      await act(async () => {
+        deferred1.resolve({
+          id: 'grant-stale-logout',
+          apiId: 'api-sandbox-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      // Stale response must NOT be written to state
+      expect(screen.queryByText(/Active Grant/i)).toBeNull();
+      expect(screen.getByText('Chưa kích hoạt Sandbox Grant')).toBeDefined();
+
+      unmount();
+
+      // 5b. Account switch test
+      const deferred2 = createDeferred<consumerApi.SandboxGrant>();
+      vi.spyOn(consumerApi, 'claimSandboxGrant').mockReturnValue(deferred2.promise);
+
+      const rerenderResult = renderPage();
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i }));
+      expect(screen.getByRole('button', { name: /Đang kích hoạt.../i })).toBeDefined();
+
+      // Switch active user
+      mockCurrentUser = {
+        id: 'user-consumer-2',
+        email: 'consumer2@apihub.vn',
+        role: 'Consumer',
+      };
+      rerenderResult.rerender(
+        <MemoryRouter initialEntries={['/api/api-sandbox-1/try-sandbox']}>
+          <Routes>
+            <Route path="/api/:id/try-sandbox" element={<TrySandboxPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      // Late response for user-consumer-1 arrives
+      await act(async () => {
+        deferred2.resolve({
+          id: 'grant-user-1-stale',
+          apiId: 'api-sandbox-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      expect(screen.queryByText(/Active Grant/i)).toBeNull();
+    });
+
+    it('6. Double-click không tạo hai POST claims', async () => {
+      const deferred = createDeferred<consumerApi.SandboxGrant>();
+      const claimSpy = vi.spyOn(consumerApi, 'claimSandboxGrant').mockReturnValue(deferred.promise);
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+      });
+
+      const claimBtn = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+
+      // Rapid double click
+      fireEvent.click(claimBtn);
+      fireEvent.click(claimBtn);
+
+      // Exactly 1 dispatch
+      expect(claimSpy).toHaveBeenCalledTimes(1);
+
+      // Resolve cleanly
+      await act(async () => {
+        deferred.resolve({
+          id: 'grant-double-click-ok',
+          apiId: 'api-sandbox-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Active Grant/i)).toBeDefined();
+      });
+    });
   });
 });

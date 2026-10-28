@@ -48,12 +48,13 @@ export const TrySandboxPage: React.FC = () => {
   activeUserIdRef.current = currentUser?.id ?? null;
   const currentApiIdRef = useRef<string | undefined>(id);
   currentApiIdRef.current = id;
-  const activeClaimSeqRef = useRef<number>(0);
+  const claimGenerationRef = useRef<number>(0);
+  const activeRequestIdRef = useRef<number | null>(null);
   const grantFetchControllerRef = useRef<AbortController | null>(null);
 
   // Security lifecycle: Wipe sensitive credentials on unmount, API switch, or logout
   useEffect(() => {
-    activeClaimSeqRef.current = 0;
+    activeRequestIdRef.current = null;
     setIsGrantClaiming(false);
 
     const handleLogout = () => {
@@ -62,7 +63,7 @@ export const TrySandboxPage: React.FC = () => {
       setIncludeRealKeyInSnippet(false);
       setGrant(null);
       setGrantError(null);
-      activeClaimSeqRef.current = 0;
+      activeRequestIdRef.current = null;
       setIsGrantClaiming(false);
     };
 
@@ -71,7 +72,7 @@ export const TrySandboxPage: React.FC = () => {
       setCustomApiKey('');
       setShowApiKey(false);
       setIncludeRealKeyInSnippet(false);
-      activeClaimSeqRef.current = 0;
+      activeRequestIdRef.current = null;
       setIsGrantClaiming(false);
       window.removeEventListener('apihub:session-invalidated', handleLogout);
     };
@@ -161,7 +162,7 @@ export const TrySandboxPage: React.FC = () => {
 
   // Explicit claim handler (POST /api/consumer/apis/:id/sandbox) with sequence & identity guards
   const handleClaimGrant = async () => {
-    if (!id || isGrantClaiming || activeClaimSeqRef.current !== 0) return;
+    if (!id || isGrantClaiming || activeRequestIdRef.current !== null) return;
     if (!isAuthenticated) {
       navigate('/login', { state: { from: `/api/${id}/try-sandbox` } });
       return;
@@ -171,30 +172,32 @@ export const TrySandboxPage: React.FC = () => {
       return;
     }
 
+    const requestId = ++claimGenerationRef.current;
+    activeRequestIdRef.current = requestId;
     const requestingApiId = id;
     const requestingUserId = currentUser?.id;
     if (grantFetchControllerRef.current) {
       grantFetchControllerRef.current.abort();
       grantFetchControllerRef.current = null;
+      setIsGrantLoading(false);
     }
-    const claimSeq = ++activeClaimSeqRef.current;
+    setIsGrantClaiming(true);
+    setGrantError(null);
     try {
-      setIsGrantClaiming(true);
-      setGrantError(null);
       const data = await claimSandboxGrant(requestingApiId);
-      if (
-        activeClaimSeqRef.current === claimSeq &&
+      const isCurrent =
+        activeRequestIdRef.current === requestId &&
         currentApiIdRef.current === requestingApiId &&
-        activeUserIdRef.current === requestingUserId
-      ) {
+        activeUserIdRef.current === requestingUserId;
+      if (isCurrent) {
         setGrant(data);
       }
     } catch (err: any) {
-      if (
-        activeClaimSeqRef.current === claimSeq &&
+      const isCurrent =
+        activeRequestIdRef.current === requestId &&
         currentApiIdRef.current === requestingApiId &&
-        activeUserIdRef.current === requestingUserId
-      ) {
+        activeUserIdRef.current === requestingUserId;
+      if (isCurrent) {
         if (err instanceof ApiError) {
           if (err.status === 403) {
             setGrantError(t('Chỉ tài khoản Consumer đang hoạt động mới có quyền yêu cầu Sandbox grant.'));
@@ -210,9 +213,14 @@ export const TrySandboxPage: React.FC = () => {
         }
       }
     } finally {
-      if (activeClaimSeqRef.current === claimSeq) {
-        activeClaimSeqRef.current = 0;
-        setIsGrantClaiming(false);
+      if (activeRequestIdRef.current === requestId) {
+        activeRequestIdRef.current = null;
+        if (
+          currentApiIdRef.current === requestingApiId &&
+          activeUserIdRef.current === requestingUserId
+        ) {
+          setIsGrantClaiming(false);
+        }
       }
     }
   };
