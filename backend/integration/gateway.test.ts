@@ -218,3 +218,16 @@ test('does not double-decode an already-decoded path segment', async () => {
     if (res.status === 200) assert.equal(seen.url, '/weather/100%25');
   } finally { await f.close(); server.close(); }
 });
+
+test('rejects a malformed or out-of-range API id instead of failing in PostgreSQL', async () => {
+  const { server, port: upPort, hits } = await upstream();
+  const f = await fixture(upPort);
+  try {
+    // 'abc' would reach an INTEGER comparison; 2147483648 overflows it; the long string overflows BIGINT.
+    for (const badId of ['abc', '2147483648', '9999999999999999999', '0', '-1']) {
+      const res = await fetch(url(f.port, `/api/gateway/${badId}/weather/Hanoi`), { headers: { 'x-api-key': f.key } });
+      assert.equal(res.status, 400, `id ${badId} must be a 400, got ${res.status}`);
+    }
+    assert.equal(hits(), 0, 'an invalid id must never reach the upstream');
+  } finally { await f.close(); server.close(); }
+});

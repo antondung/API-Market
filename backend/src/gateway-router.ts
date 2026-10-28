@@ -1,5 +1,6 @@
 import express, { type RequestHandler } from 'express';
 import { GatewayService } from './gateway-service.js';
+import { marketplaceId } from './marketplace-service.js';
 
 const first = (value: unknown): string => (Array.isArray(value) ? String(value[0] ?? '') : String(value ?? ''));
 
@@ -30,7 +31,10 @@ export function gatewayRouter(service: GatewayService) {
     try {
       const wildcard = req.params.rest;
       const rest = Array.isArray(wildcard) ? wildcard.join('/') : String(wildcard ?? '');
-      const result = await service.forward(first(req.header('x-api-key')), first(req.params.apiId), {
+      // The id reaches an INTEGER column inside the key authenticator, so it is validated here
+      // rather than letting PostgreSQL reject it as a 500.
+      const apiId = marketplaceId.parse(first(req.params.apiId));
+      const result = await service.forward(first(req.header('x-api-key')), apiId, {
         method: req.method,
         path: rest ? `/${rest}` : '/',
         query: queryMap(req.query as Record<string, unknown>),
