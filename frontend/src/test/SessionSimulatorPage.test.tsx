@@ -49,6 +49,7 @@ describe('SessionSimulatorPage isolation tests', () => {
       registerWithBackend: vi.fn(),
       logout: vi.fn(),
       verifyRoleAccess: vi.fn(),
+      refreshCurrentUser: vi.fn().mockResolvedValue(undefined),
     });
   });
 
@@ -66,6 +67,7 @@ describe('SessionSimulatorPage isolation tests', () => {
       registerWithBackend: vi.fn(),
       logout: vi.fn(),
       verifyRoleAccess: vi.fn(),
+      refreshCurrentUser: vi.fn().mockResolvedValue(undefined),
     });
 
     render(<SessionSimulatorPage />);

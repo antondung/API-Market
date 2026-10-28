@@ -30,7 +30,7 @@ describe('ReportsModerationPage - Admin moderation against the real API', () => 
 
   it('loads the moderation queue from GET /api/admin/reports', async () => {
     const listSpy = vi.spyOn(reportApi, 'listReportsForAdmin').mockResolvedValue({
-      items: [pendingReport], total: 1, page: 1, pageSize: 50,
+      items: [pendingReport], total: 1, page: 1, pageSize: 20,
     });
 
     render(<ReportsModerationPage />);
@@ -38,12 +38,12 @@ describe('ReportsModerationPage - Admin moderation against the real API', () => 
     expect(await screen.findByText('Suspicious Endpoint API')).toBeDefined();
     expect(screen.getByText(/High 5xx error rate/i)).toBeDefined();
     // The queue must come from the backend, not from local storage.
-    expect(listSpy).toHaveBeenCalledWith(1, 50, undefined);
+    expect(listSpy).toHaveBeenCalledWith(1, 20, undefined);
   });
 
   it('shows an empty state when the backend returns no reports', async () => {
     vi.spyOn(reportApi, 'listReportsForAdmin').mockResolvedValue({
-      items: [], total: 0, page: 1, pageSize: 50,
+      items: [], total: 0, page: 1, pageSize: 20,
     });
 
     render(<ReportsModerationPage />);
@@ -54,13 +54,37 @@ describe('ReportsModerationPage - Admin moderation against the real API', () => 
   it('offers Suspend for a Published API and Restore for a Suspended one', async () => {
     vi.spyOn(reportApi, 'listReportsForAdmin').mockResolvedValue({
       items: [pendingReport, { ...pendingReport, id: '43', status: 'Resolved', apiStatus: 'Suspended', actionTaken: 'Suspend: confirmed' }],
-      total: 2, page: 1, pageSize: 50,
+      total: 2, page: 1, pageSize: 20,
     });
 
     render(<ReportsModerationPage />);
 
     expect(await screen.findByRole('button', { name: /Suspend API & Resolve/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /Khôi phục API/i })).toBeDefined();
+  });
+
+  it('paginates when the backend reports more than one page', async () => {
+    const listSpy = vi.spyOn(reportApi, 'listReportsForAdmin').mockResolvedValue({
+      items: [pendingReport], total: 51, page: 1, pageSize: 20,
+    });
+
+    render(<ReportsModerationPage />);
+
+    expect(await screen.findByText('Trang 1 / 3')).toBeDefined();
+    expect(listSpy).toHaveBeenCalledWith(1, 20, undefined);
+  });
+
+  it('does not offer Suspend on a report that is already resolved', async () => {
+    vi.spyOn(reportApi, 'listReportsForAdmin').mockResolvedValue({
+      items: [{ ...pendingReport, id: '50', status: 'Resolved', apiStatus: 'Published', actionTaken: 'Dismiss: no evidence' }],
+      total: 1, page: 1, pageSize: 20,
+    });
+
+    render(<ReportsModerationPage />);
+
+    await screen.findByText('Suspicious Endpoint API');
+    // A closed report must not expose a new decision the backend would reject with 409.
+    expect(screen.queryByRole('button', { name: /Suspend API & Resolve/i })).toBeNull();
   });
 
   it('surfaces a backend failure instead of pretending the queue is empty', async () => {

@@ -1,0 +1,26 @@
+fix(frontend): sua 3 loi review PR #89 — typecheck, phan trang, trang thai report
+
+Theo review cua Tung Duong tren PR #89.
+
+1. Typecheck that bai: refreshCurrentUser duoc goi va truyen vao provider
+   nhung thieu trong AuthContextType. Them vao interface, cap nhat 6 mock
+   AuthContext o cac test khac (ProtectedRoute, SessionSimulator,
+   UserManagement, Checkout). tsc -b gio exit 0.
+
+2. Queue chi tai 50 report dau, khong phan trang: them state page va
+   pageSize=20, goi listReportsForAdmin(page, pageSize, status). Doi tab
+   thi reset ve trang 1. Them nut Truoc/Sau voi tong so trang.
+
+3. Nut moderation khong doi chieu trang thai report: report da Resolved
+   van hien Suspend, bam vao bi backend tra 409 REPORT_CLOSED. Them dieu
+   kien status !== Resolved && status !== Dismissed truoc khi hien
+   Suspend/Dismiss; Restore chi hien khi apiStatus la Suspended.
+
+Bo msg.txt khoi commit (lot vao PR truoc do).
+
+Test: them 2 case (phan trang 51 report, khong hien Suspend tren report
+da Resolved). Frontend 341/341 PASS, tsc -b 0 loi, build dat.
+
+Refs #89, #11
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

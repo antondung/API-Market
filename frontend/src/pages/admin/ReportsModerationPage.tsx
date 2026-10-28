@@ -19,19 +19,22 @@ export const ReportsModerationPage: React.FC = () => {
   const [reports, setReports] = useState<AdminReport[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState<ReportStatus | 'all'>('all');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const page = await listReportsForAdmin(1, 50, statusFilter === 'all' ? undefined : statusFilter);
+      const result = await listReportsForAdmin(page, pageSize, statusFilter === 'all' ? undefined : statusFilter);
       if (signal?.aborted) return;
-      setReports(page.items);
-      setTotal(page.total);
+      setReports(result.items);
+      setTotal(result.total);
     } catch (err) {
       if (signal?.aborted) return;
       // A failed read must be visible: an empty queue would wrongly suggest there is nothing
@@ -42,7 +45,7 @@ export const ReportsModerationPage: React.FC = () => {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, page]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -88,7 +91,7 @@ export const ReportsModerationPage: React.FC = () => {
             key={tab.value}
             size="sm"
             variant={statusFilter === tab.value ? 'primary' : 'outline'}
-            onClick={() => setStatusFilter(tab.value)}
+            onClick={() => { setStatusFilter(tab.value); setPage(1); }}
           >
             {tab.label}
           </Button>
@@ -145,7 +148,7 @@ export const ReportsModerationPage: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                {rep.apiStatus === 'Published' && (
+                {rep.status !== 'Resolved' && rep.status !== 'Dismissed' && rep.apiStatus === 'Published' && (
                   <Button size="sm" variant="danger" icon="block" disabled={busyId === rep.id}
                     onClick={() => void decide(rep, 'Suspend')}>
                     {busyId === rep.id ? 'Đang xử lý...' : t('Suspend API & Resolve')}
@@ -168,6 +171,18 @@ export const ReportsModerationPage: React.FC = () => {
           ))
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 pt-4">
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
+            Trước
+          </Button>
+          <span className="text-body-sm text-on-surface-variant">Trang {page} / {totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+            Sau
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
