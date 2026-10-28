@@ -20,6 +20,8 @@ import { adminReviewPaths } from './admin-review-contract.js';
 import type { MarketplaceService } from './marketplace-service.js';
 import { marketplaceRouter } from './marketplace-router.js';
 import { marketplacePaths } from './marketplace-contract.js';
+import type { GatewayService } from './gateway-service.js';
+import { gatewayRouter } from './gateway-router.js';
 import { reportPaths } from './report-contract.js';
 import { ApiKeyService, SandboxService } from './consumer-service.js';
 import { consumerRouter } from './consumer-router.js';
@@ -34,6 +36,14 @@ const password = z.string().min(12).max(128);
 const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Provider']), name: z.string().trim().min(1).max(100).optional() }).strict();
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
+// US-05: profile and password changes. The password policy matches registration.
+// PostgreSQL TEXT rejects U+0000, so a NUL must be a 400 rather than a 500 from the driver.
+const noNul = (value: string) => !value.includes('\u0000');
+const updateProfileSchema = z.object({ name: z.string().trim().min(1).max(100).refine(noNul, 'Must not contain NUL') }).strict();
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: password,
+}).strict();
 // Truy vấn danh sách người dùng cho Admin (US-04).
 const listUsersSchema = z.object({
   search: z.string().trim().max(254).optional(),
@@ -47,7 +57,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; reports?: ReportService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -81,6 +91,13 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
   }));
+  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
+  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
+  // an empty payload.
+  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
+  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
+  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
+  // an empty payload.
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   const baseDocument = options.provider ? {
@@ -143,6 +160,17 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     res.status(204).end();
   });
   app.get('/api/auth/me', requireAuth, (_req, res) => { res.json({ data: res.locals.identity.user }); });
+
+  // US-05: the signed-in user edits their own profile and password.
+  app.patch('/api/auth/me', requireAuth, async (req, res) => {
+    const input = updateProfileSchema.parse(req.body);
+    res.json({ data: await auth.updateProfile(res.locals.identity.user.id, input.name) });
+  });
+  app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+    const input = changePasswordSchema.parse(req.body);
+    res.json({ data: await auth.changePassword(
+      res.locals.identity.user.id, input.currentPassword, input.newPassword, res.locals.identity.sessionId) });
+  });
 
     // =========================================
     // Admin quản lý người dùng (US-04)
