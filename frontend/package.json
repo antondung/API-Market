@@ -12,8 +12,10 @@
     "test:backend": "node scripts/test-sprint1-integration.mjs"
   },
   "dependencies": {
+    "@animate-ui/react": "^2.2.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
+    "motion": "^14.6.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.3.0",

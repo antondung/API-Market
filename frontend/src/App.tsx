@@ -10,6 +10,7 @@ import { PublicNavbar } from './components/layout/PublicNavbar';
 import { PublicFooter } from './components/layout/PublicFooter';
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { MotionProvider } from './components/motion/MotionProvider';
 
 // Lazy-loaded Marketplace & Discovery Pages
 const MarketplacePage = React.lazy(() => import('./pages/marketplace/MarketplacePage').then(m => ({ default: m.MarketplacePage })));
@@ -93,8 +94,9 @@ export function App() {
 
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <ScopedAppProvider>
+      <MotionProvider>
+        <AuthProvider>
+          <ScopedAppProvider>
           <React.Suspense fallback={<PageLoadingFallback />}>
             <Routes>
             {/* PUBLIC & MARKETPLACE ROUTES */}
@@ -191,6 +193,7 @@ export function App() {
         </React.Suspense>
       </ScopedAppProvider>
       </AuthProvider>
+      </MotionProvider>
     </BrowserRouter>
   );
 }
