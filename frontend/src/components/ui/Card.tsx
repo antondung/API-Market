@@ -17,9 +17,21 @@ export const Card: React.FC<CardProps> = ({
   hoverEffect = false,
   onClick
 }) => {
+  const handleKeyDown = onClick
+    ? (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }
+    : undefined;
+
   return (
     <div
       onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={handleKeyDown}
       className={`bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 transition-all duration-200 ${
         hoverEffect ? 'hover:shadow-md hover:border-outline-variant/70 hover:-translate-y-0.5 cursor-pointer' : ''
       } ${className}`}
