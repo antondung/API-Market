@@ -47,7 +47,7 @@ export class PostgresAuthStore implements AuthStore {
       await client.query('SELECT pg_advisory_xact_lock(913002)');
       await client.query('CREATE TABLE IF NOT EXISTS backend_schema_migrations (name TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)');
       const files = ['001_create_auth_schema.sql', ...(demoSeed ? ['002_seed_auth_data.sql'] : []),
-        ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : []), '005_provider_domain_privacy.sql', '006_fix_rejection_reason_null.sql', '006_create_marketplace_gateway_schema.sql', '007_provider_documentation_state.sql'] : [])];
+        ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : []), '005_provider_domain_privacy.sql', '006_fix_rejection_reason_null.sql', '006_create_marketplace_gateway_schema.sql', '007_provider_documentation_state.sql', '008_create_reports_moderation.sql'] : [])];
       for (const name of files) {
         const source = readFileSync(resolve(migrationDir, name), 'utf8');
         const checksum = createHash('sha256').update(source.replace(/\r\n/g, '\n')).digest('hex');
@@ -148,6 +148,36 @@ export class PostgresAuthStore implements AuthStore {
       const result = await this.pool.query(
         'UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND revoked_at IS NULL', [userId]);
       return result.rowCount ?? 0;
+    }
+    async updateProfile(id: string, name: string) {
+      const result = await this.pool.query('UPDATE users SET name=$1 WHERE id=$2 RETURNING id,email,name,is_active', [name, id]);
+      if (!result.rows[0]) return undefined;
+      const user = await this.findUserById(id);
+      return user;
+    }
+    async updatePasswordHash(id: string, passwordHash: string) {
+      const result = await this.pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [passwordHash, id]);
+      return (result.rowCount ?? 0) > 0;
+    }
+    async revokeOtherSessions(userId: string, keepSessionId: string) {
+      const result = await this.pool.query(
+        'UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND id::text<>$2 AND revoked_at IS NULL',
+        [userId, keepSessionId]);
+      return result.rowCount ?? 0;
+    }
+    async changePasswordAtomic(userId: string, passwordHash: string, keepSessionId: string) {
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        const updated = await client.query('UPDATE users SET password_hash=$1 WHERE id=$2', [passwordHash, userId]);
+        if (!updated.rowCount) { await client.query('ROLLBACK'); return { updated: false, revoked: 0 }; }
+        const revoked = await client.query(
+          'UPDATE refresh_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND id::text<>$2 AND revoked_at IS NULL',
+          [userId, keepSessionId]);
+        await client.query('COMMIT');
+        return { updated: true, revoked: revoked.rowCount ?? 0 };
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+      finally { client.release(); }
     }
     async close() { await this.pool.end(); }
   }

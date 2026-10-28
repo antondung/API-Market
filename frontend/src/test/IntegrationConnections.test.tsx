@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import * as Auth from '../context/AuthContext';
 import * as AppContext from '../context/AppContext';
 import * as providerApi from '../services/providerApi';
+import * as marketplaceApi from '../services/marketplaceApi';
+import { ApiError } from '../services/authApi';
 import { ProviderDashboardPage } from '../pages/provider/ProviderDashboardPage';
 import { MarketplacePage } from '../pages/marketplace/MarketplacePage';
 import { ApiDetailPage } from '../pages/marketplace/ApiDetailPage';
@@ -16,6 +18,7 @@ import { PricingPage } from '../pages/marketplace/PricingPage';
 import { CompareApisPage } from '../pages/marketplace/CompareApisPage';
 import type { User, ApiItem } from '../types';
 import type { ProviderApi, ProviderVerification } from '../services/providerTypes';
+import type { MarketplaceApiDetail } from '../services/marketplaceTypes';
 
 vi.mock('../i18n', () => ({ useLanguage: () => ({ t: (value: string) => value }) }));
 const user = { id: '1', name: 'Provider', role: 'API_PROVIDER' } as User;
@@ -30,11 +33,32 @@ const cachedApi: ApiItem = { id: '1', name: 'Published cached API', slug: 'local
   plans: [{ id: 'p1', apiId: '1', name: 'Free', tier: 'Free', priceMonthly: 0, monthlyQuota: 100, rateLimitPerSec: 10, features: [] }],
   legalDeclarationCompleted: true };
 
+const marketplaceDetailApi: MarketplaceApiDetail = {
+  id: '1',
+  name: 'Published cached API',
+  description: 'Local record',
+  providerId: '900',
+  providerName: 'Provider',
+  providerStatus: 'Verified',
+  category: 'Weather & Geo',
+  tags: [],
+  hasFreePlan: true,
+  hasPaidPlan: false,
+  publishedAt: '2026-10-20T00:00:00.000Z',
+  versions: [{ id: 'v1', version: '1.0', changelog: '' }],
+  endpoints: [{ id: 'e1', versionId: 'v1', path: '/weather', method: 'GET', description: 'Weather', parameters: [], requestSchema: null, responseExample: null }],
+  documentation: [],
+  plans: [{ id: 'p1', name: 'Free', priceMonthly: 0, currency: 'VND', quota: 100, rateLimit: 10 }],
+  legal: null,
+};
+
 beforeEach(() => {
   vi.restoreAllMocks(); currentUser = user;
   vi.spyOn(Auth, 'useAuth').mockImplementation(() => ({ currentUser, user: currentUser, isAuthenticated: Boolean(currentUser), sessionReady: true }) as any);
   vi.spyOn(providerApi, 'getProviderVerification').mockResolvedValue(verification);
   vi.spyOn(providerApi, 'listProviderApis').mockResolvedValue({ items: [backendApi], total: 17, page: 1, pageSize: 5 });
+  vi.spyOn(marketplaceApi, 'listMarketplaceApis').mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+  vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Not found'));
 });
 const Location = () => <output data-testid="location">{useLocation().pathname}</output>;
 const view = (path: string, pattern: string, page: React.ReactNode) => <MemoryRouter initialEntries={[path]}>
@@ -108,27 +132,32 @@ it('Late replies from the previous account cannot overwrite the current dashboar
 it.each([
   ['/checkout/1/p1', '/checkout/:apiId/:planId', <CheckoutPage key="checkout" />],
   ['/api/1/playground', '/api/:id/playground', <ApiPlaygroundPage key="playground" />],
-])('Clean browser route %s renders unavailable instead of crashing', (path, pattern, page) => {
+])('Clean browser route %s renders unavailable instead of crashing', async (path, pattern, page) => {
   render(view(path, pattern, page));
-  expect(screen.getByText('API hoặc gói dịch vụ không khả dụng')).toBeDefined();
+  expect(await screen.findByText('API hoặc gói dịch vụ không khả dụng')).toBeDefined();
 });
 
-it.each(['/checkout/missing/p1', '/checkout/1/missing'])('Checkout rejects an unknown API/plan at %s', path => {
+it.each(['/checkout/missing/p1', '/checkout/1/missing'])('Checkout rejects an unknown API/plan at %s', async path => {
+  vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockImplementation(async (id: string) => {
+    if (id === '1') return marketplaceDetailApi;
+    throw new ApiError(404, 'NOT_FOUND', 'Not found');
+  });
   cache([cachedApi]);
   render(view(path, '/checkout/:apiId/:planId', <CheckoutPage />));
-  expect(screen.getByText('API hoặc gói dịch vụ không khả dụng')).toBeDefined();
+  expect(await screen.findByText('API hoặc gói dịch vụ không khả dụng')).toBeDefined();
   expect(screen.queryByText(cachedApi.name)).toBeNull();
 });
 
-it('Checkout requires login and cannot create a local subscription pretending to be a backend transaction', () => {
+it('Checkout requires login and cannot create a local subscription pretending to be a backend transaction', async () => {
   const subscribe = vi.fn();
+  vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(marketplaceDetailApi);
   vi.spyOn(AppContext, 'useApp').mockReturnValue({ apis: [cachedApi], subscribeToPlan: subscribe } as any);
   currentUser = null;
   const result = render(view('/checkout/1/p1', '/checkout/:apiId/:planId', <CheckoutPage />));
-  expect(screen.getByRole('link', { name: 'Đăng nhập' })).toBeDefined();
+  expect(await screen.findByRole('link', { name: 'Đăng nhập' })).toBeDefined();
   currentUser = user;
   result.rerender(view('/checkout/1/p1', '/checkout/:apiId/:planId', <CheckoutPage />));
-  const activate = screen.getByRole('button', { name: /Activate Free Sandbox Tier/ });
+  const activate = await screen.findByRole('button', { name: /Activate Free Sandbox Tier/ });
   expect(activate.hasAttribute('disabled')).toBe(true);
   fireEvent.click(activate);
   expect(subscribe).not.toHaveBeenCalled();
@@ -148,17 +177,18 @@ it.each([
   expect(screen.queryByText('Private draft')).toBeNull();
 });
 
-it('Playground rejects an unknown API instead of substituting a cached API', () => {
+it('Playground rejects an unknown API instead of substituting a cached API', async () => {
   cache([cachedApi]);
   render(view('/api/missing/playground', '/api/:id/playground', <ApiPlaygroundPage />));
-  expect(screen.getByText('API hoặc gói dịch vụ không khả dụng')).toBeDefined();
+  expect(await screen.findByText('API hoặc gói dịch vụ không khả dụng')).toBeDefined();
 });
 
-it('Playground explains the missing backend and does not send simulated requests', () => {
+it('Playground explains the missing backend and does not send simulated requests', async () => {
   const execute = vi.fn();
+  vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(marketplaceDetailApi);
   vi.spyOn(AppContext, 'useApp').mockReturnValue({ apis: [cachedApi], apiKeys: [], executeGatewayCall: execute } as any);
   render(view('/api/1/playground', '/api/:id/playground', <ApiPlaygroundPage />));
-  const send = screen.getByRole('button', { name: /Send Request/ });
+  const send = await screen.findByRole('button', { name: /Send Request/ });
   expect(send.hasAttribute('disabled')).toBe(true);
   fireEvent.click(send);
   expect(execute).not.toHaveBeenCalled();

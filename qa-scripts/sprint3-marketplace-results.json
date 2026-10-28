@@ -1,0 +1,226 @@
+{
+  "summary": {
+    "total": 17,
+    "passed": 17,
+    "failed": 0,
+    "passRate": "100.0%",
+    "executedAt": "2026-10-28T14:03:32.235Z",
+    "environment": {
+      "baseUrl": "http://127.0.0.1:3000",
+      "qaLead": "Trần Hà Thảo Vân (@vuonghathaovan-gif)"
+    }
+  },
+  "testResults": [
+    {
+      "testCaseId": "TC-16-01",
+      "userStory": "US-16",
+      "name": "Truy vấn danh sách Marketplace công khai (không cần JWT)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.136Z",
+      "details": {
+        "status": 200,
+        "itemCount": 10,
+        "total": 10
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-02",
+      "userStory": "US-16",
+      "name": "Tìm kiếm từ khóa không phân biệt hoa thường (case-insensitive)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.151Z",
+      "details": {
+        "term": "QA W",
+        "lowerCount": 8,
+        "upperCount": 8
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-03",
+      "userStory": "US-16",
+      "name": "Tìm kiếm ký tự đặc biệt % và _ như chuỗi thông thường (không wildcard)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.160Z",
+      "details": {
+        "percentMatches": 0,
+        "underscoreMatches": 0
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-04",
+      "userStory": "US-16",
+      "name": "Lọc chính xác theo danh mục (category=Weather)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.164Z",
+      "details": {
+        "status": 200,
+        "count": 8
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-05",
+      "userStory": "US-16",
+      "name": "Lọc chính xác theo tag (tag=weather)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.169Z",
+      "details": {
+        "status": 200,
+        "count": 8
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-06",
+      "userStory": "US-16",
+      "name": "Lọc theo gói cước giá (pricing=free và pricing=paid)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.181Z",
+      "details": {
+        "freeStatus": 200,
+        "freeCount": 10,
+        "paidStatus": 200,
+        "paidCount": 10
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-07",
+      "userStory": "US-16",
+      "name": "Bộ lọc kết hợp logic AND (category AND pricing=free)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.186Z",
+      "details": {
+        "status": 200,
+        "count": 8
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-08",
+      "userStory": "US-16",
+      "name": "Sắp xếp ổn định (sort=newest và sort=name)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.195Z",
+      "details": {
+        "newestFirstId": "51",
+        "nameFirstId": "3",
+        "nameFirstName": "Product Catalog API"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-09",
+      "userStory": "US-16",
+      "name": "Phân trang chuẩn xác và trang sâu trả items rỗng giữ nguyên total",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.204Z",
+      "details": {
+        "p1Count": 2,
+        "deepCount": 0,
+        "total": 10
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-10",
+      "userStory": "US-16",
+      "name": "Validation từ chối tham số không hợp lệ (page=0, pageSize>100, pricing sai)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.209Z",
+      "details": {
+        "page0Status": 400,
+        "size500Status": 400,
+        "pricingStatus": 400
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-16-11",
+      "userStory": "US-16",
+      "name": "API chưa Published (Draft/Review/Suspend) tuyệt đối không lọt vào Marketplace",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.214Z",
+      "details": {
+        "testedDraftId": 2,
+        "leaked": false
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-17-01",
+      "userStory": "US-17",
+      "name": "Gọi trực tiếp ID của API không tồn tại hoặc API Draft đều trả về 404",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.221Z",
+      "details": {
+        "notFoundStatus": 404,
+        "draftStatus": 404
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-17-02",
+      "userStory": "US-17",
+      "name": "ID sai định dạng/phi số trả về đồng nhất HTTP 404 Not Found (Uniform 404)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.223Z",
+      "details": {
+        "status": 404,
+        "errorCode": "NOT_FOUND"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-17-03",
+      "userStory": "US-17",
+      "name": "Chi tiết API công khai đầy đủ cấu trúc versions, endpoints, plans, docs",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.229Z",
+      "details": {
+        "status": 200,
+        "apiName": "QA Weather Core API v1.1",
+        "endpointCount": 3,
+        "versionCount": 1,
+        "planCount": 2
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-17-04",
+      "userStory": "US-17",
+      "name": "Kiểm tra bảo mật: Không rò rỉ KYC evidence, DNS challenge token hay ghi chú duyệt",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.229Z",
+      "details": {
+        "leaksDetected": []
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-17-05",
+      "userStory": "US-17",
+      "name": "Danh sách gói cước chuẩn hóa dạng JSON number và chỉ trả gói active",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.229Z",
+      "details": {
+        "planCount": 2
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-17-06",
+      "userStory": "US-17",
+      "name": "Header phản hồi chứa Cache-Control: no-store chống cache API bị gỡ",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:32.235Z",
+      "details": {
+        "cacheControl": "no-store"
+      },
+      "notes": ""
+    }
+  ]
+}

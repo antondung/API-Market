@@ -20,12 +20,30 @@ import { adminReviewPaths } from './admin-review-contract.js';
 import type { MarketplaceService } from './marketplace-service.js';
 import { marketplaceRouter } from './marketplace-router.js';
 import { marketplacePaths } from './marketplace-contract.js';
+import type { GatewayService } from './gateway-service.js';
+import { gatewayRouter } from './gateway-router.js';
+import { reportPaths } from './report-contract.js';
+import { ApiKeyService, SandboxService } from './consumer-service.js';
+import { consumerRouter } from './consumer-router.js';
+import { PlaygroundService, playgroundInput } from './playground-service.js';
+import type { ReportService } from './report-service.js';
+import { reportConsumerRouter, reportAdminRouter } from './report-router.js';
+import { marketplaceId } from './marketplace-service.js';
+import { consumerPaths } from './consumer-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
 const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Provider']), name: z.string().trim().min(1).max(100).optional() }).strict();
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
+// US-05: profile and password changes. The password policy matches registration.
+// PostgreSQL TEXT rejects U+0000, so a NUL must be a 400 rather than a 500 from the driver.
+const noNul = (value: string) => !value.includes('\u0000');
+const updateProfileSchema = z.object({ name: z.string().trim().min(1).max(100).refine(noNul, 'Must not contain NUL') }).strict();
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: password,
+}).strict();
 // Truy vấn danh sách người dùng cho Admin (US-04).
 const listUsersSchema = z.object({
   search: z.string().trim().max(254).optional(),
@@ -39,7 +57,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -73,6 +91,13 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
   }));
+  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
+  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
+  // an empty payload.
+  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
+  // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
+  // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
+  // an empty payload.
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   const baseDocument = options.provider ? {
@@ -81,7 +106,8 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
   const document = { ...baseDocument,
-    paths: { ...baseDocument.paths, ...(options.marketplace ? marketplacePaths : {}) } };
+    paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
+      ...(options.reports ? reportPaths : {}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -101,6 +127,22 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   };
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
+  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
+  // US-15: Consumers file reports; Admins decide them.
+  if (options.reports) {
+    app.use('/api/consumer/reports', reportConsumerRouter(options.reports, requireAuth, requireRole('Consumer')));
+    app.use('/api/admin/reports', reportAdminRouter(options.reports, requireAuth, requireRole('Admin')));
+  }
+  const playground = options.playground ?? (options.marketplace ? new PlaygroundService(options.marketplace.pool) : undefined);
+  if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireRole('Consumer'),
+    rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (_req, res) => res.locals.identity.user.id,
+      standardHeaders: 'draft-8', legacyHeaders: false,
+      handler: (_req, _res, next) => next(new ApiError(429, 'RATE_LIMITED', 'Too many Playground requests')) }),
+    async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      z.object({}).strict().parse(req.query);
+      res.json({ data: await playground.run(res.locals.identity.user.id, marketplaceId.parse(req.params.id), playgroundInput.parse(req.body)) });
+    });
   app.post('/api/auth/register', async (req, res) => {
     const input = registerSchema.parse(req.body);
     res.status(201).json({ data: await auth.register(input.email, input.password, input.role, input.name) });
@@ -118,6 +160,17 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     res.status(204).end();
   });
   app.get('/api/auth/me', requireAuth, (_req, res) => { res.json({ data: res.locals.identity.user }); });
+
+  // US-05: the signed-in user edits their own profile and password.
+  app.patch('/api/auth/me', requireAuth, async (req, res) => {
+    const input = updateProfileSchema.parse(req.body);
+    res.json({ data: await auth.updateProfile(res.locals.identity.user.id, input.name) });
+  });
+  app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+    const input = changePasswordSchema.parse(req.body);
+    res.json({ data: await auth.changePassword(
+      res.locals.identity.user.id, input.currentPassword, input.newPassword, res.locals.identity.sessionId) });
+  });
 
     // =========================================
     // Admin quản lý người dùng (US-04)

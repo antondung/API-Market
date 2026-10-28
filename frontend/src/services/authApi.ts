@@ -234,6 +234,12 @@ export async function authenticatedRequest<T>(path: string, options: RequestInit
 }
 
 export async function getMe(): Promise<BackendUser> { return (await authenticatedRequest<{ data: BackendUser }>('/api/auth/me')).data; }
+export async function updateProfile(params: { name: string }): Promise<BackendUser> {
+  return (await authenticatedRequest<{ data: BackendUser }>('/api/auth/me', { method: 'PATCH', body: JSON.stringify(params) })).data;
+}
+export async function changePassword(params: { currentPassword: string; newPassword: string }): Promise<{ revokedSessions: number }> {
+  return (await authenticatedRequest<{ data: { revokedSessions: number } }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify(params) })).data;
+}
 export async function checkRoleAccess(role: 'consumer' | 'provider' | 'admin'): Promise<{ role: string }> { return (await authenticatedRequest<{ data: { role: string } }>(`/api/access/${role}`)).data; }
 
 export async function logout(): Promise<LogoutResult> {

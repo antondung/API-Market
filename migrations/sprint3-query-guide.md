@@ -124,7 +124,35 @@ RETURNING id;
 
 Không log plaintext key, hash, `Authorization`, cookie hay request/response body.
 
-## 5. Đo query Marketplace với 1.000 API
+## 5. Report & Moderation (US-15)
+
+```sql
+-- Consumer creates a report.
+INSERT INTO reports (api_id, reporter_id, category, description)
+VALUES ($1, $2, $3, $4)
+RETURNING id, status, created_at;
+
+-- Admin claims a pending report.
+UPDATE reports
+SET status = 'Under Investigation', reviewed_by = $1
+WHERE id = $2 AND status = 'Pending'
+RETURNING *;
+
+-- Suspend the API and complete the report in one transaction.
+BEGIN;
+UPDATE apis SET status = 'Suspended' WHERE id = $1 AND status = 'Published';
+UPDATE reports
+SET status = 'Resolved', reviewed_at = CURRENT_TIMESTAMP, action_taken = $2
+WHERE id = $3 AND status = 'Under Investigation' AND reviewed_by = $4;
+COMMIT;
+```
+
+The backend must authorize Admin-only moderation updates and append an
+`audit_logs` entry. Marketplace and Gateway queries already require
+`status = 'Published'`, so suspension takes effect immediately. Never store
+secrets or raw request/response payloads in report text or moderation notes.
+
+## 6. Đo query Marketplace với 1.000 API
 
 Trên database test có dữ liệu benchmark, chạy:
 

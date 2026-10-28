@@ -89,6 +89,34 @@ export class AuthService {
   }
   async logout(sessionId: string) { await this.store.revokeSession(sessionId); }
 
+  // =========================================
+  // Ho so ca nhan (US-05)
+  // =========================================
+
+  /** Updates the display name of the signed-in account. */
+  async updateProfile(userId: string, name: string) {
+    const updated = await this.store.updateProfile(userId, name);
+    if (!updated) throw unauthorized();
+    return publicUser(updated);
+  }
+
+  /**
+   * Changes the password after verifying the current one, then revokes every other session so
+   * a stolen refresh token cannot outlive the change. The caller keeps their own session —
+   * otherwise the client would be signed out by its own successful request.
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string, keepSessionId: string) {
+    const user = await this.store.findUserById(userId);
+    const valid = await checkPassword(currentPassword, user?.passwordHash ?? await this.dummyHash);
+    if (!user || !valid) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Current password is incorrect');
+    if (currentPassword === newPassword) throw new ApiError(400, 'PASSWORD_UNCHANGED', 'New password must differ from the current one');
+    // Hash update and session revocation must commit together: if revocation failed after
+    // the hash was stored, the password would be changed while other devices stayed signed in.
+    const result = await this.store.changePasswordAtomic(userId, await hashPassword(newPassword), keepSessionId);
+    if (!result.updated) throw unauthorized();
+    return { revokedSessions: result.revoked };
+  }
+
     // =========================================
     // Quản trị người dùng (US-04)
     // =========================================
