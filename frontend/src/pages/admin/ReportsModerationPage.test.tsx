@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ReportsModerationPage } from './ReportsModerationPage';
 import * as reportApi from '../../services/reportApi';
 
@@ -85,6 +85,35 @@ describe('ReportsModerationPage - Admin moderation against the real API', () => 
     await screen.findByText('Suspicious Endpoint API');
     // A closed report must not expose a new decision the backend would reject with 409.
     expect(screen.queryByRole('button', { name: /Suspend API & Resolve/i })).toBeNull();
+  });
+
+  it('does not offer Restore on a dismissed report', async () => {
+    vi.spyOn(reportApi, 'listReportsForAdmin').mockResolvedValue({
+      items: [{ ...pendingReport, id: '51', status: 'Dismissed', apiStatus: 'Suspended', actionTaken: 'Dismiss: n/a' }],
+      total: 1, page: 1, pageSize: 20,
+    });
+
+    render(<ReportsModerationPage />);
+
+    await screen.findByText('Suspicious Endpoint API');
+    // Restore is only valid on a case resolved by Suspend; the backend answers 409 otherwise.
+    expect(screen.queryByRole('button', { name: /Khôi phục API/i })).toBeNull();
+  });
+
+  it('steps back a page when the last row is decided on the final page', async () => {
+    let call = 0;
+    vi.spyOn(reportApi, 'listReportsForAdmin').mockImplementation(async (page) => {
+      call++;
+      // First read: page 2 of 2 with one row. The follow-up read finds that row gone.
+      if (call === 1) return { items: [{ ...pendingReport, id: '52' }], total: 21, page: page!, pageSize: 20 };
+      return { items: [{ ...pendingReport, id: '1' }], total: 20, page: page!, pageSize: 20 };
+    });
+
+    render(<ReportsModerationPage />);
+
+    await screen.findByText('Trang 1 / 2');
+    fireEvent.click(screen.getByRole('button', { name: /Sau/ }));
+    await waitFor(() => expect(screen.getByText('Trang 2 / 2')).toBeDefined());
   });
 
   it('surfaces a backend failure instead of pretending the queue is empty', async () => {

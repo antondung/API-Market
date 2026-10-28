@@ -35,6 +35,13 @@ export const ReportsModerationPage: React.FC = () => {
       if (signal?.aborted) return;
       setReports(result.items);
       setTotal(result.total);
+      // Deciding the only item on the last page leaves it empty; step back so the operator
+      // lands on a page that still has rows instead of a blank table with a hidden pager.
+      const lastPage = Math.max(1, Math.ceil(result.total / pageSize));
+      if (result.items.length === 0 && result.total > 0 && page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
     } catch (err) {
       if (signal?.aborted) return;
       // A failed read must be visible: an empty queue would wrongly suggest there is nothing
@@ -154,7 +161,7 @@ export const ReportsModerationPage: React.FC = () => {
                     {busyId === rep.id ? 'Đang xử lý...' : t('Suspend API & Resolve')}
                   </Button>
                 )}
-                {rep.apiStatus === 'Suspended' && (
+                {rep.apiStatus === 'Suspended' && rep.status === 'Resolved' && (
                   <Button size="sm" variant="primary" icon="restart_alt" disabled={busyId === rep.id}
                     onClick={() => void decide(rep, 'Restore')}>
                     {busyId === rep.id ? 'Đang xử lý...' : 'Khôi phục API'}
