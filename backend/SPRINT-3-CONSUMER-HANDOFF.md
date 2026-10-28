@@ -74,6 +74,8 @@ API demo chạy trên loopback/mạng Docker nội bộ sẽ bị chặn như c�
 
 ## Bàn giao nhóm
 
+Bổ sung kiểm thử HTTP ngày 27/10: với grant đã dùng 4/5 lượt, năm request Playground đồng thời phải có đúng một200 và bốn403 `SANDBOX_EXHAUSTED`, chỉ một request đi qua transport. Một upstream timeout sau khi reserve lượt vẫn tăng usedRequests đúng1; request path sai tiếp theo không trừ thêm. Các test dùng PostgreSQL thật và HTTP vào app, transport upstream là fixture; không thay thế staging/public upstream.
+
 Kiểm chứng local ngày 26/10/2026: **109/109 test backend đạt** (90 có sẵn + 19 test mới), TypeScript/build/lint đạt và repo checker không lỗi nền tảng. Có regression cho tên path parameter OpenAPI chứa dấu gạch nối/dấu chấm. CI/review GitHub phải xem trên PR của nhánh `codex/sprint3-consumer-backend`, không suy từ kết quả local.
 
 Kiểm thử backend tự động bao gồm PostgreSQL thật và DNS/HTTP transport fixture cho các tình huống SSRF, redirect, timeout, giới hạn byte, quota đồng thời và vòng đời key. Các fixture HTTP mô phỏng request/socket: không coi đây là bằng chứng đã gọi TLS thật, kiểm tra chứng chỉ trên staging hoặc load test. Review độc lập đã xác nhận hai lỗi Unicode đầu vào được sửa và không tìm thấy Critical/Important còn lại trong phạm vi đã xem; điều đó không thay thế QA độc lập và staging.

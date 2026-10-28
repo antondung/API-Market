@@ -16,6 +16,14 @@ export const SubscribersPage: React.FC = () => {
         </p>
       </div>
 
+      <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">groups</span>
+        <div className="text-body-sm text-on-surface-variant leading-relaxed">
+          <strong className="text-on-surface">{t('Bản ghi Người đăng ký (Read-only Sandbox Ledger): ')}</strong>
+          {t('Danh sách thuê bao và tiêu thụ hạn ngạch hiển thị các giao dịch sandbox hiện có trong không gian làm việc.')}
+        </div>
+      </div>
+
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl overflow-hidden shadow-sm">
         <table className="w-full text-left text-body-sm">
           <thead className="bg-surface-container text-on-surface-variant text-[11px] uppercase font-semibold border-b border-outline-variant/20">

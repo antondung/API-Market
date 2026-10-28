@@ -1,10 +1,14 @@
 import React from 'react';
+import { Shine } from '@animate-ui/react/primitives/effects/shine';
+import { Magnetic } from '@animate-ui/react/primitives/effects/magnetic';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   icon?: string | React.ReactNode;
   loading?: boolean;
+  shine?: boolean;
+  magnetic?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -13,6 +17,8 @@ export const Button: React.FC<ButtonProps> = ({
   size = 'md',
   icon,
   loading = false,
+  shine = false,
+  magnetic = false,
   className = '',
   disabled,
   ...props
@@ -31,12 +37,10 @@ export const Button: React.FC<ButtonProps> = ({
     lg: 'px-6 py-3 text-body-lg rounded-xl font-medium gap-2.5'
   };
 
-  return (
-    <button
-      className={`inline-flex items-center justify-center font-label-md transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none cursor-pointer ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
-      disabled={disabled || loading}
-      {...props}
-    >
+  const isDisabled = disabled || loading;
+
+  const content = (
+    <>
       {loading ? (
         <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
       ) : typeof icon === 'string' ? (
@@ -45,6 +49,32 @@ export const Button: React.FC<ButtonProps> = ({
         icon || null
       )}
       {children}
+    </>
+  );
+
+  const inner = shine && !isDisabled ? (
+    <Shine enableOnHover={true} duration={1.2} className="inline-flex items-center gap-2">
+      {content}
+    </Shine>
+  ) : content;
+
+  const buttonElement = (
+    <button
+      className={`inline-flex items-center justify-center font-label-md transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none cursor-pointer ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      disabled={isDisabled}
+      {...props}
+    >
+      {inner}
     </button>
   );
+
+  if (magnetic && !isDisabled) {
+    return (
+      <Magnetic strength={0.15} disableOnTouch={true}>
+        {buttonElement}
+      </Magnetic>
+    );
+  }
+
+  return buttonElement;
 };

@@ -1,33 +1,53 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { useApp } from '../../context/AppContext';
-import { MethodBadge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
+import { ApiError } from '../../services/authApi';
+import { listConsumerApiKeys, type ConsumerApiKey } from '../../services/consumerApi';
 
 export const ConsumerDashboardPage: React.FC = () => {
   const { currentUser } = useAuth();
-  // Trang nay nam trong route duoc bao ve nen currentUser luon co gia tri.
+  // ProtectedRoute ensures currentUser exists.
   const user = currentUser!;
-  const { apis, subscriptions, apiKeys, requestLogs, budget } = useApp();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const activeSubs = subscriptions.filter(s => s.status === 'Active');
-  const activeKeys = apiKeys.filter(k => !k.isRevoked);
+  const [keys, setKeys] = useState<ConsumerApiKey[]>([]);
+  const [totalKeys, setTotalKeys] = useState<number | null>(null);
+  const [isKeysLoading, setIsKeysLoading] = useState(true);
+  const [keysError, setKeysError] = useState<string | null>(null);
+  const [retryKeys, setRetryKeys] = useState(0);
 
-  const totalQuotaLimit = activeSubs.reduce((acc, s) => acc + s.quotaLimit, 0);
-  const totalQuotaUsed = activeSubs.reduce((acc, s) => acc + s.quotaUsed, 0);
-  const quotaRemainingPercent = totalQuotaLimit > 0
-    ? Math.max(0, Math.round(((totalQuotaLimit - totalQuotaUsed) / totalQuotaLimit) * 100))
-    : 100;
+  useEffect(() => {
+    let isMounted = true;
+    setIsKeysLoading(true);
+    setKeysError(null);
+    listConsumerApiKeys(1, 100)
+      .then(res => {
+        if (isMounted) {
+          setKeys(res.items);
+          setTotalKeys(res.total);
+          setKeysError(null);
+        }
+      })
+      .catch((err: any) => {
+        if (isMounted) {
+          setKeys([]);
+          setTotalKeys(null);
+          setKeysError(err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')));
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsKeysLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [retryKeys]);
 
-  const [daysUntilReset] = React.useState(() => {
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    return daysInMonth - now.getDate();
-  });
+  const activeKeys = keys.filter(k => k.isActive);
+  const hasMoreKeysThanFetched = totalKeys !== null && totalKeys > keys.length;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -59,22 +79,27 @@ export const ConsumerDashboardPage: React.FC = () => {
           <Button
             variant="primary"
             icon="key"
-            disabled
-            title="Chưa được backend Sprint 1 hỗ trợ"
+            onClick={() => navigate('/dashboard/api-keys')}
           >
             {t('Generate Key')}
           </Button>
         </div>
       </div>
 
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-body-sm text-on-surface">
-        Các KPI bên dưới là dữ liệu minh họa, chưa phải dữ liệu live từ backend. Những thao tác ngoài Sprint 1 chưa được hỗ trợ.
+      {/* Feature & Architecture Alignment Banner */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-body-sm text-on-surface flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">info</span>
+        <div>
+          <strong className="text-on-surface font-semibold">Hiện trạng chức năng Sprint 3: </strong>
+          <span>
+            Kho khóa <strong>API Keys</strong> và <strong>Gói dùng thử Sandbox (5 lượt gọi/API/24h)</strong> đã tích hợp trực tiếp với backend. Gói thuê bao thương mại trả phí (Paid Subscriptions) và bộ hạn chế ngân sách tự động (Cost Guard) dự kiến kích hoạt trong Sprint 4.
+          </span>
+        </div>
       </div>
 
       {/* KPI Bento Grid */}
-      {/* KPI Bento Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Metric 1: Active Subscriptions */}
+        {/* Metric 1: Paid Subscriptions vs Sandbox */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3 text-on-surface-variant">
@@ -82,23 +107,23 @@ export const ConsumerDashboardPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[22px]">subscriptions</span>
             </div>
             <div className="text-3xl font-extrabold text-on-surface font-code-md">
-              {activeSubs.length}
+              0
             </div>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              {t('Active production and sandbox endpoints.')}
+              Gói thuê bao thương mại theo tháng (Sprint 4). Trải nghiệm API qua Sandbox.
             </p>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/subscriptions" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
               {t('View APIs')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
-            <span className="text-[11px] font-code-sm text-emerald-600 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
-              {t('Active')}
+            <span className="text-[11px] font-code-sm text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded">
+              Sprint 4
             </span>
           </div>
         </div>
 
-        {/* Metric 2: API Keys */}
+        {/* Metric 2: Active API Keys (Real Backend Data) */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3 text-on-surface-variant">
@@ -106,50 +131,69 @@ export const ConsumerDashboardPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[22px]">vpn_key</span>
             </div>
             <div className="text-3xl font-extrabold text-on-surface font-code-md">
-              {activeKeys.length} {t('Keys')}
+              {isKeysLoading ? (
+                <span className="text-2xl text-on-surface-variant animate-pulse">{t('Đang tải...')}</span>
+              ) : keysError ? (
+                <span className="text-xl font-bold text-error">{t('Không thể tải')}</span>
+              ) : hasMoreKeysThanFetched ? (
+                `${activeKeys.length}+ ${t('Keys')}`
+              ) : (
+                `${activeKeys.length} ${t('Keys')}`
+              )}
             </div>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              {t('Secured with SHA-256 hash in Control Plane DB.')}
-            </p>
+            <div className="text-body-sm text-on-surface-variant mt-1">
+              {keysError ? (
+                <div className="text-error flex items-center justify-between gap-2">
+                  <span className="truncate" title={keysError}>{keysError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRetryKeys(c => c + 1)}
+                    className="text-primary underline hover:text-primary-hover font-medium shrink-0"
+                  >
+                    {t('Thử lại')}
+                  </button>
+                </div>
+              ) : hasMoreKeysThanFetched ? (
+                `${t('Trang 1 hiển thị')} ${activeKeys.length} ${t('khóa hoạt động trong tổng số')} ${totalKeys} ${t('khóa')}.`
+              ) : totalKeys === 0 ? (
+                t('Chưa có API key nào được tạo. Nhấn "Generate Key" để bắt đầu.')
+              ) : (
+                t('Secured with SHA-256 hash in Control Plane DB.')
+              )}
+            </div>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/api-keys" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
               {t('Manage Keys')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
-            <span className="text-[11px] font-code-sm text-on-surface-variant">
+            <span className="text-[11px] font-code-sm text-emerald-600 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
               {t('Zero plaintext')}
             </span>
           </div>
         </div>
 
-        {/* Metric 3: Quota */}
+        {/* Metric 3: Sandbox Grants */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3 text-on-surface-variant">
-              <span className="text-label-md uppercase font-semibold tracking-wider">{t('Monthly Quota')}</span>
-              <span className="material-symbols-outlined text-primary text-[22px]">pie_chart</span>
+              <span className="text-label-md uppercase font-semibold tracking-wider">Sandbox Grants</span>
+              <span className="material-symbols-outlined text-primary text-[22px]">science</span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-3xl font-extrabold text-on-surface font-code-md">
-                {quotaRemainingPercent}% {t('Left')}
-              </span>
-              <span className="text-code-sm text-on-surface-variant font-code-sm">
-                {(totalQuotaUsed / 1000).toFixed(1)}k / {(totalQuotaLimit / 1000).toFixed(1)}k
+                5 req / API
               </span>
             </div>
-            <div className="w-full bg-surface-container-high h-2 rounded-full mt-3 overflow-hidden">
-              <div
-                className="bg-primary h-full rounded-full transition-all duration-300"
-                style={{ width: `${100 - quotaRemainingPercent}%` }}
-              />
-            </div>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Hạn mức dùng thử an toàn cho mỗi API đã công khai, hiệu lực 24 giờ.
+            </p>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/usage" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
               {t('Usage Details')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
-            <span className="text-[11px] font-code-sm text-on-surface-variant">
-              {t('Resets in')} {daysUntilReset}d
+            <span className="text-[11px] font-code-sm text-emerald-600 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
+              24h Quota
             </span>
           </div>
         </div>
@@ -163,24 +207,23 @@ export const ConsumerDashboardPage: React.FC = () => {
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-3xl font-extrabold text-on-surface font-code-md">
-                ${budget.spentUsd.toFixed(2)}
+                $0.00
               </span>
               <span className="text-code-sm text-on-surface-variant font-code-sm">
-                {t('Cap:')} ${budget.monthlyBudgetUsd}
+                Sandbox Free
               </span>
             </div>
-            <div className="w-full bg-surface-container-high h-2 rounded-full mt-3 overflow-hidden">
-              <div
-                className="bg-emerald-600 h-full rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(100, (budget.spentUsd / budget.monthlyBudgetUsd) * 100)}%` }}
-              />
-            </div>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Hạn mức chi tiêu và ngắt tự động (Hard Cutoff) theo dõi tại Sprint 4.
+            </p>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/cost-guard" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
               {t('Notification Center')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
-            <span className="text-[11px] font-code-sm text-emerald-600 font-semibold">{t('100% Cutoff On')}</span>
+            <span className="text-[11px] font-code-sm text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded">
+              Sprint 4
+            </span>
           </div>
         </div>
       </div>
@@ -206,7 +249,7 @@ export const ConsumerDashboardPage: React.FC = () => {
           </Link>
 
           <Link
-            to={apis.length > 0 ? `/api/${apis[0].id}/playground` : '/marketplace'}
+            to="/marketplace"
             className="group bg-surface-container-low border border-outline-variant/30 hover:border-outline-variant hover:shadow-md p-6 rounded-2xl transition-all flex flex-col justify-between"
           >
             <div>
@@ -239,7 +282,7 @@ export const ConsumerDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Telemetry Stream */}
+      {/* Recent Telemetry Stream (Honest State) */}
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -252,71 +295,25 @@ export const ConsumerDashboardPage: React.FC = () => {
             to="/dashboard/history"
             className="px-3.5 py-1.5 rounded-xl border border-outline-variant text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
           >
-            {t('View Full Logs')} ({requestLogs.length})
+            {t('View Full Logs')}
           </Link>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-body-sm">
-            <thead className="bg-surface-container text-on-surface-variant text-[11px] uppercase font-semibold border-b border-outline-variant/20">
-              <tr>
-                <th className="px-4 py-3">{t('Timestamp')}</th>
-                <th className="px-4 py-3">{t('Method')}</th>
-                <th className="px-4 py-3">{t('Endpoint & API')}</th>
-                <th className="px-4 py-3">{t('Status')}</th>
-                <th className="px-4 py-3">{t('Latency')}</th>
-                <th className="px-4 py-3">{t('Key Prefix')}</th>
-                <th className="px-4 py-3">{t('Redaction')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/15 text-on-surface">
-              {requestLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-10 text-center text-on-surface-variant">
-                    <span className="material-symbols-outlined text-[36px] text-outline mb-2 block">history</span>
-                    <p className="font-semibold text-body-md text-on-surface">{t('Chưa có lịch sử gọi API')}</p>
-                    <p className="text-body-sm text-on-surface-variant/80 mt-1 max-w-md mx-auto">
-                      {t('Khi bạn thực hiện lệnh gọi qua Gateway hoặc dùng thử trên Sandbox, các bản ghi telemetry sẽ tự động xuất hiện tại đây.')}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                requestLogs.slice(0, 5).map(log => (
-                <tr key={log.id} className="hover:bg-surface-container/50 transition-colors">
-                  <td className="px-4 py-3 font-code-sm text-on-surface-variant whitespace-nowrap">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <MethodBadge method={log.method} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-code-md font-semibold text-on-surface block">{log.endpoint}</span>
-                    <span className="text-[12px] text-on-surface-variant">{log.apiName}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-code-sm font-bold ${
-                      log.statusCode === 200 ? 'bg-emerald-500/10 text-emerald-600' :
-                      log.statusCode === 429 ? 'bg-amber-500/10 text-amber-700' : 'bg-error-container text-on-error-container'
-                    }`}>
-                      {log.statusCode}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-code-md text-emerald-600 font-semibold">
-                    {log.latencyMs} ms
-                  </td>
-                  <td className="px-4 py-3 font-code-sm text-on-surface-variant">
-                    {log.apiKeyPrefix}...
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[11px] font-code-sm bg-surface-container-high px-2 py-0.5 rounded text-on-surface-variant">
-                      [REDACTED]
-                    </span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-          </table>
+        <div className="p-8 text-center text-on-surface-variant bg-surface-container-lowest/50 rounded-xl border border-dashed border-outline-variant/30">
+          <span className="material-symbols-outlined text-[40px] text-outline mb-2 block">history</span>
+          <p className="font-semibold text-body-md text-on-surface">{t('Chưa có lịch sử gọi API')}</p>
+          <p className="text-body-sm text-on-surface-variant/80 mt-1 max-w-md mx-auto">
+            {t('Khi bạn thực hiện lệnh gọi qua Gateway hoặc dùng thử trên Sandbox, các bản ghi telemetry sẽ tự động xuất hiện tại đây.')}
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="terminal"
+            className="mt-4"
+            onClick={() => navigate('/marketplace')}
+          >
+            Khám phá API để thử nghiệm
+          </Button>
         </div>
       </div>
     </div>
