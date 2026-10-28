@@ -170,6 +170,7 @@ async function runPhase2() {
       body: JSON.stringify({ email: consumerEmail, password: defaultPassword, role: 'Consumer', name: 'Phase 2 Consumer' }),
     });
     if (regConsumer.status !== 201) throw new Error(`Đăng ký Consumer thất bại: ${JSON.stringify(regConsumer.body)}`);
+    if (regConsumer.body?.data?.id) createdUserIds.push(regConsumer.body.data.id);
 
     const loginConsumer = await fetchWithTimeout(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
@@ -187,6 +188,7 @@ async function runPhase2() {
       body: JSON.stringify({ email: providerEmail, password: defaultPassword, role: 'Provider', name: 'Phase 2 Provider' }),
     });
     if (regProvider.status !== 201) throw new Error(`Đăng ký Provider thất bại: ${JSON.stringify(regProvider.body)}`);
+    if (regProvider.body?.data?.id) createdUserIds.push(regProvider.body.data.id);
 
     const loginProvider = await fetchWithTimeout(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
@@ -204,6 +206,7 @@ async function runPhase2() {
       body: JSON.stringify({ email: adminEmail, password: defaultPassword, role: 'Consumer', name: 'Phase 2 Admin' }),
     });
     if (regAdmin.status !== 201) throw new Error(`Đăng ký Admin thất bại: ${JSON.stringify(regAdmin.body)}`);
+    if (regAdmin.body?.data?.id) createdUserIds.push(regAdmin.body.data.id);
 
     // Gán role ADMIN trong database
     await db.query(
@@ -471,6 +474,47 @@ async function runPhase2() {
       await recordResult('TC-22-05', 'US-22', 'Chặn API Suspended tại Gateway', false, { error: err.message });
     }
 
+    // TC-22-EDGE-01: Chặn gọi Gateway với API ID không phải số nguyên (Non-integer API ID)
+    try {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/gateway/abc/get`, {
+        method: 'GET',
+        headers: { 'x-api-key': testApiKeyRaw },
+      });
+      const not500 = res.status !== 500;
+      const validClientError = res.status === 400 || res.status === 404;
+      const passed = not500 && validClientError;
+      await recordResult(
+        'TC-22-EDGE-01',
+        'US-22',
+        'Chặn gọi Gateway với API ID không phải số nguyên (e.g. "abc"), assert mã lỗi 400/404, tuyệt đối KHÔNG sập 500',
+        passed,
+        { status: res.status, body: res.body }
+      );
+    } catch (err) {
+      await recordResult('TC-22-EDGE-01', 'US-22', 'Chặn API ID không phải số nguyên', false, { error: err.message });
+    }
+
+    // TC-22-EDGE-02: Chặn gọi Gateway với API ID tràn số (INTEGER / BIGINT Overflow)
+    try {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/gateway/9999999999999999999/get`, {
+        method: 'GET',
+        headers: { 'x-api-key': testApiKeyRaw },
+      });
+      const not500 = res.status !== 500;
+      const validClientError = res.status === 400 || res.status === 404;
+      const passed = not500 && validClientError;
+      await recordResult(
+        'TC-22-EDGE-02',
+        'US-22',
+        'Chặn gọi Gateway với API ID vượt giới hạn số nguyên (BigInt overflow), assert mã lỗi 400/404, không được sập 500',
+        passed,
+        { status: res.status, body: res.body }
+      );
+    } catch (err) {
+      await recordResult('TC-22-EDGE-02', 'US-22', 'Chặn API ID tràn số', false, { error: err.message });
+    }
+
+
     // ========================================================================
     // SUITE 2: US-05 - Hồ Sơ Cá Nhân & Đổi Mật Khẩu (PR #79)
     // ========================================================================
@@ -485,6 +529,7 @@ async function runPhase2() {
       body: JSON.stringify({ email: user05Email, password: user05Pass, role: 'Consumer', name: 'Original Name 05' }),
     });
     if (reg05.status !== 201) throw new Error(`Đăng ký User 05 thất bại`);
+    if (reg05.body?.data?.id) createdUserIds.push(reg05.body.data.id);
 
     const login05Session1 = await fetchWithTimeout(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
@@ -969,6 +1014,61 @@ async function runPhase2() {
       await recordResult('TC-15-05', 'US-15', 'Admin Restore & Audit Log', false, { error: err.message });
     }
 
+    // TC-15-EDGE-01: Chặn ký tự NUL (\u0000) trong description của Báo cáo vi phạm (Chống lỗi sập PostgreSQL 500)
+    try {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/consumer/reports/${testApiId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${consumerToken}`,
+        },
+        body: JSON.stringify({
+          category: 'Malicious Data',
+          description: 'Payload containing \u0000 NUL byte injection test string',
+        }),
+      });
+      const not500 = res.status !== 500;
+      const is400 = res.status === 400;
+      const passed = is400 && not500;
+      await recordResult(
+        'TC-15-EDGE-01',
+        'US-15',
+        'Chặn gửi báo cáo chứa ký tự NUL (\u0000) trong description/note, assert trả về 400 Validation Error, tuyệt đối không sập 500 Postgres error',
+        passed,
+        { status: res.status, body: res.body }
+      );
+    } catch (err) {
+      await recordResult('TC-15-EDGE-01', 'US-15', 'Chặn ký tự NUL trong Report', false, { error: err.message });
+    }
+
+    // TC-15-EDGE-02: Chặn duyệt Report ID tràn số BIGINT (BigInt Overflow trong tham số đường dẫn)
+    try {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/admin/reports/9999999999999999999/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({
+          action: 'Dismiss',
+          note: 'Duyệt báo cáo với ID số nguyên vượt ngưỡng tối đa',
+        }),
+      });
+      const not500 = res.status !== 500;
+      const validClientError = res.status === 400 || res.status === 404;
+      const passed = not500 && validClientError;
+      await recordResult(
+        'TC-15-EDGE-02',
+        'US-15',
+        'Chặn duyệt Report ID vượt quá BIGINT (9999999999999999999), assert mã lỗi 400/404, không được sập 500 Internal Server Error',
+        passed,
+        { status: res.status, body: res.body }
+      );
+    } catch (err) {
+      await recordResult('TC-15-EDGE-02', 'US-15', 'Chặn Report ID vượt BIGINT', false, { error: err.message });
+    }
+
+
   } catch (fatalErr) {
     console.error(`\n❌ [FATAL ERROR] Lỗi nghiêm trọng khi thực thi runner:`, fatalErr);
   } finally {
@@ -992,13 +1092,14 @@ async function runPhase2() {
         await db.query('DELETE FROM api_providers WHERE id = $1', [testProviderId]);
       }
       if (createdUserIds.length > 0) {
-        await db.query('DELETE FROM refresh_tokens WHERE user_id = ANY($1)', [createdUserIds]);
-        await db.query('DELETE FROM audit_logs WHERE actor_id = ANY($1)', [createdUserIds.map(String)]);
-        await db.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
+        const uniqueUserIds = Array.from(new Set(createdUserIds.filter(Boolean)));
+        await db.query('DELETE FROM refresh_tokens WHERE user_id = ANY($1)', [uniqueUserIds]);
+        await db.query('DELETE FROM audit_logs WHERE actor_id = ANY($1)', [uniqueUserIds.map(String)]);
+        await db.query('DELETE FROM users WHERE id = ANY($1)', [uniqueUserIds]);
       }
       log('Đã dọn dẹp hoàn tất, cơ sở dữ liệu đã khôi phục nguyên trạng.');
     } catch (cleanupErr) {
-      console.error('[QA Runner Cleanup Error] Lỗi khi dọn dẹp dữ liệu:', cleanupErr);
+      console.error('[QA Runner Cleanup Error] Dọn dẹp thất bại:', cleanupErr);
     } finally {
       if (pool) {
         await pool.end();
@@ -1008,7 +1109,7 @@ async function runPhase2() {
     // ========================================================================
     // XUẤT BÁO CÁO KẾT QUẢ ĐẦY ĐỦ VÀ MINH BẠCH
     // ========================================================================
-    const totalDesigned = 15;
+    const totalDesigned = 19;
     const executed = results.filter(r => r.status !== 'SKIPPED').length;
     const executionPassRate = executed > 0 ? ((passCount / executed) * 100).toFixed(1) : '0.0';
     const overallCoverageRate = ((passCount / totalDesigned) * 100).toFixed(1);

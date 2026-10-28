@@ -1,0 +1,169 @@
+================================================================================
+HƯỚNG DẪN TEST CASE BIÊN & E2E PLAYWRIGHT CHO FRONTEND (SPRINT 3)
+Người gửi: Trần Hà Thảo Vân (QA Lead - @vuonghathaovan-gif - Issue #15)
+Người nhận: Nguyễn Hải Dương (Frontend Lead - @haiduong - PR #85)
+Phạm vi: US-18 (Playground & Anti-SSRF), US-19 (Sandbox Grant Quota), Edge Cases
+Ngày lập: 28/10/2026
+================================================================================
+
+Chào Dương,
+Team QA đã hoàn tất đối soát các luồng chính của Frontend Sprint 3 (327 Vitest, 34 E2E Playwright PASS). Để chuẩn bị cho buổi nghiệm thu tổng lực Sprint 3 và ngăn ngừa các lỗi biên (Edge Cases / Race Conditions) tiềm ẩn trên môi trường thực tế, QA gửi bạn tài liệu hướng dẫn và mã mẫu Playwright cho 3 trường hợp biên quan trọng sau đây để phối hợp tích hợp vào `qa-scripts/sprint3-frontend/tests/`:
+
+--------------------------------------------------------------------------------
+1. CA BIÊN 1: GIẢ LẬP LỖI MẠNG ApiError(0) & ĐỒNG BỘ ĐỐI SOÁT QUOTA
+--------------------------------------------------------------------------------
+* Bối cảnh:
+  Khi Consumer đang thao tác trên API Playground hoặc bấm "Dùng thử Sandbox", kết nối mạng bị rớt đột ngột (Offline, timeout mạng, DNS failure, client nhận `status: 0` hoặc `ERR_INTERNET_DISCONNECTED`).
+
+* Rủi ro phát hiện:
+  - Component có thể bị văng Uncaught Error hoặc hiển thị màn hình trắng.
+  - Số lượt quota sandbox có thể bị trừ ảo trên UI mặc dù request chưa đến được máy chủ backend, gây lệch số dư quota giữa Client và Database (`sandbox_grants.used_requests`).
+
+* Yêu cầu kỹ thuật Frontend:
+  - Bắt lỗi mạng qua ApiError(0) / TypeError ('Failed to fetch') trong custom hook `useApi` / `usePlayground`.
+  - Hiển thị Toast / Alert thân thiện: "Không thể kết nối máy chủ. Vui lòng kiểm tra đường truyền mạng."
+  - Bảo toàn quota: Giữ nguyên số lượt còn lại trên UI (`remaining_requests`), không tự ý decrement khi chưa có response 200/201 từ Backend.
+
+* Mã kịch bản Playwright E2E mẫu:
+```typescript
+test('FE-EDGE-01: Handles ApiError(0) network drop gracefully and preserves quota count', async ({ page, context }) => {
+  await setupMarketplaceRoutes(page);
+  await page.goto('/api/1/try-sandbox');
+
+  // Chờ hiển thị số lượt quota ban đầu (ví dụ: 10/10)
+  const quotaBadge = page.locator('[data-testid="quota-badge"], text=/10\\s*lượt/i');
+  await expect(quotaBadge).toBeVisible();
+
+  // Giả lập rớt mạng khi gọi execute API
+  await page.route('**/api/gateway/**', route => route.abort('failed'));
+
+  // Bấm nút "Gửi Request"
+  const sendBtn = page.getByRole('button', { name: /Gửi Request|Thực thi/i });
+  await sendBtn.click();
+
+  // Kiểm tra: Toast lỗi mạng hiển thị, UI không bị crash trắng
+  await expect(page.getByText(/Không thể kết nối|Lỗi kết nối mạng|Mất kết nối/i)).toBeVisible();
+  await expect(page.locator('body')).not.toBeEmpty();
+
+  // Kiểm tra: Số lượt quota vẫn được bảo toàn (không bị trừ oan)
+  await expect(quotaBadge).toBeVisible();
+});
+```
+
+--------------------------------------------------------------------------------
+2. CA BIÊN 2: RACE CONDITION KHI CLAIM SANDBOX GRANT & NAVIGATE CHUYỂN TRANG
+--------------------------------------------------------------------------------
+* Bối cảnh:
+  Consumer bấm nút "Kích hoạt Dùng thử (Claim Sandbox Grant)". API backend có độ trễ (delay 300ms - 800ms). Trong thời gian request đang in-flight, người dùng sốt ruột bấm chuyển trang (như click link "Về Marketplace" hoặc sang tab khác).
+
+* Rủi ro phát hiện:
+  - Khi Promise của request claim trả về, React component đã bị unmount.
+  - Ném cảnh báo / lỗi: "Warning: Can't perform a React state update on an unmounted component" hoặc Unhandled Promise Rejection làm đọng memory leak.
+
+* Yêu cầu kỹ thuật Frontend:
+  - Sử dụng `AbortController` gắn với signal của `fetch` trong `useEffect` hoặc check `isMounted` ref trước khi gọi `setState` / dispatch action.
+  - Hủy request an toàn khi component unmount mà không ghi nhận lỗi vào Error Boundary.
+
+* Mã kịch bản Playwright E2E mẫu:
+```typescript
+test('FE-EDGE-02: Fast navigation during in-flight claim grant does not trigger unhandled error', async ({ page }) => {
+  const pageErrors: Error[] = [];
+  page.on('pageerror', err => pageErrors.push(err));
+
+  await setupMarketplaceRoutes(page);
+  await page.goto('/api/1/try-sandbox');
+
+  // Làm trễ response của API claim sandbox 600ms
+  await page.route('**/api/consumer/apis/1/sandbox', async route => {
+    await new Promise(r => setTimeout(r, 600));
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { granted_requests: 10, used_requests: 0 } }),
+    });
+  });
+
+  // Bấm nút nhận Sandbox Grant
+  const claimBtn = page.getByRole('button', { name: /Kích hoạt Dùng thử|Nhận lượt test|Claim/i });
+  if (await claimBtn.isVisible()) {
+    await claimBtn.click();
+  }
+
+  // Ngay lập tức navigate chuyển trang khi request đang bay
+  await page.getByRole('link', { name: /Marketplace|Khám phá/i }).first().click();
+  await page.waitForURL('**/marketplace');
+
+  // Đợi thêm để request in-flight hoàn tất
+  await page.waitForTimeout(800);
+
+  // Assert: Không có unhandled runtime error nào xảy ra trong console
+  expect(pageErrors.length).toBe(0);
+});
+```
+
+--------------------------------------------------------------------------------
+3. CA BIÊN 3: URL PATH PARAMETERS CHỨA KÝ TỰ ĐẶC BIỆT (DẤU '-' HOẶC '.')
+--------------------------------------------------------------------------------
+* Bối cảnh:
+  Nhiều API OpenAPI 3.0 tiêu chuẩn sử dụng path parameters có dấu gạch ngang (`-`) hoặc dấu chấm (`.`), ví dụ:
+  - `/api/v1/customers/{customer-id}/orders`
+  - `/api/v1/data/{file.ext}/download`
+  - `/api/v1/organizations/{org_id}/teams/{team-code}`
+
+* Rủi ro phát hiện:
+  - Nếu regex phân tích parameter trong Playground chỉ dùng `\{(\w+)\}`, các tham số có dấu `-` hoặc `.` sẽ bị bỏ sót không nhận diện được.
+  - Form Playground không render ô input để Consumer nhập `customer-id` hoặc `file.ext`, dẫn đến việc request gửi đi bị giữ nguyên chuỗi `{customer-id}` và backend trả về 404/400.
+
+* Yêu cầu kỹ thuật Frontend:
+  - Cập nhật Regex phân tích path parameters: `/\{([a-zA-Z0-9_\-\.]+)\}/g`.
+  - Playground form tự động map đúng tên parameter và render input tương ứng cho mỗi biến tìm thấy.
+  - Khi submit, hàm replace URL phải thay thế chính xác:
+    `url.replace(`{${paramName}}`, encodeURIComponent(paramValue))`
+
+* Mã kịch bản Playwright E2E mẫu:
+```typescript
+test('FE-EDGE-03: Renders input fields for path parameters with hyphen and dot characters', async ({ page }) => {
+  // Mock API detail có endpoint chứa path param phức tạp
+  await page.route('**/api/marketplace/apis/99', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 99,
+        name: 'Complex Route API',
+        endpoints: [
+          {
+            id: 901,
+            method: 'GET',
+            path: '/v1/users/{user-uuid}/profile/{data.format}',
+            description: 'Get user data profile with custom format'
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto('/api/99/playground');
+
+  // Assert: Cả 2 input field cho 'user-uuid' và 'data.format' phải hiển thị đầy đủ
+  const inputUserUuid = page.locator('input[name="user-uuid"], input[placeholder*="user-uuid"]');
+  const inputDataFormat = page.locator('input[name="data.format"], input[placeholder*="data.format"]');
+
+  await expect(inputUserUuid).toBeVisible();
+  await expect(inputDataFormat).toBeVisible();
+
+  // Nhập dữ liệu thử nghiệm
+  await inputUserUuid.fill('abc-123-xyz');
+  await inputDataFormat.fill('json');
+
+  // URL preview được cập nhật chính xác
+  await expect(page.locator('[data-testid="preview-url"], code')).toContainText('/v1/users/abc-123-xyz/profile/json');
+});
+```
+
+================================================================================
+KẾT LUẬN & ĐỀ XUẤT:
+- Đội ngũ QA đã cấu hình sẵn các bài test API backend tương ứng (US-22, US-15 Edge Cases) trong `qa-scripts/sprint3-phase2-runner.js`.
+- File hướng dẫn này được lưu trực tiếp tại `qa-scripts/frontend-edge-cases.txt` để Dương và team FE tiện tham khảo và bổ sung vào test suite Playwright.
+- Bất kỳ thắc mắc nào về định dạng response hoặc mock data, hãy ping Vân để phối hợp giải quyết ngay nhé!
+================================================================================
