@@ -1232,4 +1232,364 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
     fireEvent.change(cityInput, { target: { value: 'ho chi minh' } });
     expect(container.querySelector('pre')?.textContent).toContain('/cities/ho%20chi%20minh/documents/guide.pdf');
   });
+
+  it('extracts and substitutes path parameters when parameters metadata is empty array (Reviewer case: GET /weather/{city-name}/{file.name})', async () => {
+    const apiWithEmptyParams: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      endpoints: [
+        {
+          id: 'ep-weather',
+          versionId: 'v1',
+          path: '/weather/{city-name}/{file.name}',
+          method: 'GET',
+          description: 'Get weather report file',
+          parameters: [], // empty array!
+          requestSchema: null,
+          responseExample: { status: 'ok' },
+        },
+      ],
+    };
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(apiWithEmptyParams);
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockResolvedValueOnce({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'ok', data: 'forecast' }),
+      bodyEncoding: 'utf8',
+      latencyMs: 50,
+      remainingRequests: 4,
+    });
+
+    const { container } = renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    // Assert: renders input for city-name and file.name
+    expect(await screen.findByText('{city-name}')).toBeDefined();
+    expect(screen.getByText('{file.name}')).toBeDefined();
+
+    const cityInput = screen.getByPlaceholderText('Giá trị city-name') as HTMLInputElement;
+    const fileInput = screen.getByPlaceholderText('Giá trị file.name') as HTMLInputElement;
+    expect(cityInput).toBeDefined();
+    expect(fileInput).toBeDefined();
+    expect(cityInput.value).toBe('');
+    expect(fileInput.value).toBe('');
+
+    // User types values successfully (with spaces to test URL encoding)
+    fireEvent.change(cityInput, { target: { value: 'san francisco' } });
+    fireEvent.change(fileInput, { target: { value: 'forecast report.pdf' } });
+    expect(cityInput.value).toBe('san francisco');
+    expect(fileInput.value).toBe('forecast report.pdf');
+
+    // Path is encoded safely in cURL snippet and URL (spaces encoded as %20)
+    const curlSnippet = container.querySelector('pre')?.textContent || '';
+    expect(curlSnippet).toContain('/weather/san%20francisco/forecast%20report.pdf');
+
+    // No unreplaced placeholders remain
+    expect(curlSnippet).not.toContain('{city-name}');
+    expect(curlSnippet).not.toContain('{file.name}');
+
+    // Click Send Request
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Assert actual payload passed to executePlayground mock
+    await waitFor(() => {
+      expect(executeSpy).toHaveBeenCalledWith(
+        'api-pg-1',
+        expect.objectContaining({
+          endpointId: 'ep-weather',
+          pathParams: {
+            'city-name': 'san francisco',
+            'file.name': 'forecast report.pdf',
+          },
+        }),
+        expect.any(AbortSignal)
+      );
+    });
+  });
+
+  it('correctly substitutes repeated placeholders such as /weather/{city-name}/archive/{city-name} with spaces encoded', async () => {
+    const apiWithRepeatedParams: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      endpoints: [
+        {
+          id: 'ep-repeated',
+          versionId: 'v1',
+          path: '/weather/{city-name}/archive/{city-name}',
+          method: 'GET',
+          description: 'Get archived weather for city',
+          parameters: [], // empty array!
+          requestSchema: null,
+          responseExample: { status: 'ok' },
+        },
+      ],
+    };
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(apiWithRepeatedParams);
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockResolvedValueOnce({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'ok' }),
+      bodyEncoding: 'utf8',
+      latencyMs: 35,
+      remainingRequests: 4,
+    });
+
+    const { container } = renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    // Deduplicated single input rendered for city-name
+    expect(await screen.findByText('{city-name}')).toBeDefined();
+    const cityInputs = screen.getAllByPlaceholderText('Giá trị city-name');
+    expect(cityInputs.length).toBe(1);
+
+    // User types value with spaces
+    fireEvent.change(cityInputs[0], { target: { value: 'new york' } });
+    expect((cityInputs[0] as HTMLInputElement).value).toBe('new york');
+
+    // Both occurrences substituted with %20 and no placeholder remains
+    const curlSnippet = container.querySelector('pre')?.textContent || '';
+    expect(curlSnippet).toContain('/weather/new%20york/archive/new%20york');
+    expect(curlSnippet).not.toContain('{city-name}');
+
+    // Send Request passes actual clean pathParams payload
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(executeSpy).toHaveBeenCalledWith(
+        'api-pg-1',
+        expect.objectContaining({
+          endpointId: 'ep-repeated',
+          pathParams: {
+            'city-name': 'new york',
+          },
+        }),
+        expect.any(AbortSignal)
+      );
+    });
+  });
+
+  it('continues to support standard parameters such as {userId} with user edits and execution payload', async () => {
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockResolvedValueOnce({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'ok' }),
+      bodyEncoding: 'utf8',
+      latencyMs: 25,
+      remainingRequests: 4,
+    });
+
+    const { container } = renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    expect(await screen.findByText('{userId}')).toBeDefined();
+    const userIdInput = screen.getByPlaceholderText('Giá trị userId') as HTMLInputElement;
+    expect(userIdInput.value).toBe('u-123');
+
+    // Change value with spaces
+    fireEvent.change(userIdInput, { target: { value: 'user 999' } });
+    expect(userIdInput.value).toBe('user 999');
+
+    // cURL snippet safely encoded
+    const curlSnippet = container.querySelector('pre')?.textContent || '';
+    expect(curlSnippet).toContain('/v1/users/user%20999');
+    expect(curlSnippet).not.toContain('{userId}');
+
+    // Send request passes exact pathParams payload
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(executeSpy).toHaveBeenCalledWith(
+        'api-pg-1',
+        expect.objectContaining({
+          endpointId: 'ep-get',
+          pathParams: expect.objectContaining({ userId: 'user 999' }),
+        }),
+        expect.any(AbortSignal)
+      );
+    });
+  });
+
+  it('disables Send while GET grant reconciliation is pending, keeps it disabled on failure with unverified notice, re-enables Send on retry success, and never resends upstream request', async () => {
+    let grantCallCount = 0;
+    let rejectReconcile!: (err: any) => void;
+    const pendingReconcilePromise = new Promise((_, reject) => {
+      rejectReconcile = reject;
+    });
+
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCallCount++;
+      if (grantCallCount === 1) {
+        // Initial grant fetch on mount
+        return {
+          id: 'g-initial',
+          apiId: 'api-pg-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        };
+      }
+      if (grantCallCount === 2) {
+        // Automatic reconciliation triggered by ambiguous error - deferred pending
+        return pendingReconcilePromise as any;
+      }
+      // grantCallCount >= 3: Retry succeeds with ACTIVE grant and remaining requests > 0
+      return {
+        id: 'g-initial',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      };
+    });
+
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(504, 'GATEWAY_TIMEOUT', 'Gateway Timeout')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*5\/5/)).toBeDefined();
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+
+    // Trigger execution which fails with 504 and initiates deferred reconciliation
+    fireEvent.click(sendButton);
+
+    // 1. While GET grant reconciliation is pending (deferred Promise), Send button must be disabled
+    await waitFor(() => {
+      expect(grantCallCount).toBe(2);
+      expect((sendButton as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // 2. If GET grant reconciliation fails, Send button remains disabled (and displays unverified notice)
+    act(() => {
+      rejectReconcile(new ApiError(500, 'RECONCILE_FAILED', 'Failed to reach quota store'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quota: Cần xác minh/i)).toBeDefined();
+      expect(screen.getAllByText(/Không thể đối soát hạn ngạch sau lỗi kết nối/i).length).toBeGreaterThan(0);
+      expect((sendButton as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // 3. If retry succeeds and grant is ACTIVE with remaining requests > 0, Send button is re-enabled
+    const retryButtons = screen.getAllByRole('button', { name: /Xác minh lại quota/i });
+    fireEvent.click(retryButtons[0]);
+
+    await waitFor(() => {
+      expect(grantCallCount).toBe(3);
+      expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
+      expect(screen.queryByText(/Quota: Cần xác minh/i)).toBeNull();
+      expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    // 4. Verify that upstream request is NOT automatically resent (executePlayground called only once)
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT treat active abort via ApiError(0, "ABORTED") as ambiguous network/timeout error', async () => {
+    let grantCallCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCallCount++;
+      return {
+        id: 'g-initial',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      };
+    });
+
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(0, 'ABORTED', 'Aborted by caller')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*4\/5/)).toBeDefined();
+    expect(grantCallCount).toBe(1);
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Wait short delay to ensure no async reconciliation is triggered
+    await new Promise(r => setTimeout(r, 50));
+
+    // Reconciliation was NOT triggered (grantCallCount remains 1)
+    expect(grantCallCount).toBe(1);
+
+    // No reconciliation failure notice or unverified badge
+    expect(screen.queryByText(/Quota: Cần xác minh/i)).toBeNull();
+    expect(screen.queryByText(/Không thể đối soát hạn ngạch sau lỗi kết nối/i)).toBeNull();
+    expect(screen.queryByText(/Lỗi Gateway Upstream/i)).toBeNull();
+
+    // Send button state remains consistent and enabled
+    expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('does NOT treat active abort via DOMException("Aborted", "AbortError") as ambiguous network/timeout error', async () => {
+    let grantCallCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantCallCount++;
+      return {
+        id: 'g-initial',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      };
+    });
+
+    const executeSpy = vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new DOMException('The operation was aborted', 'AbortError')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*4\/5/)).toBeDefined();
+    expect(grantCallCount).toBe(1);
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Wait short delay to ensure no async reconciliation is triggered
+    await new Promise(r => setTimeout(r, 50));
+
+    // Reconciliation was NOT triggered (grantCallCount remains 1)
+    expect(grantCallCount).toBe(1);
+
+    // No reconciliation failure notice or unverified badge
+    expect(screen.queryByText(/Quota: Cần xác minh/i)).toBeNull();
+    expect(screen.queryByText(/Không thể đối soát hạn ngạch sau lỗi kết nối/i)).toBeNull();
+
+    // Send button state remains consistent and enabled
+    expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+  });
+
 });

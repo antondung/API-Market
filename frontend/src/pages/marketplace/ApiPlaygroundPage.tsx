@@ -609,7 +609,7 @@ export const ApiPlaygroundPage: React.FC = () => {
       // Automatically switch right panel to response tab
       setRightPanelTab('response');
     } catch (err: any) {
-      if (controller.signal.aborted || err?.name === 'AbortError') {
+      if (controller.signal.aborted || err?.name === 'AbortError' || (err instanceof ApiError && err.code === 'ABORTED')) {
         return;
       }
       const status = err?.status ?? (err instanceof ApiError ? err.status : undefined);
