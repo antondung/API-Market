@@ -2,14 +2,19 @@ import express, { type RequestHandler } from 'express';
 import { z } from 'zod';
 import { ReportService, REPORT_CATEGORIES } from './report-service.js';
 
+// PostgreSQL TEXT rejects U+0000, so a NUL must be a 400 rather than a driver error.
+const noNul = (value: string) => !value.includes('\u0000');
+const text = (min: number, max: number) => z.string().trim().min(min).max(max)
+  .refine(noNul, 'Must not contain NUL');
+
 const createSchema = z.object({
   category: z.enum(REPORT_CATEGORIES),
-  description: z.string().trim().min(10).max(5000),
+  description: text(10, 5000),
 }).strict();
 
 const moderateSchema = z.object({
   action: z.enum(['Suspend', 'Restore', 'Remove', 'Dismiss']),
-  note: z.string().trim().min(1).max(2000),
+  note: text(1, 2000),
 }).strict();
 
 // Route ids reach SQL integer columns, so they are validated here rather than left to

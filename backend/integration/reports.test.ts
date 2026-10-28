@@ -214,3 +214,32 @@ test('publishes the report routes in the OpenAPI document', async () => {
     }
   } finally { await f.close(); }
 });
+
+test('rejects NUL in report description and moderation note instead of failing in PostgreSQL', async () => {
+  const f = await fixture();
+  try {
+    // PostgreSQL TEXT rejects U+0000; the API must answer 400 before reaching the driver.
+    await request(f.app).post(`/api/consumer/reports/${f.api}`)
+      .set(bearer(f.consumer.accessToken))
+      .send({ category: 'Malicious Data', description: 'bad\u0000description here' }).expect(400);
+
+    const created = await request(f.app).post(`/api/consumer/reports/${f.api}`)
+      .set(bearer(f.consumer.accessToken)).send(validReport).expect(201);
+    await request(f.app).post(`/api/admin/reports/${created.body.data.id}/review`)
+      .set(bearer(f.admin.accessToken))
+      .send({ action: 'Dismiss', note: 'bad\u0000note' }).expect(400);
+  } finally { await f.close(); }
+});
+
+test('declares bearer security on every report operation', async () => {
+  const f = await fixture();
+  try {
+    const spec = await request(f.app).get('/openapi.json').expect(200);
+    for (const [path, methods] of Object.entries(spec.body.paths)) {
+      if (!path.startsWith('/api/consumer/reports') && !path.startsWith('/api/admin/reports')) continue;
+      for (const [method, operation] of Object.entries(methods as Record<string, any>)) {
+        assert.deepEqual(operation.security, [{ bearerAuth: [] }], `${method.toUpperCase()} ${path} must require bearer auth`);
+      }
+    }
+  } finally { await f.close(); }
+});

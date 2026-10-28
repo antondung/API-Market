@@ -5,6 +5,7 @@ export const reportPaths = {
       summary: 'List my reports',
       description: 'Reports filed by the signed-in Consumer, newest first.',
       tags: ['Consumer reports'],
+      security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } },
         { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50 } },
@@ -17,6 +18,7 @@ export const reportPaths = {
       summary: 'Report a published API',
       description: 'Only a Published API can be reported. Description is 10-5000 characters.',
       tags: ['Consumer reports'],
+      security: [{ bearerAuth: [] }],
       parameters: [{ name: 'apiId', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } }],
       requestBody: {
         required: true,
@@ -45,6 +47,7 @@ export const reportPaths = {
       summary: 'Moderation queue',
       description: 'Defaults to open cases (Pending and Under Investigation).',
       tags: ['Admin moderation'],
+      security: [{ bearerAuth: [] }],
       parameters: [
         { name: 'status', in: 'query', schema: { type: 'string', enum: ['Pending', 'Under Investigation', 'Resolved', 'Dismissed'] } },
         { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } },
@@ -58,6 +61,7 @@ export const reportPaths = {
       summary: 'Decide a report',
       description: 'Suspend or Remove move a Published API to Suspended. Restore returns a Suspended API to Published and may be applied to a case already resolved by Suspend.',
       tags: ['Admin moderation'],
+      security: [{ bearerAuth: [] }],
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } }],
       requestBody: {
         required: true,
