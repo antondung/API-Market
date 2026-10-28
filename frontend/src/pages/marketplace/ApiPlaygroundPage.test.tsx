@@ -25,6 +25,8 @@ vi.mock('../../i18n', () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }));
 
+const getFutureExpiry = () => new Date(Date.now() + 86400000).toISOString();
+
 const mockApiDetail: MarketplaceApiDetail = {
   id: 'api-pg-1',
   name: 'Playground Test API',
@@ -94,7 +96,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 1,
       remainingRequests: 4,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
   });
@@ -197,7 +199,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 5,
       remainingRequests: 0,
       available: false,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
 
@@ -295,7 +297,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 0,
       remainingRequests: 5,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
 
@@ -350,7 +352,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 1,
       remainingRequests: 4,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: '2026-10-21T00:00:00.000Z', // Revoked
     });
 
@@ -414,7 +416,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       };
     });
@@ -430,7 +432,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       };
     });
@@ -469,7 +471,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 0,
       remainingRequests: 5,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
 
@@ -490,7 +492,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: grantCallCount === 1 ? 1 : 2,
         remainingRequests: grantCallCount === 1 ? 4 : 3,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       };
     });
@@ -532,7 +534,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
           usedRequests: 1,
           remainingRequests: 4,
           available: true,
-          expiresAt: '2026-10-28T00:00:00.000Z',
+          expiresAt: getFutureExpiry(),
           revokedAt: null,
         };
       }
@@ -567,7 +569,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 1,
       remainingRequests: 4,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
 
@@ -607,7 +609,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
       usedRequests: 0,
       remainingRequests: 5,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
   });
@@ -673,7 +675,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       });
     });
@@ -690,7 +692,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       });
     });
@@ -771,7 +773,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       });
     });
@@ -801,7 +803,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 1,
         remainingRequests: 4,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       };
     });
@@ -848,7 +850,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       });
     });
@@ -870,7 +872,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
           usedRequests: 0,
           remainingRequests: 5,
           available: true,
-          expiresAt: '2026-10-28T00:00:00.000Z',
+          expiresAt: getFutureExpiry(),
           revokedAt: null,
         };
       }
@@ -916,7 +918,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
           usedRequests: 0,
           remainingRequests: 5,
           available: true,
-          expiresAt: '2026-10-28T00:00:00.000Z',
+          expiresAt: getFutureExpiry(),
           revokedAt: null,
         };
       }
@@ -936,7 +938,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 1,
         remainingRequests: 4,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       };
     });
@@ -997,7 +999,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
             usedRequests: 0,
             remainingRequests: 5,
             available: true,
-            expiresAt: '2026-10-28T00:00:00.000Z',
+            expiresAt: getFutureExpiry(),
             revokedAt: null,
           };
         }
@@ -1019,7 +1021,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 2,
         remainingRequests: 3,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       };
     });
@@ -1078,7 +1080,7 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
         usedRequests: 0,
         remainingRequests: 5,
         available: true,
-        expiresAt: '2026-10-28T00:00:00.000Z',
+        expiresAt: getFutureExpiry(),
         revokedAt: null,
       });
     });
@@ -1087,5 +1089,147 @@ describe('ApiPlaygroundPage - Real Gateway Routing & Safe SSRF Policy', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.getByText(/Quota:\s*3\/5/)).toBeDefined();
     expect(screen.queryByText(/Quota:\s*5\/5/)).toBeNull();
+  });
+
+  it('reconciles quota and locks Send button after client-side ApiError(0, "TIMEOUT")', async () => {
+    let grantFetchCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantFetchCount++;
+      if (grantFetchCount === 1) {
+        return {
+          id: 'g-initial',
+          apiId: 'api-pg-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        };
+      }
+      return {
+        id: 'g-initial',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      };
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(0, 'TIMEOUT', 'Máy chủ phản hồi quá chậm. Vui lòng thử lại.')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*5\/5/)).toBeDefined();
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    // Error message displayed
+    await waitFor(() => {
+      expect(screen.getByText(/Máy chủ phản hồi quá chậm/i)).toBeDefined();
+    });
+
+    // Quota reconciled to 4/5
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
+      expect(grantFetchCount).toBe(2);
+    });
+  });
+
+  it('reconciles quota and locks Send button after client-side ApiError(0, "NETWORK_ERROR")', async () => {
+    let grantFetchCount = 0;
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockImplementation(async () => {
+      grantFetchCount++;
+      if (grantFetchCount === 1) {
+        return {
+          id: 'g-initial',
+          apiId: 'api-pg-1',
+          maxRequests: 5,
+          usedRequests: 0,
+          remainingRequests: 5,
+          available: true,
+          expiresAt: getFutureExpiry(),
+          revokedAt: null,
+        };
+      }
+      return {
+        id: 'g-initial',
+        apiId: 'api-pg-1',
+        maxRequests: 5,
+        usedRequests: 1,
+        remainingRequests: 4,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      };
+    });
+
+    vi.spyOn(consumerApi, 'executePlayground').mockRejectedValueOnce(
+      new ApiError(0, 'NETWORK_ERROR', 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối và thử lại.')
+    );
+
+    renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+    expect(await screen.findByText(/Quota:\s*5\/5/)).toBeDefined();
+
+    const sendButton = screen.getByRole('button', { name: /Send Request/i });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Không thể kết nối đến máy chủ/i)).toBeDefined();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quota:\s*4\/5/)).toBeDefined();
+      expect(grantFetchCount).toBe(2);
+    });
+  });
+
+  it('supports kebab-case and dotted path parameters such as {city-name} and {file.name}', async () => {
+    const apiWithExtendedParams: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      endpoints: [
+        {
+          id: 'ep-kebab',
+          versionId: 'v1',
+          path: '/v1/cities/{city-name}/documents/{file.name}',
+          method: 'GET',
+          description: 'Get city document',
+          parameters: [
+            { name: 'city-name', in: 'path', required: true, schema: { type: 'string' }, default: 'da-nang' },
+            { name: 'file.name', in: 'path', required: true, schema: { type: 'string' }, default: 'guide.pdf' },
+          ],
+          requestSchema: null,
+          responseExample: { status: 'ok' },
+        },
+      ],
+    };
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(apiWithExtendedParams);
+
+    const { container } = renderPlayground();
+    await screen.findByRole('heading', { level: 1, name: /API Playground & Gateway Sandbox/i });
+
+    // Both kebab-case and dotted parameter labels must be visible
+    expect(await screen.findByText('{city-name}')).toBeDefined();
+    expect(screen.getByText('{file.name}')).toBeDefined();
+
+    // Verify inputs populated with default values
+    const cityInput = screen.getByPlaceholderText('Giá trị city-name') as HTMLInputElement;
+    const fileInput = screen.getByPlaceholderText('Giá trị file.name') as HTMLInputElement;
+    expect(cityInput.value).toBe('da-nang');
+    expect(fileInput.value).toBe('guide.pdf');
+
+    // Verify cURL command substituted with defaults
+    expect(container.querySelector('pre')?.textContent).toContain('/cities/da-nang/documents/guide.pdf');
+
+    // Edit city input to contain special characters needing encoding
+    fireEvent.change(cityInput, { target: { value: 'ho chi minh' } });
+    expect(container.querySelector('pre')?.textContent).toContain('/cities/ho%20chi%20minh/documents/guide.pdf');
   });
 });

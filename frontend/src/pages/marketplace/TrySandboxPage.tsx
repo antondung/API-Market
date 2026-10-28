@@ -46,15 +46,24 @@ export const TrySandboxPage: React.FC = () => {
 
   const activeUserIdRef = useRef<string | null>(currentUser?.id ?? null);
   activeUserIdRef.current = currentUser?.id ?? null;
+  const currentApiIdRef = useRef<string | undefined>(id);
+  currentApiIdRef.current = id;
+  const activeClaimSeqRef = useRef<number>(0);
+  const grantFetchControllerRef = useRef<AbortController | null>(null);
 
   // Security lifecycle: Wipe sensitive credentials on unmount, API switch, or logout
   useEffect(() => {
+    activeClaimSeqRef.current = 0;
+    setIsGrantClaiming(false);
+
     const handleLogout = () => {
       setCustomApiKey('');
       setShowApiKey(false);
       setIncludeRealKeyInSnippet(false);
       setGrant(null);
       setGrantError(null);
+      activeClaimSeqRef.current = 0;
+      setIsGrantClaiming(false);
     };
 
     window.addEventListener('apihub:session-invalidated', handleLogout);
@@ -62,6 +71,8 @@ export const TrySandboxPage: React.FC = () => {
       setCustomApiKey('');
       setShowApiKey(false);
       setIncludeRealKeyInSnippet(false);
+      activeClaimSeqRef.current = 0;
+      setIsGrantClaiming(false);
       window.removeEventListener('apihub:session-invalidated', handleLogout);
     };
   }, [id]);
@@ -106,6 +117,7 @@ export const TrySandboxPage: React.FC = () => {
     }
 
     const controller = new AbortController();
+    grantFetchControllerRef.current = controller;
     const requestingUserId = currentUser?.id;
 
     const fetchGrant = async () => {
@@ -142,15 +154,16 @@ export const TrySandboxPage: React.FC = () => {
     fetchGrant();
 
     return () => {
+      grantFetchControllerRef.current = null;
       controller.abort();
     };
   }, [id, isConsumer, currentUser?.id, t]);
 
-  // Explicit claim handler (POST /api/consumer/apis/:id/sandbox)
+  // Explicit claim handler (POST /api/consumer/apis/:id/sandbox) with sequence & identity guards
   const handleClaimGrant = async () => {
-    if (!id) return;
+    if (!id || isGrantClaiming || activeClaimSeqRef.current !== 0) return;
     if (!isAuthenticated) {
-      navigate('/login', { state: { from: `/api/${id}/sandbox` } });
+      navigate('/login', { state: { from: `/api/${id}/try-sandbox` } });
       return;
     }
     if (!isConsumer) {
@@ -158,27 +171,49 @@ export const TrySandboxPage: React.FC = () => {
       return;
     }
 
+    const requestingApiId = id;
+    const requestingUserId = currentUser?.id;
+    if (grantFetchControllerRef.current) {
+      grantFetchControllerRef.current.abort();
+      grantFetchControllerRef.current = null;
+    }
+    const claimSeq = ++activeClaimSeqRef.current;
     try {
       setIsGrantClaiming(true);
       setGrantError(null);
-      const data = await claimSandboxGrant(id);
-      setGrant(data);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 403) {
-          setGrantError(t('Chỉ tài khoản Consumer đang hoạt động mới có quyền yêu cầu Sandbox grant.'));
-        } else if (err.status === 404) {
-          setGrantError(t('API này không tồn tại hoặc chưa được công khai.'));
-        } else if (err.status === 429) {
-          setGrantError(t('Quá nhiều yêu cầu. Vui lòng đợi trong giây lát.'));
+      const data = await claimSandboxGrant(requestingApiId);
+      if (
+        activeClaimSeqRef.current === claimSeq &&
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId
+      ) {
+        setGrant(data);
+      }
+    } catch (err: any) {
+      if (
+        activeClaimSeqRef.current === claimSeq &&
+        currentApiIdRef.current === requestingApiId &&
+        activeUserIdRef.current === requestingUserId
+      ) {
+        if (err instanceof ApiError) {
+          if (err.status === 403) {
+            setGrantError(t('Chỉ tài khoản Consumer đang hoạt động mới có quyền yêu cầu Sandbox grant.'));
+          } else if (err.status === 404) {
+            setGrantError(t('API này không tồn tại hoặc chưa được công khai.'));
+          } else if (err.status === 429) {
+            setGrantError(t('Quá nhiều yêu cầu. Vui lòng đợi trong giây lát.'));
+          } else {
+            setGrantError(err.message || t('Không thể cấp phát Sandbox grant.'));
+          }
         } else {
-          setGrantError(err.message || t('Không thể cấp phát Sandbox grant.'));
+          setGrantError(t('Lỗi kết nối máy chủ khi kích hoạt Sandbox grant.'));
         }
-      } else {
-        setGrantError(t('Lỗi kết nối máy chủ khi kích hoạt Sandbox grant.'));
       }
     } finally {
-      setIsGrantClaiming(false);
+      if (activeClaimSeqRef.current === claimSeq) {
+        activeClaimSeqRef.current = 0;
+        setIsGrantClaiming(false);
+      }
     }
   };
 
@@ -232,10 +267,27 @@ export const TrySandboxPage: React.FC = () => {
     }
   };
 
+  // Real-time grant expiration monitor: Transitions UI to expired when expiresAt passes without requiring refresh
+  const [isGrantExpiredByTimer, setIsGrantExpiredByTimer] = useState(false);
+  useEffect(() => {
+    setIsGrantExpiredByTimer(false);
+    if (!grant || !grant.expiresAt) return;
+    const expiresTime = new Date(grant.expiresAt).getTime();
+    const remainingMs = expiresTime - Date.now();
+    if (remainingMs <= 0) {
+      setIsGrantExpiredByTimer(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setIsGrantExpiredByTimer(true);
+    }, remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [grant?.expiresAt]);
+
   const isGrantExpired = useMemo(() => {
     if (!grant) return false;
-    return new Date(grant.expiresAt).getTime() <= Date.now();
-  }, [grant]);
+    return isGrantExpiredByTimer || new Date(grant.expiresAt).getTime() <= Date.now();
+  }, [grant, isGrantExpiredByTimer]);
 
   const isGrantExhausted = useMemo(() => {
     if (!grant) return false;
@@ -389,7 +441,7 @@ export const TrySandboxPage: React.FC = () => {
                     <strong className="text-on-surface block mb-0.5">{t('Yêu cầu Đăng nhập Consumer')}</strong>
                     {t('Đăng nhập tài khoản Consumer để kích hoạt 5 lượt gọi thử nghiệm Sandbox lưu trữ trên máy chủ.')}
                   </div>
-                  <Link to="/login" state={{ from: `/api/${api.id}/sandbox` }}>
+                  <Link to="/login" state={{ from: `/api/${api.id}/try-sandbox` }}>
                     <Button variant="primary" size="sm" icon="login">
                       {t('Đăng nhập Consumer')}
                     </Button>

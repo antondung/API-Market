@@ -160,9 +160,9 @@ export const ApiPlaygroundPage: React.FC = () => {
   const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
 
-  // Extract path parameter names from a template string like `/v1/users/{userId}/posts/{postId}`
+  // Extract path parameter names from a template string like `/v1/users/{userId}` or `/v1/weather/{city-name}/{file.ext}`
   const extractPathParams = (path: string): string[] => {
-    const matches = path.match(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g);
+    const matches = path.match(/\{([A-Za-z_][A-Za-z0-9_.-]*)\}/g);
     if (!matches) return [];
     return matches.map(m => m.slice(1, -1));
   };
@@ -374,7 +374,7 @@ export const ApiPlaygroundPage: React.FC = () => {
     let path = selectedEndpoint.path;
     for (const [key, val] of Object.entries(pathParams)) {
       if (val) {
-        path = path.replace(`{${key}}`, encodeURIComponent(val));
+        path = path.split(`{${key}}`).join(encodeURIComponent(val));
       }
     }
     return path;
@@ -629,8 +629,12 @@ export const ApiPlaygroundPage: React.FC = () => {
         setExecutionError(t('Lỗi kết nối máy chủ'));
       }
 
-      // Re-read Sandbox Grant after 502/504 or network ambiguity to confirm authoritative quota consumption
-      const isAmbiguousError = status === 502 || status === 504 || typeof status === 'undefined';
+      // Re-read Sandbox Grant after 502/504 or network ambiguity (status 0 TIMEOUT / NETWORK_ERROR) to confirm authoritative quota consumption
+      const isAmbiguousError =
+        status === 502 ||
+        status === 504 ||
+        typeof status === 'undefined' ||
+        (err instanceof ApiError && err.status === 0 && (err.code === 'TIMEOUT' || err.code === 'NETWORK_ERROR'));
       if (isAmbiguousError && api?.id && currentApiIdRef.current === api.id && activeUserIdRef.current === currentUser?.id) {
         const reconcileSeq = ++quotaSeqRef.current;
         setIsQuotaReconciling(true);
