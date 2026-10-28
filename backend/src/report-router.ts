@@ -13,8 +13,17 @@ const moderateSchema = z.object({
 }).strict();
 
 // Route ids reach SQL integer columns, so they are validated here rather than left to
-// PostgreSQL: a non-numeric id would otherwise surface as a 500 instead of a 400.
-const numericId = z.string().regex(/^[1-9][0-9]{0,18}$/, 'Must be a positive integer id');
+// PostgreSQL: a non-numeric or out-of-range id would otherwise surface as a 500.
+// apis.id is INTEGER; reports.id is BIGINT. BigInt comparison keeps the bound exact.
+const INTEGER_MAX = 2147483647n;
+const BIGINT_MAX = 9223372036854775807n;
+const positiveId = (max: bigint, label: string) => z.string()
+  .regex(/^[1-9][0-9]*$/, 'Must be a positive integer id')
+  // BigInt() throws SyntaxError on non-numeric input, which would escape as a 500; the regex
+  // above already rejects that shape, so the conversion is guarded rather than assumed.
+  .refine(value => { try { return BigInt(value) <= max; } catch { return false; } }, `Must be at most ${max} (${label})`);
+const apiIdSchema = positiveId(INTEGER_MAX, 'apis.id is INTEGER');
+const reportIdSchema = positiveId(BIGINT_MAX, 'reports.id is BIGINT');
 
 const pagination = z.object({
   page: z.coerce.number().int().min(1).max(100000).optional(),
@@ -34,7 +43,7 @@ export function reportConsumerRouter(service: ReportService, auth: RequestHandle
   });
 
   router.post('/:apiId', async (req, res) => {
-    const apiId = numericId.parse(req.params.apiId);
+    const apiId = apiIdSchema.parse(req.params.apiId);
     const input = createSchema.parse(req.body);
     res.status(201).json({ data: await service.create(res.locals.identity.user.id, apiId, input) });
   });
@@ -54,7 +63,7 @@ export function reportAdminRouter(service: ReportService, auth: RequestHandler, 
   });
 
   router.post('/:id/review', async (req, res) => {
-    const reportId = numericId.parse(req.params.id);
+    const reportId = reportIdSchema.parse(req.params.id);
     const input = moderateSchema.parse(req.body);
     res.json({ data: await service.moderate(res.locals.identity.user.id, reportId, input.action, input.note) });
   });

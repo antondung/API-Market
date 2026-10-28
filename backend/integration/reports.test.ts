@@ -190,3 +190,27 @@ test('moderation is restricted to Admins', async () => {
     await request(f.app).get('/api/admin/reports').set(bearer(f.consumer.accessToken)).expect(403);
   } finally { await f.close(); }
 });
+test('rejects ids beyond the PostgreSQL column range instead of failing in the driver', async () => {
+  const f = await fixture();
+  try {
+    // apis.id is INTEGER: 2147483648 overflows it.
+    await request(f.app).post('/api/consumer/reports/2147483648')
+      .set(bearer(f.consumer.accessToken)).send(validReport).expect(400);
+    // reports.id is BIGINT: 9223372036854775808 overflows it.
+    await request(f.app).post('/api/admin/reports/9223372036854775808/review')
+      .set(bearer(f.admin.accessToken)).send({ action: 'Dismiss', note: 'x' }).expect(400);
+    // A very long numeric string must also be a 400, not a driver error.
+    await request(f.app).post('/api/consumer/reports/999999999999999999999999999')
+      .set(bearer(f.consumer.accessToken)).send(validReport).expect(400);
+  } finally { await f.close(); }
+});
+
+test('publishes the report routes in the OpenAPI document', async () => {
+  const f = await fixture();
+  try {
+    const spec = await request(f.app).get('/openapi.json').expect(200);
+    for (const path of ['/api/consumer/reports', '/api/consumer/reports/{apiId}', '/api/admin/reports', '/api/admin/reports/{id}/review']) {
+      assert.ok(spec.body.paths[path], 'missing OpenAPI path ' + path);
+    }
+  } finally { await f.close(); }
+});

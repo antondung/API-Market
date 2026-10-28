@@ -20,6 +20,7 @@ import { adminReviewPaths } from './admin-review-contract.js';
 import type { MarketplaceService } from './marketplace-service.js';
 import { marketplaceRouter } from './marketplace-router.js';
 import { marketplacePaths } from './marketplace-contract.js';
+import { reportPaths } from './report-contract.js';
 import { ApiKeyService, SandboxService } from './consumer-service.js';
 import { consumerRouter } from './consumer-router.js';
 import { PlaygroundService, playgroundInput } from './playground-service.js';
@@ -88,7 +89,8 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
   const document = { ...baseDocument,
-    paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}) } };
+    paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
+      ...(options.reports ? reportPaths : {}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
