@@ -92,40 +92,62 @@ export class ReportService {
    * nothing but leaves the API suspended so existing keys stop working; `Dismiss` closes the
    * report without touching the API.
    */
+  /**
+   * Applies a moderation decision.
+   *
+   * Suspend/Remove move a Published API to Suspended; Restore moves it back. Restore is allowed
+   * on a report that was already Resolved by a Suspend: without that path an API would stay
+   * Suspended forever, because a suspended API cannot be reported again to open a new case.
+   * A dismissed report cannot be reopened.
+   */
   async moderate(actorId: string, reportId: string, action: ModerationAction, note: string) {
     return this.transaction(actorId, async client => {
       const report = (await client.query(
-        'SELECT id,api_id,status FROM reports WHERE id=$1 FOR UPDATE', [reportId]
+        'SELECT id,api_id,status,action_taken FROM reports WHERE id=$1 FOR UPDATE', [reportId]
       )).rows[0];
       if (!report) throw new ApiError(404, 'NOT_FOUND', 'Report not found');
-      if (report.status === 'Resolved' || report.status === 'Dismissed') {
-        throw new ApiError(409, 'REPORT_CLOSED', 'Report has already been decided');
+      if (report.status === 'Dismissed') {
+        throw new ApiError(409, 'REPORT_CLOSED', 'Report has already been dismissed');
       }
 
       const api = (await client.query('SELECT id,status FROM apis WHERE id=$1 FOR UPDATE', [report.api_id])).rows[0];
       if (!api) throw new ApiError(404, 'NOT_FOUND', 'API not found');
 
+      // Restore is a follow-up decision on a case already resolved by Suspend.
+      const isRestoreFollowUp = action === 'Restore' && report.status === 'Resolved';
+      if (report.status === 'Resolved' && !isRestoreFollowUp) {
+        throw new ApiError(409, 'REPORT_CLOSED', 'Report has already been decided');
+      }
+
+      let nextApiStatus = api.status;
       if (action === 'Suspend' || action === 'Remove') {
         if (api.status !== 'Published') throw new ApiError(409, 'INVALID_STATE', 'Only a Published API can be suspended');
         await client.query("UPDATE apis SET status='Suspended' WHERE id=$1", [api.id]);
+        nextApiStatus = 'Suspended';
       }
       if (action === 'Restore') {
         if (api.status !== 'Suspended') throw new ApiError(409, 'INVALID_STATE', 'Only a Suspended API can be restored');
         await client.query("UPDATE apis SET status='Published' WHERE id=$1", [api.id]);
+        nextApiStatus = 'Published';
       }
 
+      // A Restore follow-up keeps the report Resolved; it only appends the later decision.
       const nextStatus = action === 'Dismiss' ? 'Dismissed' : 'Resolved';
+      const previousAction = typeof report.action_taken === 'string' ? report.action_taken : null;
+      const actionTaken = isRestoreFollowUp && previousAction
+        ? `${previousAction} | ${action}: ${note.trim()}`
+        : `${action}: ${note.trim()}`;
       const updated = (await client.query(
         `UPDATE reports SET status=$1, reviewed_by=$2, reviewed_at=CURRENT_TIMESTAMP, action_taken=$3
          WHERE id=$4 RETURNING id,api_id,status,action_taken,reviewed_at`,
-        [nextStatus, actorId, `${action}: ${note.trim()}`, reportId]
+        [nextStatus, actorId, actionTaken, reportId]
       )).rows[0];
 
       await this.audit.write(client, {
         actorId, actorRole: 'ADMIN', action: `report.${action.toLowerCase()}`,
         targetType: 'api', targetId: String(report.api_id),
         // The note is operator text; it must never carry credentials or payloads.
-        detail: { reportId: String(reportId), from: api.status, to: action === 'Restore' ? 'Published' : api.status },
+        detail: { reportId: String(reportId), from: api.status, to: nextApiStatus },
       });
       return row(updated);
     });

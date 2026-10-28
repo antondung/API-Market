@@ -12,6 +12,16 @@ const moderateSchema = z.object({
   note: z.string().trim().min(1).max(2000),
 }).strict();
 
+// Route ids reach SQL integer columns, so they are validated here rather than left to
+// PostgreSQL: a non-numeric id would otherwise surface as a 500 instead of a 400.
+const numericId = z.string().regex(/^[1-9][0-9]{0,18}$/, 'Must be a positive integer id');
+
+const pagination = z.object({
+  page: z.coerce.number().int().min(1).max(100000).optional(),
+  pageSize: z.coerce.number().int().min(1).max(50).optional(),
+  status: z.enum(['Pending', 'Under Investigation', 'Resolved', 'Dismissed']).optional(),
+}).strict();
+
 /** Consumer surface: file a report and follow their own cases. */
 export function reportConsumerRouter(service: ReportService, auth: RequestHandler, role: RequestHandler) {
   const router = express.Router();
@@ -19,14 +29,14 @@ export function reportConsumerRouter(service: ReportService, auth: RequestHandle
   router.use(auth, role);
 
   router.get('/', async (req, res) => {
-    const page = Math.max(1, Number(req.query.page ?? 1) || 1);
-    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize ?? 20) || 20));
-    res.json({ data: await service.listMine(res.locals.identity.user.id, page, pageSize) });
+    const query = pagination.parse(req.query);
+    res.json({ data: await service.listMine(res.locals.identity.user.id, query.page ?? 1, query.pageSize ?? 20) });
   });
 
   router.post('/:apiId', async (req, res) => {
+    const apiId = numericId.parse(req.params.apiId);
     const input = createSchema.parse(req.body);
-    res.status(201).json({ data: await service.create(res.locals.identity.user.id, req.params.apiId ?? '', input) });
+    res.status(201).json({ data: await service.create(res.locals.identity.user.id, apiId, input) });
   });
 
   return router;
@@ -39,15 +49,14 @@ export function reportAdminRouter(service: ReportService, auth: RequestHandler, 
   router.use(auth, role);
 
   router.get('/', async (req, res) => {
-    const status = typeof req.query.status === 'string' ? req.query.status : null;
-    const page = Math.max(1, Number(req.query.page ?? 1) || 1);
-    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize ?? 20) || 20));
-    res.json({ data: await service.listForAdmin(status, page, pageSize) });
+    const query = pagination.parse(req.query);
+    res.json({ data: await service.listForAdmin(query.status ?? null, query.page ?? 1, query.pageSize ?? 20) });
   });
 
   router.post('/:id/review', async (req, res) => {
+    const reportId = numericId.parse(req.params.id);
     const input = moderateSchema.parse(req.body);
-    res.json({ data: await service.moderate(res.locals.identity.user.id, req.params.id ?? '', input.action, input.note) });
+    res.json({ data: await service.moderate(res.locals.identity.user.id, reportId, input.action, input.note) });
   });
 
   return router;

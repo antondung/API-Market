@@ -107,28 +107,63 @@ test('Suspending a reported API blocks it and closes the report', async () => {
   } finally { await f.close(); }
 });
 
-test('Restore returns a suspended API to Published and keeps its publication date', async () => {
+test('Restore brings a suspended API back through the same report, keeping its publication date', async () => {
   const f = await fixture();
   try {
     const before = new Date((await f.store.pool.query('SELECT published_at FROM apis WHERE id=$1', [f.api])).rows[0].published_at).toISOString();
 
-    const first = await request(f.app).post(`/api/consumer/reports/${f.api}`)
+    const created = await request(f.app).post(`/api/consumer/reports/${f.api}`)
       .set(bearer(f.consumer.accessToken)).send(validReport).expect(201);
-    await request(f.app).post(`/api/admin/reports/${first.body.data.id}/review`)
+    const reportId = created.body.data.id;
+
+    // Suspend closes the report but the API must remain recoverable through that same case.
+    await request(f.app).post(`/api/admin/reports/${reportId}/review`)
       .set(bearer(f.admin.accessToken)).send({ action: 'Suspend', note: 'Investigate' }).expect(200);
+    assert.equal((await f.store.pool.query('SELECT status FROM apis WHERE id=$1', [f.api])).rows[0].status, 'Suspended');
 
-    // A suspended API is no longer reportable, so the restore decision needs its own report.
-    await request(f.app).post(`/api/consumer/reports/${f.api}`)
-      .set(bearer(f.consumer.accessToken)).send(validReport).expect(404);
+    const restored = await request(f.app).post(`/api/admin/reports/${reportId}/review`)
+      .set(bearer(f.admin.accessToken)).send({ action: 'Restore', note: 'Cleared' }).expect(200);
+    assert.equal(restored.body.data.status, 'Resolved');
+    // The follow-up decision is appended, so the original Suspend stays auditable.
+    assert.match(String(restored.body.data.actionTaken), /Suspend: Investigate/);
+    assert.match(String(restored.body.data.actionTaken), /Restore: Cleared/);
 
-    // Restore is a separate decision on a separate report; the first one is already closed.
-    const second = await f.reports.create(f.consumer.user.id, f.api, validReport).catch(() => null);
-    assert.equal(second, null, 'a suspended API cannot be reported again');
-
-    // Drive the restore through the service, which is the only path that may move Suspended -> Published.
-    await f.store.pool.query("UPDATE apis SET status='Published' WHERE id=$1", [f.api]);
+    assert.equal((await f.store.pool.query('SELECT status FROM apis WHERE id=$1', [f.api])).rows[0].status, 'Published');
     const after = new Date((await f.store.pool.query('SELECT published_at FROM apis WHERE id=$1', [f.api])).rows[0].published_at).toISOString();
     assert.equal(after, before, 'the original publication timestamp must survive suspend/restore');
+  } finally { await f.close(); }
+});
+
+test('rejects malformed ids and pagination instead of failing in PostgreSQL', async () => {
+  const f = await fixture();
+  try {
+    await request(f.app).post('/api/consumer/reports/abc')
+      .set(bearer(f.consumer.accessToken)).send(validReport).expect(400);
+    await request(f.app).post('/api/admin/reports/abc/review')
+      .set(bearer(f.admin.accessToken)).send({ action: 'Dismiss', note: 'x' }).expect(400);
+    await request(f.app).get('/api/admin/reports?page=Infinity')
+      .set(bearer(f.admin.accessToken)).expect(400);
+    await request(f.app).get('/api/admin/reports?page=1.5')
+      .set(bearer(f.admin.accessToken)).expect(400);
+    await request(f.app).get('/api/admin/reports?status=Bogus')
+      .set(bearer(f.admin.accessToken)).expect(400);
+  } finally { await f.close(); }
+});
+
+test('audit records the resulting API status for a moderation decision', async () => {
+  const f = await fixture();
+  try {
+    const created = await request(f.app).post(`/api/consumer/reports/${f.api}`)
+      .set(bearer(f.consumer.accessToken)).send(validReport).expect(201);
+    await request(f.app).post(`/api/admin/reports/${created.body.data.id}/review`)
+      .set(bearer(f.admin.accessToken)).send({ action: 'Suspend', note: 'Abuse confirmed' }).expect(200);
+
+    const log = (await f.store.pool.query(
+      "SELECT detail FROM audit_logs WHERE action='report.suspend' ORDER BY id DESC LIMIT 1"
+    )).rows[0];
+    assert.equal(log.detail.from, 'Published');
+    // The decision took effect, so the audit must record the state the API ended in.
+    assert.equal(log.detail.to, 'Suspended');
   } finally { await f.close(); }
 });
 
