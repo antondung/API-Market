@@ -32,7 +32,9 @@ const registerSchema = z.object({ email, password, role: z.enum(['Consumer', 'Pr
 const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
 // US-05: profile and password changes. The password policy matches registration.
-const updateProfileSchema = z.object({ name: z.string().trim().min(1).max(100) }).strict();
+// PostgreSQL TEXT rejects U+0000, so a NUL must be a 400 rather than a 500 from the driver.
+const noNul = (value: string) => !value.includes('\u0000');
+const updateProfileSchema = z.object({ name: z.string().trim().min(1).max(100).refine(noNul, 'Must not contain NUL') }).strict();
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(128),
   newPassword: password,

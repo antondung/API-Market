@@ -100,3 +100,27 @@ test('password change revokes other sessions but not the current one', async () 
   await request(f.app).get('/api/auth/me')
     .set('Authorization', `Bearer ${first.accessToken}`).expect(200);
 });
+test('a failed session revocation rolls the password change back', async () => {
+  const f = fixture();
+  const session = await signIn(f);
+  // Fault-inject: the atomic store operation fails after the hash would have been written.
+  const original = f.store.changePasswordAtomic.bind(f.store);
+  f.store.changePasswordAtomic = async () => { throw new Error('revocation failed'); };
+
+  await request(f.app).post('/api/auth/change-password')
+    .set('Authorization', `Bearer ${session.accessToken}`)
+    .send({ currentPassword: password, newPassword }).expect(500);
+
+  f.store.changePasswordAtomic = original;
+  // The old password must still work: a half-applied change would lock the user out.
+  await request(f.app).post('/api/auth/login').send({ email: 'user@example.com', password }).expect(200);
+  await request(f.app).post('/api/auth/login').send({ email: 'user@example.com', password: newPassword }).expect(401);
+});
+
+test('rejects a display name containing NUL instead of failing in PostgreSQL', async () => {
+  const f = fixture();
+  const session = await signIn(f);
+  await request(f.app).patch('/api/auth/me')
+    .set('Authorization', `Bearer ${session.accessToken}`)
+    .send({ name: 'bad\u0000name' }).expect(400);
+});

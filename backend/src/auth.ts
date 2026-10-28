@@ -110,9 +110,11 @@ export class AuthService {
     const valid = await checkPassword(currentPassword, user?.passwordHash ?? await this.dummyHash);
     if (!user || !valid) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Current password is incorrect');
     if (currentPassword === newPassword) throw new ApiError(400, 'PASSWORD_UNCHANGED', 'New password must differ from the current one');
-    if (!await this.store.updatePasswordHash(userId, await hashPassword(newPassword))) throw unauthorized();
-    const revoked = await this.store.revokeOtherSessions(userId, keepSessionId);
-    return { revokedSessions: revoked };
+    // Hash update and session revocation must commit together: if revocation failed after
+    // the hash was stored, the password would be changed while other devices stayed signed in.
+    const result = await this.store.changePasswordAtomic(userId, await hashPassword(newPassword), keepSessionId);
+    if (!result.updated) throw unauthorized();
+    return { revokedSessions: result.revoked };
   }
 
     // =========================================

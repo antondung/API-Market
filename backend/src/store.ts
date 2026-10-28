@@ -58,6 +58,8 @@ export interface AuthStore {
   updateProfile(id: string, name: string): Promise<User | undefined>;
   updatePasswordHash(id: string, passwordHash: string): Promise<boolean>;
   revokeOtherSessions(userId: string, keepSessionId: string): Promise<number>;
+  /** Applies the new hash and revokes other sessions in one transaction. */
+  changePasswordAtomic(userId: string, passwordHash: string, keepSessionId: string): Promise<{ updated: boolean; revoked: number }>;
 }
 
 // Only for local demonstrations and tests; never a staging/production database.
@@ -146,6 +148,26 @@ export class MemoryAuthStore implements AuthStore {
       }
     }
     return revoked;
+  }
+  async changePasswordAtomic(userId: string, passwordHash: string, keepSessionId: string) {
+    const user = this.users.get(userId);
+    if (!user) return { updated: false, revoked: 0 };
+    // Snapshot so a failure below cannot leave the hash applied.
+    const previousHash = user.passwordHash;
+    const revokedIds: string[] = [];
+    try {
+      user.passwordHash = passwordHash;
+      for (const session of this.sessions.values()) {
+        if (session.userId === userId && session.id !== keepSessionId && !session.revoked) {
+          session.revoked = true; revokedIds.push(session.id);
+        }
+      }
+      return { updated: true, revoked: revokedIds.length };
+    } catch (error) {
+      user.passwordHash = previousHash;
+      for (const id of revokedIds) { const s = this.sessions.get(id); if (s) s.revoked = false; }
+      throw error;
+    }
   }
   private toRecord(user: User): AdminUserRecord {
     return {
