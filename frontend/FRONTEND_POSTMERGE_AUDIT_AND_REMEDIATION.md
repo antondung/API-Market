@@ -1,7 +1,9 @@
 # API-MARKET FRONTEND — POST-MERGE AUDIT & REMEDIATION REPORT
 
 - **Target Branch**: `fix/frontend-sprint3-postmerge-stability`
-- **Base Branch**: `origin/develop` (`44377e157139efaf4bfe4605abb9d603330f516b`)
+- **Base Branch**: `origin/develop` (Baseline sau PR #86 merge: `ea1f41a61dc50b56d0d95cdb891ac4fb79645ca6`)
+- **Previous PR**: PR #86 (Merged at `ea1f41a61dc50b56d0d95cdb891ac4fb79645ca6`)
+- **Current Scope**: Follow-up hardening commit `cdbf3a7`
 - **Status**: Ready for Human Review (`PR_OPEN_AWAITING_HUMAN_REVIEW`)
 - **Date**: 2026-10-28
 
@@ -125,6 +127,6 @@ dist/assets/index-D4PfL85G.js                       490.73 kB │ gzip: 153.25 k
 ## 5. Reviewer Guidance & Sign-off Gate
 
 - **Chi nhánh PR**: `fix/frontend-sprint3-postmerge-stability` -> `develop`
-- **PR URL**: `https://github.com/antondung/API-Market/pull/86`
+- **Quan hệ PR**: PR #86 đã được merge vào `develop` (`ea1f41a`). PR mới này chỉ chứa các commit hiệu chỉnh bổ sung tiếp nối (`cdbf3a7` và cập nhật tài liệu), không tạo nhánh phụ.
 - **Trạng thái**: Chờ người phê duyệt đánh giá độc lập (`PR_OPEN_AWAITING_HUMAN_REVIEW`).
 - **Cam kết**: Tuyệt đối không tự phê duyệt (no self-approval), không tự merge (no auto-merge), tôn trọng quy trình thẩm định kỹ thuật của dự án API-Market.
