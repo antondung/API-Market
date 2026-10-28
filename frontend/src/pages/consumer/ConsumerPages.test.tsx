@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppProvider } from '../../context/AppContext';
 import { ConsumerDashboardPage } from './ConsumerDashboardPage';
@@ -19,10 +19,12 @@ let mockCurrentUser: { id: string; email: string; name: string; role: string } |
   role: 'Consumer',
 };
 
+const refreshCurrentUserMock = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
     currentUser: mockCurrentUser,
     isAuthenticated: true,
+    refreshCurrentUser: refreshCurrentUserMock,
   }),
 }));
 
@@ -189,19 +191,45 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
   });
 
   describe('ProfileSettingsPage', () => {
-    it('renders user details in read-only mode and explains unmerged PR #79 status', () => {
+    it('saves the display name through PATCH /api/auth/me and refreshes the user', async () => {
+      const authApi = await import('../../services/authApi');
+      const updateSpy = vi.spyOn(authApi, 'updateProfile').mockResolvedValue({} as any);
+      refreshCurrentUserMock.mockClear();
+
       render(
         <MemoryRouter>
           <ProfileSettingsPage />
         </MemoryRouter>
       );
 
-      expect(screen.getByText(/Trạng thái tích hợp US-05 \(PR #79\)/)).toBeDefined();
-      expect(screen.getByDisplayValue('Dev Tester')).toBeDefined();
-      expect(screen.getByDisplayValue('consumer@example.com')).toBeDefined();
+      const nameInput = screen.getByLabelText(/Full Name/) as HTMLInputElement;
+      fireEvent.change(nameInput, { target: { value: 'Ten Moi' } });
+      fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
 
-      const saveBtn = screen.getByRole('button', { name: /Save Changes/ });
-      expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledWith({ name: 'Ten Moi' }));
+      await waitFor(() => expect(refreshCurrentUserMock).toHaveBeenCalled());
+      expect(await screen.findByText(/Đã cập nhật hồ sơ/)).toBeDefined();
+    });
+
+    it('changes the password through POST /api/auth/change-password', async () => {
+      const authApi = await import('../../services/authApi');
+      const changeSpy = vi.spyOn(authApi, 'changePassword').mockResolvedValue({ revokedSessions: 1 });
+
+      render(
+        <MemoryRouter>
+          <ProfileSettingsPage />
+        </MemoryRouter>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Mật khẩu hiện tại/), { target: { value: 'Example-password-2026' } });
+      fireEvent.change(screen.getByLabelText(/Mật khẩu mới/), { target: { value: 'Another-password-2026' } });
+      fireEvent.click(screen.getByRole('button', { name: /Đổi mật khẩu/ }));
+
+      await waitFor(() => expect(changeSpy).toHaveBeenCalledWith({
+        currentPassword: 'Example-password-2026',
+        newPassword: 'Another-password-2026',
+      }));
+      expect(await screen.findByText(/Đã đổi mật khẩu/)).toBeDefined();
     });
   });
 });

@@ -1,9 +1,10 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ApiDetailPage } from './ApiDetailPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
+import * as reportApi from '../../services/reportApi';
 import { ApiError } from '../../services/authApi';
 import type { MarketplaceApiDetail } from '../../services/marketplaceTypes';
 
@@ -201,23 +202,30 @@ describe('ApiDetailPage', () => {
     expect(screen.getByText(/OpenAPI Version: 3\.0\.0/)).toBeDefined();
   });
 
-  it('displays report abuse modal with disabled action button per spec', async () => {
+  it('submits an abuse report through POST /api/consumer/reports/:apiId', async () => {
     vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+    const createSpy = vi.spyOn(reportApi, 'createReport').mockResolvedValue({} as any);
 
     renderPage();
     await screen.findByRole('heading', { level: 1, name: 'Global Climate Metrics API' });
 
-    // Click report abuse button
-    const reportButton = screen.getByRole('button', { name: /Report API Vulnerability \/ Abuse/ });
-    fireEvent.click(reportButton);
-
-    // Modal opens
+    fireEvent.click(screen.getByRole('button', { name: /Report API Vulnerability \/ Abuse/ }));
     expect(await screen.findByText('Báo cáo vi phạm / Lỗ hổng API')).toBeDefined();
-    expect(screen.getByText(/Tính năng gửi báo cáo trực tuyến đang chờ kết nối Backend/)).toBeDefined();
 
-    // Submit button is disabled pending backend
-    const submitReportButton = screen.getByRole('button', { name: /Gửi báo cáo \(Chờ Backend\)/ });
-    expect(submitReportButton.hasAttribute('disabled')).toBe(true);
+    // The submit button stays disabled until the description is long enough for the backend.
+    const submit = screen.getByRole('button', { name: /Gửi báo cáo/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/Mô tả chi tiết & bằng chứng/), {
+      target: { value: 'Endpoint returns injected content to callers.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Gửi báo cáo/ }));
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith(mockApiDetail.id, {
+      category: 'Extreme Downtime',
+      description: 'Endpoint returns injected content to callers.',
+    }));
+    expect(await screen.findByText(/Đã gửi báo cáo/)).toBeDefined();
   });
 
   it('handles API 404 Not Found error state properly', async () => {
