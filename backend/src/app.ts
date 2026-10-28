@@ -87,7 +87,6 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
   // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
   // an empty payload.
-  if (options.gateway) app.use('/api/gateway', gatewayRouter(options.gateway));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   const baseDocument = options.provider ? {

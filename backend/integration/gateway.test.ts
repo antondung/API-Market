@@ -203,3 +203,18 @@ test('stops serving once the API is no longer Published', async () => {
     assert.equal((await fetch(url(f.port, `/api/gateway/${f.api}/weather/Hanoi`), { headers: { 'x-api-key': f.key } })).status, 401);
   } finally { await f.close(); server.close(); }
 });
+test('accepts OpenAPI template names containing dash and dot', () => {
+  assert.deepEqual(matchTemplate('/weather/{city-name}', '/weather/Hanoi'), { 'city-name': 'Hanoi' });
+  assert.deepEqual(matchTemplate('/docs/{file.name}', '/docs/readme'), { 'file.name': 'readme' });
+});
+
+test('does not double-decode an already-decoded path segment', async () => {
+  const { server, seen, port: upPort } = await upstream();
+  const f = await fixture(upPort);
+  try {
+    // Express decodes '100%25' to '100%'; decoding again would throw a URIError and answer 500.
+    const res = await fetch(url(f.port, `/api/gateway/${f.api}/weather/100%25`), { headers: { 'x-api-key': f.key } });
+    assert.notEqual(res.status, 500, 'a percent in the path must not become an internal error');
+    if (res.status === 200) assert.equal(seen.url, '/weather/100%25');
+  } finally { await f.close(); server.close(); }
+});

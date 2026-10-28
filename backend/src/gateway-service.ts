@@ -40,10 +40,12 @@ export function matchTemplate(template: string, actual: string): Record<string, 
   for (let index = 0; index < templateParts.length; index += 1) {
     const expected = templateParts[index]!;
     const received = actualParts[index]!;
-    const placeholder = /^\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(expected);
+    // OpenAPI template names may contain '-' and '.', matching what Playground accepts.
+    const placeholder = /^\{([A-Za-z_][A-Za-z0-9_.-]*)\}$/.exec(expected);
     if (placeholder) {
       if (!received || received.length > 200 || /[/\\\x00-\x1f]/.test(received)) return null;
-      params[placeholder[1]!] = decodeURIComponent(received);
+      // Express already decoded the segment; decoding again turns '100%25' into a URIError.
+      params[placeholder[1]!] = received;
       continue;
     }
     if (expected !== received) return null;
