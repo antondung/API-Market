@@ -18,6 +18,7 @@ import type {
   MarketplaceApiDetail,
   MarketplaceEndpoint,
 } from '../../services/marketplaceTypes';
+import { createReport, REPORT_CATEGORIES, type ReportCategory } from '../../services/reportApi';
 import { ApiError } from '../../services/authApi';
 import type { ProviderDocumentation } from '../../services/providerTypes';
 import {
@@ -49,7 +50,24 @@ export const ApiDetailPage: React.FC = () => {
 
   // Report abuse modal
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [reportCategory, setReportCategory] = useState('API không hoạt động');
+  const [reportCategory, setReportCategory] = useState<ReportCategory>('Extreme Downtime');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportSent, setReportSent] = useState(false);
+  const handleSubmitReport = async () => {
+    if (!api) return;
+    setReportSubmitting(true);
+    setReportError(null);
+    try {
+      await createReport(api.id, { category: reportCategory, description: reportDescription.trim() });
+      setReportSent(true);
+      setReportDescription('');
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Không thể gửi báo cáo.');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
   const [reportDescription, setReportDescription] = useState('');
 
   // Fetch API detail with AbortController
@@ -824,15 +842,12 @@ export const ApiDetailPage: React.FC = () => {
               id="report-category-select"
               aria-label={t('Phân loại vi phạm') || 'Phân loại vi phạm'}
               value={reportCategory}
-              onChange={(e) => setReportCategory(e.target.value)}
+              onChange={(e) => setReportCategory(e.target.value as ReportCategory)}
               className="w-full p-2.5 rounded-xl border border-outline-variant bg-surface-container-low text-on-surface text-body-sm outline-none"
             >
-              <option value="API không hoạt động">API không hoạt động (Down / Not Responding)</option>
-              <option value="Thông tin sai lệch">Thông tin sai lệch (Misleading Docs)</option>
-              <option value="Vi phạm bản quyền">Vi phạm bản quyền (IP Infringement)</option>
-              <option value="Vi phạm riêng tư">Vi phạm quyền riêng tư (Privacy Breach / PII)</option>
-              <option value="Hành vi nguy hiểm">Hành vi nguy hiểm (Malicious Payload)</option>
-              <option value="Khác">Lý do khác</option>
+              {REPORT_CATEGORIES.map(category => (
+                <option key={category} value={category}>{category}</option>
+              ))}
             </select>
           </div>
 
@@ -850,6 +865,9 @@ export const ApiDetailPage: React.FC = () => {
             />
           </div>
 
+          {reportError && <p role="alert" className="text-body-sm text-error">{reportError}</p>}
+          {reportSent && <p role="status" className="text-body-sm text-primary">Đã gửi báo cáo. Admin sẽ xem xét trong thời gian sớm nhất.</p>}
+
           <div className="flex justify-end gap-3 pt-3 border-t border-outline-variant/20">
             <Button type="button" variant="outline" onClick={() => setReportModalOpen(false)}>
               {t('Đóng')}
@@ -857,10 +875,10 @@ export const ApiDetailPage: React.FC = () => {
             <Button
               type="button"
               variant="primary"
-              disabled={true}
-              title={t('Chức năng đang chờ kết nối Backend')}
+              disabled={reportSubmitting || reportDescription.trim().length < 10}
+              onClick={() => void handleSubmitReport()}
             >
-              {t('Gửi báo cáo (Chờ Backend)')}
+              {reportSubmitting ? 'Đang gửi...' : t('Gửi báo cáo')}
             </Button>
           </div>
         </div>

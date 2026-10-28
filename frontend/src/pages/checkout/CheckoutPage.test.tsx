@@ -65,6 +65,7 @@ describe('CheckoutPage - Data Integrity & Claim Sanitization', () => {
       registerWithBackend: vi.fn(),
       logout: vi.fn(),
       verifyRoleAccess: vi.fn(),
+      refreshCurrentUser: vi.fn().mockResolvedValue(undefined),
     });
   });
 

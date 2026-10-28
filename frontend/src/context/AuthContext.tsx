@@ -30,6 +30,8 @@ export interface AuthContextType {
   registerWithBackend: (params: { email: string; password: string; role: 'Consumer' | 'Provider'; name?: string }) => Promise<{ success: boolean; error?: string; user?: BackendUser }>;
   logout: () => Promise<{ warning?: string }>;
   verifyRoleAccess: (role: 'consumer' | 'provider' | 'admin') => Promise<{ success: boolean; data?: { role: string }; error?: string }>;
+  /** Re-reads the signed-in user from the server so the UI reflects a profile change. */
+  refreshCurrentUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -139,6 +141,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: formatBackendErrorMessage(error) };
     }
   };
+  const refreshCurrentUser = async () => {
+    const me = await getMe();
+    setCurrentUser(toFrontendUser(me));
+  };
+
 
   const logout = async (): Promise<{ warning?: string }> => {
     ++operationRef.current;
@@ -179,6 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       registerWithBackend,
       logout,
       verifyRoleAccess,
+      refreshCurrentUser,
     }}>
       {children}
     </AuthContext.Provider>
