@@ -24,6 +24,14 @@ export const AnalyticsHealthPage: React.FC = () => {
         </p>
       </div>
 
+      <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">query_stats</span>
+        <div className="text-body-sm text-on-surface-variant leading-relaxed">
+          <strong className="text-on-surface">{t('Telemetry Preview (Mô phỏng đo kiểm): ')}</strong>
+          {t('Các chỉ số độ trễ và phân phối mã phản hồi hiển thị từ phiên mô phỏng cục bộ. Hệ thống sẽ tích hợp dữ liệu chuỗi thời gian thực từ Gateway OpenTelemetry/Prometheus.')}
+        </div>
+      </div>
+
       {/* Quantiles Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-surface-container-low border border-outline-variant/30 p-5 rounded-2xl shadow-sm">

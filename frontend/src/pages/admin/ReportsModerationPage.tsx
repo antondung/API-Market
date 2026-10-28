@@ -5,16 +5,30 @@ import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
 
 export const ReportsModerationPage: React.FC = () => {
-  const { reports, resolveReport, updateApiStatus } = useApp();
+  const { reports } = useApp();
   const { t } = useLanguage();
 
   return (
     <div className="space-y-6">
       <div className="pb-6 border-b border-outline-variant/30">
+        <div className="flex items-center gap-2 mb-2">
+          <Badge variant="neutral">{t('Bản xem trước / Preview Mode')}</Badge>
+          <Badge variant="warning">{t('Chờ Backend PR #81')}</Badge>
+        </div>
         <h1 className="text-headline-lg font-bold text-on-surface">{t('Reports & Content Moderation Console')}</h1>
         <p className="text-body-md text-on-surface-variant">
           {t('Investigate reported APIs, security anomalies, copyright notices, and excessive upstream failure rates pursuant to Section 5.n.')}
         </p>
+      </div>
+
+      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+        <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[22px] mt-0.5 flex-shrink-0">
+          info
+        </span>
+        <div className="text-body-sm text-on-surface-variant leading-relaxed">
+          <strong className="text-on-surface font-semibold">{t('Chế độ Xem trước (Read-Only Preview):')} </strong>
+          {t('Giao thức kiểm duyệt báo cáo và đình chỉ API tập trung qua HTTP đang chờ hợp nhất tại Backend PR #81. Để đảm bảo tính toàn vẹn dữ liệu hệ thống, các thao tác thay đổi trạng thái bị khóa và không thực hiện mutation giả lập vào bộ nhớ cục bộ.')}
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -62,10 +76,8 @@ export const ReportsModerationPage: React.FC = () => {
                     size="sm"
                     variant="danger"
                     icon="block"
-                    onClick={() => {
-                      updateApiStatus(rep.apiId, 'Suspended', `Suspended due to report ${rep.id}: ${rep.description}`);
-                      resolveReport(rep.id, 'API immediately suspended from public gateway and report resolved.');
-                    }}
+                    disabled
+                    title={t('Thao tác bị vô hiệu hóa vì Backend Moderation API (PR #81) chưa hợp nhất.')}
                   >
                     {t('Suspend API & Resolve')}
                   </Button>
@@ -73,14 +85,16 @@ export const ReportsModerationPage: React.FC = () => {
                     size="sm"
                     variant="primary"
                     icon="task_alt"
-                    onClick={() => resolveReport(rep.id, 'Investigated and marked resolved by Admin.')}
+                    disabled
+                    title={t('Thao tác bị vô hiệu hóa vì Backend Moderation API (PR #81) chưa hợp nhất.')}
                   >
                     {t('Resolve Only')}
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => resolveReport(rep.id, 'Dismissed as false positive.')}
+                    disabled
+                    title={t('Thao tác bị vô hiệu hóa vì Backend Moderation API (PR #81) chưa hợp nhất.')}
                   >
                     {t('Dismiss')}
                   </Button>

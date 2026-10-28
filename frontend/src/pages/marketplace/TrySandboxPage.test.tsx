@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { TrySandboxPage } from './TrySandboxPage';
 import * as marketplaceApi from '../../services/marketplaceApi';
 import * as consumerApi from '../../services/consumerApi';
@@ -23,6 +23,8 @@ vi.mock('../../context/AuthContext', () => ({
 vi.mock('../../i18n', () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }));
+
+const getFutureExpiry = (offsetMs = 86400000) => new Date(Date.now() + offsetMs).toISOString();
 
 const mockApiDetail: MarketplaceApiDetail = {
   id: 'api-sandbox-1',
@@ -70,9 +72,9 @@ const mockApiDetail: MarketplaceApiDetail = {
 
 const renderPage = (apiId = 'api-sandbox-1') => {
   return render(
-    <MemoryRouter initialEntries={[`/api/${apiId}/sandbox`]}>
+    <MemoryRouter initialEntries={[`/api/${apiId}/try-sandbox`]}>
       <Routes>
-        <Route path="/api/:id/sandbox" element={<TrySandboxPage />} />
+        <Route path="/api/:id/try-sandbox" element={<TrySandboxPage />} />
         <Route path="/api/:id/playground" element={<div>Interactive Playground Page</div>} />
         <Route path="/dashboard/keys" element={<div>API Keys Page</div>} />
         <Route path="/login" element={<div>Login Page</div>} />
@@ -205,7 +207,7 @@ describe('TrySandboxPage Security, Sandbox Grant Lifecycle & Quota UI', () => {
       usedRequests: 0,
       remainingRequests: 5,
       available: true,
-      expiresAt: '2026-10-28T12:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
 
@@ -239,7 +241,7 @@ describe('TrySandboxPage Security, Sandbox Grant Lifecycle & Quota UI', () => {
       usedRequests: 5,
       remainingRequests: 0,
       available: false,
-      expiresAt: '2026-10-28T12:00:00.000Z',
+      expiresAt: getFutureExpiry(),
       revokedAt: null,
     });
 
@@ -293,5 +295,180 @@ describe('TrySandboxPage Security, Sandbox Grant Lifecycle & Quota UI', () => {
     fireEvent.click(openPlaygroundBtn);
 
     expect(await screen.findByText('Interactive Playground Page')).toBeDefined();
+  });
+
+  it('attaches state.from with /api/:id/try-sandbox on login redirect', async () => {
+    mockCurrentUser = null;
+    let capturedLocation: any;
+    const LocationWatcher = () => {
+      capturedLocation = useLocation();
+      return <div>Captured: {capturedLocation.pathname}</div>;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-sandbox-1/try-sandbox']}>
+        <Routes>
+          <Route path="/api/:id/try-sandbox" element={<TrySandboxPage />} />
+          <Route path="/login" element={<LocationWatcher />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    const loginLink = screen.getByRole('link', { name: /Đăng nhập Consumer/i });
+    fireEvent.click(loginLink);
+
+    await waitFor(() => {
+      expect(capturedLocation).toBeDefined();
+      expect(capturedLocation.pathname).toBe('/login');
+      expect(capturedLocation.state?.from).toBe('/api/api-sandbox-1/try-sandbox');
+    });
+  });
+
+  it('prevents double-click duplicate claim submissions', async () => {
+    let resolveClaim!: (val: any) => void;
+    const claimPromise = new Promise(resolve => {
+      resolveClaim = resolve;
+    });
+    const claimSpy = vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation(() => claimPromise as any);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    const claimBtn = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    // Click twice rapidly
+    fireEvent.click(claimBtn);
+    fireEvent.click(claimBtn);
+
+    // Only 1 call dispatched
+    expect(claimSpy).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      resolveClaim({
+        id: 'g-101',
+        apiId: 'api-sandbox-1',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Active Grant/i)).toBeDefined();
+    });
+  });
+
+  it('discards late claim response when user switches API before claim resolves', async () => {
+    let resolveClaim1!: (val: any) => void;
+    const claimPromise1 = new Promise(resolve => {
+      resolveClaim1 = resolve;
+    });
+
+    vi.spyOn(consumerApi, 'claimSandboxGrant').mockImplementation((apiId) => {
+      if (apiId === 'api-sandbox-1') return claimPromise1 as any;
+      return Promise.resolve({
+        id: 'g-202',
+        apiId: 'api-sandbox-2',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      });
+    });
+
+    let navigateFn: any;
+    const TestNavigator = () => {
+      navigateFn = useNavigate();
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/api/api-sandbox-1/try-sandbox']}>
+        <TestNavigator />
+        <Routes>
+          <Route path="/api/:id/try-sandbox" element={<TrySandboxPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Global Geocoding Sandbox API').length).toBeGreaterThan(0);
+    });
+
+    // Start Claim on API 1
+    const claimBtn = screen.getByRole('button', { name: /Kích hoạt Sandbox Grant/i });
+    fireEvent.click(claimBtn);
+
+    // Switch to API 2 before Claim 1 resolves
+    const apiDetail2: MarketplaceApiDetail = {
+      ...mockApiDetail,
+      id: 'api-sandbox-2',
+      name: 'Second API Sandbox',
+    };
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(apiDetail2);
+
+    act(() => {
+      navigateFn('/api/api-sandbox-2/try-sandbox');
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Second API Sandbox').length).toBeGreaterThan(0);
+    });
+
+    // Resolve Claim 1 late
+    act(() => {
+      resolveClaim1({
+        id: 'g-101-stale',
+        apiId: 'api-sandbox-1',
+        maxRequests: 5,
+        usedRequests: 0,
+        remainingRequests: 5,
+        available: true,
+        expiresAt: getFutureExpiry(),
+        revokedAt: null,
+      });
+    });
+
+    // API 2 must NOT receive API 1's grant
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.queryByText('g-101-stale')).toBeNull();
+    // It remains in unclaimed state for API 2
+    expect(screen.getByText('Chưa kích hoạt Sandbox Grant')).toBeDefined();
+  });
+
+  it('transitions grant to expired state via real-time lifecycle timer', async () => {
+    const grantWithQuickExpiry = {
+      id: 'g-quick-expire',
+      apiId: 'api-sandbox-1',
+      maxRequests: 5,
+      usedRequests: 1,
+      remainingRequests: 4,
+      available: true,
+      expiresAt: new Date(Date.now() + 80).toISOString(),
+      revokedAt: null,
+    };
+    vi.spyOn(consumerApi, 'getSandboxGrant').mockResolvedValue(grantWithQuickExpiry);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Active Grant/i)).toBeDefined();
+    });
+
+    // Wait for real-time timer (80ms) to trigger expired transition
+    await waitFor(() => {
+      expect(screen.getByText('Expired')).toBeDefined();
+      expect(screen.getByText('Sandbox Grant đã hết hạn')).toBeDefined();
+    }, { timeout: 2000 });
   });
 });

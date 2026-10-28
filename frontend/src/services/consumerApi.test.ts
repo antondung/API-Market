@@ -105,7 +105,7 @@ describe('consumerApi service', () => {
       usedRequests: 1,
       remainingRequests: 4,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: '2029-01-01T00:00:00.000Z',
       revokedAt: null,
     };
     const spy = vi.spyOn(authApi, 'authenticatedRequest').mockResolvedValueOnce({ data: mockGrant });
@@ -123,7 +123,7 @@ describe('consumerApi service', () => {
       usedRequests: 0,
       remainingRequests: 5,
       available: true,
-      expiresAt: '2026-10-28T00:00:00.000Z',
+      expiresAt: '2029-01-01T00:00:00.000Z',
       revokedAt: null,
     };
     const spy = vi.spyOn(authApi, 'authenticatedRequest').mockResolvedValueOnce({ data: mockGrant });

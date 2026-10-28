@@ -5,23 +5,27 @@ import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
 
 export const SubscriptionMonitoringPage: React.FC = () => {
-  const { subscriptions, suspendSubscriptionByAdmin } = useApp();
+  const { subscriptions } = useApp();
   const { t } = useLanguage();
 
   return (
     <div className="space-y-6">
       <div className="pb-6 border-b border-outline-variant/30">
+        <div className="flex items-center gap-2 mb-2">
+          <Badge variant="neutral">{t('Bản xem trước / Preview Mode')}</Badge>
+          <Badge variant="warning">{t('Chờ Backend PR #78')}</Badge>
+        </div>
         <h1 className="text-headline-lg font-bold text-on-surface">{t('Subscription & Payment Sandbox Ledger')}</h1>
         <p className="text-body-md text-on-surface-variant">
           {t('Cross-tenant audit ledger for all active subscriptions, mock transactions, and immediate gateway enforcement.')}
         </p>
       </div>
 
-      <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-start gap-3">
-        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">verified_user</span>
+      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+        <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[20px] mt-0.5">info</span>
         <div className="text-body-sm text-on-surface-variant leading-relaxed">
-          <strong className="text-on-surface">{t('Administrative Gateway Revocation (US-23):')} </strong>
-          {t('Suspending a subscription takes effect immediately on the API Gateway Data Plane. Any client attempting to use associated API Keys will receive HTTP 403 Forbidden.')}
+          <strong className="text-on-surface">{t('Chế độ Xem trước Sổ cái Đăng ký (Preview Mode):')} </strong>
+          {t('Cơ chế đình chỉ và thu hồi API Key tức thì trên Gateway Data Plane phụ thuộc Backend PR #78 (chưa hợp nhất). Để tránh tạo trạng thái giả mạo trên dữ liệu sản xuất, tính năng đình chỉ trực tiếp bị tạm khóa.')}
         </div>
       </div>
 
@@ -79,11 +83,8 @@ export const SubscriptionMonitoringPage: React.FC = () => {
                         size="sm"
                         variant="danger"
                         icon="block"
-                        onClick={() => {
-                          if (confirm(`Emergency suspend subscription ${sub.id}? Gateway will block immediately.`)) {
-                            suspendSubscriptionByAdmin(sub.id);
-                          }
-                        }}
+                        disabled
+                        title={t('Thao tác đình chỉ Gateway phụ thuộc Backend PR #78 (chưa hợp nhất).')}
                       >
                         {t('Suspend')}
                       </Button>
