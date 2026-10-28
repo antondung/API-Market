@@ -335,7 +335,7 @@ test.describe('Phase 15 — Consumer API Keys Lifecycle & Secret Reveal', () => 
     await confirmRevokeBtn.click();
 
     // Key removed and empty state shown
-    await expect(page.getByText('Decommission Target Key')).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Decommission Target Key' })).not.toBeVisible();
     expect(deletedKeyId).toBe('key-revoke-1');
   });
 

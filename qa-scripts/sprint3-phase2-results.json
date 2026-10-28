@@ -1,0 +1,320 @@
+{
+  "suite": "Sprint 3 Gateway, Profile & Reports Test Suite (Phase 2)",
+  "qaLead": "Trần Hà Thảo Vân (MSSV: BCS250039, @vuonghathaovan-gif — Issue #15)",
+  "timestamp": "2026-10-28T14:04:03.534Z",
+  "baseUrl": "http://127.0.0.1:3000",
+  "totalDesigned": 19,
+  "executed": 19,
+  "passed": 19,
+  "failed": 0,
+  "skipped": 0,
+  "executionPassRate": "100.0%",
+  "overallCoverageRate": "100.0%",
+  "results": [
+    {
+      "testCaseId": "TC-22-01",
+      "userStory": "US-22",
+      "name": "Forward request hợp lệ qua Gateway với X-API-Key active tới upstream public (200 OK & update last_used_at)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:42.208Z",
+      "details": {
+        "status": 200,
+        "lastUsedAt": "2026-10-28T14:03:41.475Z",
+        "upstreamEcho": true
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-22-02",
+      "userStory": "US-22",
+      "name": "Chặn truy cập Gateway khi thiếu, sai, hoặc sử dụng khóa API đã thu hồi (401 INVALID_API_KEY)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:42.232Z",
+      "details": {
+        "missingStatus": 401,
+        "invalidStatus": 401,
+        "revokedPassed": true
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-22-03",
+      "userStory": "US-22",
+      "name": "Lọc bỏ toàn bộ Header nhạy cảm và nội bộ trước khi chuyển tiếp (Allowlist: chặn Authorization, Cookie, X-Internal-Actor)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:43.001Z",
+      "details": {
+        "status": 200,
+        "leakedInternal": false,
+        "leakedAuth": false,
+        "leakedCookie": false,
+        "leakedApiKey": false
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-22-04",
+      "userStory": "US-22",
+      "name": "Chặn Path Traversal (400 INVALID_PATH) và từ chối endpoint chưa đăng ký trong Catalog (404 ENDPOINT_NOT_FOUND)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:43.014Z",
+      "details": {
+        "traversalStatus": 400,
+        "unregStatus": 404
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-22-05",
+      "userStory": "US-22",
+      "name": "Gateway từ chối phục vụ ngay lập tức khi API bị đình chỉ (Suspended) với 401 INVALID_API_KEY (không còn Published)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:43.022Z",
+      "details": {
+        "status": 401,
+        "code": "INVALID_API_KEY"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-22-EDGE-01",
+      "userStory": "US-22",
+      "name": "Chặn gọi Gateway với API ID không phải số nguyên (e.g. \"abc\"), assert mã lỗi 400/404, tuyệt đối KHÔNG sập 500",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:43.024Z",
+      "details": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid request",
+            "requestId": "5c35b962-cb9d-486c-9688-1258b553bc54",
+            "details": [
+              {
+                "field": "",
+                "message": "Invalid string: must match pattern /^[1-9][0-9]{0,9}$/"
+              },
+              {
+                "field": "",
+                "message": "Invalid input"
+              }
+            ]
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-22-EDGE-02",
+      "userStory": "US-22",
+      "name": "Chặn gọi Gateway với API ID vượt giới hạn số nguyên (BigInt overflow), assert mã lỗi 400/404, không được sập 500",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:03:43.026Z",
+      "details": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid request",
+            "requestId": "cf83e494-a029-4be5-bd5e-25f168748d3c",
+            "details": [
+              {
+                "field": "",
+                "message": "Invalid string: must match pattern /^[1-9][0-9]{0,9}$/"
+              },
+              {
+                "field": "",
+                "message": "Invalid input"
+              }
+            ]
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-05-01",
+      "userStory": "US-05",
+      "name": "Truy vấn hồ sơ cá nhân hiện tại GET /api/auth/me trả về đúng thông tin định danh và vai trò (200 OK)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.127Z",
+      "details": {
+        "status": 200,
+        "user": {
+          "id": "257",
+          "email": "qa-user05-1793196221159_153@test.local",
+          "role": "Consumer",
+          "name": "Original Name 05"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-05-02",
+      "userStory": "US-05",
+      "name": "Cập nhật tên hiển thị PATCH /api/auth/me thành công, dữ liệu được ghi nhận bền vững vào PostgreSQL (200 OK)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.152Z",
+      "details": {
+        "status": 200,
+        "updatedName": true,
+        "dbSaved": true
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-05-03",
+      "userStory": "US-05",
+      "name": "Từ chối cập nhật khi chưa xác thực (401), tên rỗng/khoảng trắng (400) hoặc gửi kèm trường lạ leo quyền (400 strict)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.161Z",
+      "details": {
+        "unauthStatus": 401,
+        "blankStatus": 400,
+        "tamperStatus": 400
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-05-04",
+      "userStory": "US-05",
+      "name": "Chặn đổi mật khẩu khi sai mật khẩu cũ (401 INVALID_CREDENTIALS), trùng mật khẩu cũ (400 PASSWORD_UNCHANGED) hoặc quá ngắn (400)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.235Z",
+      "details": {
+        "shortStatus": 400
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-05-05",
+      "userStory": "US-05",
+      "name": "Đổi mật khẩu thành công: giữ phiên hiện tại, thu hồi các refresh token khác (revokeOtherSessions), mật khẩu cũ bị vô hiệu hóa",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.415Z",
+      "details": {
+        "changeStatus": 200,
+        "revokedSessions": 1,
+        "session1Alive": true,
+        "session2Revoked": true,
+        "oldLoginBlocked": true,
+        "newLoginSuccess": true
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-01",
+      "userStory": "US-15",
+      "name": "Consumer gửi báo cáo vi phạm API Published thành công (201 Created, status: Pending, category hợp lệ)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.428Z",
+      "details": {
+        "status": 201,
+        "reportId": "8",
+        "dbStatus": "Pending"
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-02",
+      "userStory": "US-15",
+      "name": "Từ chối báo cáo khi category sai (400), mô tả quá ngắn < 10 ký tự (400) hoặc API chưa Published (404)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.456Z",
+      "details": {
+        "badCategoryStatus": 400,
+        "shortDescStatus": 400,
+        "draftStatus": 404
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-03",
+      "userStory": "US-15",
+      "name": "Cách ly danh sách báo cáo cá nhân (200), chặn Consumer truy cập khu vực Admin (403 FORBIDDEN), Admin quản lý hàng đợi (200)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.472Z",
+      "details": {
+        "mineCount": 1,
+        "consumerAdminStatus": 403,
+        "adminQueueCount": 1
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-04",
+      "userStory": "US-15",
+      "name": "Admin duyệt Suspend: API chuyển trạng thái Suspended, ẩn khỏi Marketplace, đóng báo cáo Resolved và chặn duyệt lại (409 REPORT_CLOSED)",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.494Z",
+      "details": {
+        "suspendStatus": 200,
+        "apiDbStatus": "Suspended",
+        "marketHiddenStatus": 404
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-05",
+      "userStory": "US-15",
+      "name": "Admin duyệt Restore: API khôi phục Published, giữ nguyên published_at, Audit Log ghi nhận đầy đủ report.suspend & report.restore",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.506Z",
+      "details": {
+        "restoreStatus": 200,
+        "apiDbStatus": "Published",
+        "publishedAt": "2026-10-28T14:03:41.458Z",
+        "auditEntriesFound": 2
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-EDGE-01",
+      "userStory": "US-15",
+      "name": "Chặn gửi báo cáo chứa ký tự NUL (\u0000) trong description/note, assert trả về 400 Validation Error, tuyệt đối không sập 500 Postgres error",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.510Z",
+      "details": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid request",
+            "requestId": "e19ec73c-4c66-42e9-a438-1bef931467d0",
+            "details": [
+              {
+                "field": "description",
+                "message": "Must not contain NUL"
+              }
+            ]
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "testCaseId": "TC-15-EDGE-02",
+      "userStory": "US-15",
+      "name": "Chặn duyệt Report ID vượt quá BIGINT (9999999999999999999), assert mã lỗi 400/404, không được sập 500 Internal Server Error",
+      "status": "PASSED",
+      "timestamp": "2026-10-28T14:04:03.514Z",
+      "details": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid request",
+            "requestId": "ff47cdf3-1f5a-4dbf-8f65-997201ad728a",
+            "details": [
+              {
+                "field": "",
+                "message": "Must be at most 9223372036854775807 (reports.id is BIGINT)"
+              }
+            ]
+          }
+        }
+      },
+      "notes": ""
+    }
+  ]
+}

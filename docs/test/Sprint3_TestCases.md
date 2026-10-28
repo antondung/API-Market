@@ -16,10 +16,10 @@
 | **Playground & Anti-SSRF** | US-18 | 7 | 3 | 3 | 1 | Security, Functional, Edge Case |
 | **Try Before Subscribe & Quota** | US-19 | 5 | 2 | 2 | 1 | Functional, Concurrency, State |
 | **API Key Lifecycle** | US-21 | 6 | 2 | 3 | 1 | Security, Functional, DB |
-| **Gateway Routing Framework** | US-22 | 5 | 2 | 2 | 1 | Functional, Security, Lifecycle |
-| **Report & Moderation** | US-15 | 5 | 1 | 3 | 1 | Functional, Integration, State |
+| **Gateway Routing Framework** | US-22 | 7 | 2 | 2 | 3 | Functional, Security, Boundary |
+| **Report & Moderation** | US-15 | 7 | 1 | 4 | 2 | Functional, Integration, Boundary |
 | **User Profile & Security** | US-05 | 5 | 1 | 3 | 1 | Functional, Security, Negative |
-| **TỔNG CỘNG** | **8 User Stories** | **46** | **15** | **23** | **8** | **Đầy đủ Functional & Non-Functional** |
+| **TỔNG CỘNG** | **8 User Stories** | **50** | **15** | **25** | **10** | **Đầy đủ Functional & Non-Functional** |
 
 ---
 
@@ -102,6 +102,8 @@
 | **TC-22-03** | High | Security | Request gửi qua Gateway không kèm API Key | Gửi request thiếu header `X-API-Key` | Header rỗng | Gateway trả về HTTP `401 Unauthorized` (`MISSING_API_KEY`) |
 | **TC-22-04** | High | Functional | Route bị tạm ngắt (`is_enabled = FALSE`) | Gửi request qua Gateway | API Key hợp lệ | Gateway trả về HTTP `503 Service Unavailable` (`ROUTE_DISABLED`) |
 | **TC-22-05** | Medium | Security | Client cố tình chèn header nội bộ `X-Internal-Actor: admin` | Gửi request kèm header giả mạo qua Gateway | Header giả mạo | Gateway tự động lọc/xóa bỏ header nhạy cảm trước khi gửi tới máy chủ upstream |
+| **TC-22-EDGE-01** | Medium | Security/Boundary | Client gửi request kèm API Key hợp lệ | Gọi Gateway với API ID không phải số nguyên (ký tự chuỗi) | `apiId = "abc"`, `GET /api/gateway/abc/...` | Gateway reject an toàn với HTTP `400 Bad Request` hoặc `404 Not Found`, tuyệt đối KHÔNG sập `500 Internal Server Error` |
+| **TC-22-EDGE-02** | Medium | Security/Boundary | Client gửi request kèm API Key hợp lệ | Gọi Gateway với API ID vượt quá giới hạn INTEGER/BIGINT | `apiId = "9999999999999999999"` | Gateway validate biên số nguyên, reject an toàn với HTTP `400` hoặc `404`, không gây lỗi tràn số hay sập `500` |
 
 ---
 
@@ -114,6 +116,8 @@
 | **TC-15-03** | High | Integration | API đang bị `Suspended` | Admin thực hiện hành động phục hồi (`Restore`) | `{ action: "Restore", note: "Đã khắc phục lỗi" }` | API chuyển lại `Published`; xuất hiện trở lại trên Marketplace; Gateway mở lại lưu lượng; ghi `audit_logs` |
 | **TC-15-04** | High | Security | Consumer hoặc Provider cố tình gọi endpoint duyệt report | Gửi request duyệt report bằng token không phải Admin | Quyền không phải Admin | Hệ thống từ chối với HTTP `403 Forbidden` |
 | **TC-15-05** | Medium | Functional | Admin xem danh sách báo cáo vi phạm | Gọi `GET /api/admin/reports?status=Pending` | Query `status=Pending` | Trả về `200 OK` danh sách các báo cáo đang chờ xử lý có phân trang |
+| **TC-15-EDGE-01** | High | Security/Boundary | Consumer/Admin có token JWT hợp lệ | Gửi báo cáo vi phạm hoặc review note chứa ký tự Null (`\u0000`) | `description: "Test \u0000 Nul"`, `note: "Review \u0000"` | Hệ thống reject ngay từ tầng validation với HTTP `400 Bad Request` (`VALIDATION_ERROR`), không để lọt vào PostgreSQL gây sập `500` |
+| **TC-15-EDGE-02** | Medium | Security/Boundary | Admin đăng nhập | Duyệt report với Report ID không hợp lệ hoặc vượt quá giới hạn `BIGINT` | `POST /api/admin/reports/9999999999999999999/review` | Hệ thống validate kiểu dữ liệu bằng BigInt, trả về HTTP `400` hoặc `404`, không gây lỗi chuyển đổi kiểu DB hay sập `500` |
 
 ---
 
