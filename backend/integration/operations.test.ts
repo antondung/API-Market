@@ -20,6 +20,7 @@ import { RedisMeter } from "../src/redis-meter.js";
 import { UsageService } from "../src/usage-service.js";
 import { MarketplaceService } from "../src/marketplace-service.js";
 import { signedUpstreamHeaders } from "../src/upstream-signing.js";
+import { UsageAnalytics } from "../src/usage-analytics.js";
 const shared = "operations-test-shared-secret-at-least-32";
 async function fixture() {
   const url = process.env.PG_TEST_URL;
@@ -203,6 +204,47 @@ test("Admin subscription/payment ledger enforces JWT/RBAC, strict filters and at
       .get(`/api/gateway/${f.api}/v1/weather`)
       .set("x-api-key", plain)
       .expect(403);
+    const quotaBefore = (
+      await f.store.pool.query(
+        "SELECT quota_used FROM subscriptions WHERE id=$1",
+        [sub.id],
+      )
+    ).rows[0].quota_used;
+    await request(f.app)
+      .post(`/api/admin/subscriptions/${sub.id}/restore`)
+      .set(user)
+      .send({ reason: "no" })
+      .expect(403);
+    await request(f.app)
+      .post(`/api/admin/subscriptions/${sub.id}/restore`)
+      .set(auth)
+      .send({})
+      .expect(400);
+    const restored = await request(f.app)
+      .post(`/api/admin/subscriptions/${sub.id}/restore`)
+      .set(auth)
+      .send({ reason: "Review cleared" })
+      .expect(200);
+    assert.equal(restored.body.data.status, "Active");
+    assert.equal(restored.body.data.quotaUsed, String(quotaBefore));
+    assert.equal(
+      (
+        await f.store.pool.query(
+          "SELECT quota_used,status FROM subscriptions WHERE id=$1",
+          [sub.id],
+        )
+      ).rows[0].quota_used,
+      quotaBefore,
+    );
+    await request(f.app)
+      .get(`/api/gateway/${f.api}/v1/weather`)
+      .set("x-api-key", plain)
+      .expect(200);
+    await request(f.app)
+      .post(`/api/admin/subscriptions/${sub.id}/restore`)
+      .set(auth)
+      .send({ reason: "again" })
+      .expect(409);
     await request(f.app)
       .post(`/api/admin/api-keys/${keyId}/revoke`)
       .set(auth)
@@ -219,12 +261,17 @@ test("Admin subscription/payment ledger enforces JWT/RBAC, strict filters and at
       .expect(200);
     const audits = (
       await f.store.pool.query(
-        "SELECT action,detail FROM audit_logs WHERE action IN ('SUBSCRIPTION_SUSPENDED','API_KEY_REVOKED') ORDER BY id",
+        "SELECT action,detail FROM audit_logs WHERE action IN ('SUBSCRIPTION_SUSPENDED','SUBSCRIPTION_RESTORED','API_KEY_REVOKED') ORDER BY id",
       )
     ).rows;
-    assert.equal(audits.length, 2);
-    assert.equal(f.hits(), 1);
+    assert.deepEqual(
+      audits.map((row) => row.action),
+      ["SUBSCRIPTION_SUSPENDED", "SUBSCRIPTION_RESTORED", "API_KEY_REVOKED"],
+    );
+    assert.equal(audits[1].detail.reason, "Review cleared");
+    assert.equal(f.hits(), 2);
     const spec = (await request(f.app).get("/openapi.json")).body;
+    assert.ok(spec.paths["/api/admin/subscriptions/{id}/restore"]);
     await (await import("@apidevtools/swagger-parser")).default.validate(spec);
   } finally {
     await f.close();
@@ -321,6 +368,7 @@ test("Marketplace → Paid subscribe → sandbox settlement → key → signed H
     const app = createApp(f.auth, () => {}, {
       marketplace: new MarketplaceService(f.store.pool),
       billing: f.billing,
+      usage: new UsageAnalytics(f.store.pool),
       gateway,
     });
     const header = { Authorization: `Bearer ${f.consumerToken}` };
@@ -373,11 +421,50 @@ test("Marketplace → Paid subscribe → sandbox settlement → key → signed H
       .set("x-gateway-signature", "forged-client-value")
       .expect(200);
     assert.equal(response.body.city, "Hanoi");
+    await f.store.pool.query(
+      "UPDATE subscriptions SET quota_limit=2, rate_limit_per_minute=1 WHERE id=$1",
+      [sub.id],
+    );
+    await request(app)
+      .get(`/api/gateway/${f.api}/v1/weather?city=Hanoi`)
+      .set("x-api-key", created.key)
+      .expect(429);
+    await f.store.pool.query(
+      "UPDATE subscriptions SET rate_limit_per_minute=10 WHERE id=$1",
+      [sub.id],
+    );
+    await request(app)
+      .get(`/api/gateway/${f.api}/v1/weather?city=Hanoi`)
+      .set("x-api-key", created.key)
+      .expect(200);
+    await request(app)
+      .get(`/api/gateway/${f.api}/v1/weather?city=Hanoi`)
+      .set("x-api-key", created.key)
+      .expect(403);
     await f.usage.flush();
     assert.equal(
       (await f.store.pool.query("SELECT count(*) FROM usage_logs")).rows[0]
         .count,
-      "1",
+      "2",
+    );
+    const summary = (
+      await request(app)
+        .get("/api/consumer/usage/summary")
+        .set(header)
+        .expect(200)
+    ).body.data;
+    assert.equal(
+      summary.subscriptions.find((item: { id: string }) => item.id === sub.id)
+        .quotaUsed,
+      "2",
+    );
+    assert.equal(
+      summary.daily.reduce(
+        (sum: number, day: { successCount: string }) =>
+          sum + Number(day.successCount),
+        0,
+      ),
+      2,
     );
     assert.equal(
       (await f.store.pool.query("SELECT count(*) FROM transactions")).rows[0]

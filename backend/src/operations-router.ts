@@ -97,6 +97,16 @@ export function operationsRouter(
       ),
     }),
   );
+  r.post("/subscriptions/:id/restore", async (req, res) =>
+    res.json({
+      data: await service.action(
+        res.locals.identity.user.id,
+        "restore",
+        operationId.parse(req.params.id),
+        reason.parse(req.body).reason,
+      ),
+    }),
+  );
   r.post("/api-keys/:id/revoke", async (req, res) =>
     res.json({
       data: await service.action(

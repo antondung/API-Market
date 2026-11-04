@@ -110,7 +110,7 @@ export class SubscriptionAdminService {
   }
   async action(
     actor: string,
-    kind: "suspend" | "revoke",
+    kind: "suspend" | "restore" | "revoke",
     id: string,
     reason: string,
   ) {
@@ -126,8 +126,8 @@ export class SubscriptionAdminService {
         ).rowCount
       )
         throw new ApiError(403, "FORBIDDEN", "Active Admin required");
-      const table = kind === "suspend" ? "subscriptions" : "api_keys";
-      const ownerColumn = kind === "suspend" ? "consumer_id" : "user_id";
+      const table = kind === "revoke" ? "api_keys" : "subscriptions";
+      const ownerColumn = kind === "revoke" ? "user_id" : "consumer_id";
       const target = (
         await c.query(
           `SELECT ${ownerColumn} AS owner FROM ${table} WHERE id=$1`,
@@ -142,40 +142,71 @@ export class SubscriptionAdminService {
       const row = (
         await c.query(`SELECT * FROM ${table} WHERE id=$1 FOR UPDATE`, [id])
       ).rows[0];
-      const changed =
-        kind === "suspend" ? row.status !== "Suspended" : row.is_active;
-      if (
-        kind === "suspend" &&
-        !["Active", "Past Due", "Suspended"].includes(row.status)
-      )
-        throw new ApiError(
-          409,
-          "INVALID_STATE",
-          "Only active subscriptions may be suspended",
-        );
-      if (changed) {
-        if (kind === "suspend")
+      const quotaUsed =
+        kind === "revoke" ? undefined : String(row.quota_used);
+      let changed = false;
+      let action = "";
+      if (kind === "suspend") {
+        if (!["Active", "Past Due", "Suspended"].includes(row.status))
+          throw new ApiError(
+            409,
+            "INVALID_STATE",
+            "Only active subscriptions may be suspended",
+          );
+        changed = row.status !== "Suspended";
+        action = "SUBSCRIPTION_SUSPENDED";
+        if (changed)
           await c.query(
             "UPDATE subscriptions SET status='Suspended' WHERE id=$1",
             [id],
           );
-        else
+      } else if (kind === "restore") {
+        if (row.status !== "Suspended")
+          throw new ApiError(
+            409,
+            "INVALID_STATE",
+            "Only a suspended subscription can be restored",
+          );
+        changed = true;
+        action = "SUBSCRIPTION_RESTORED";
+        await c.query(
+          "UPDATE subscriptions SET status='Active' WHERE id=$1",
+          [id],
+        );
+      } else {
+        changed = row.is_active;
+        action = "API_KEY_REVOKED";
+        if (changed)
           await c.query(
             "UPDATE api_keys SET is_active=false,revoked_at=NOW() WHERE id=$1",
             [id],
           );
+      }
+      if (changed)
         await this.audit.write(c, {
           actorId: actor,
           actorRole: "ADMIN",
-          action:
-            kind === "suspend" ? "SUBSCRIPTION_SUSPENDED" : "API_KEY_REVOKED",
-          targetType: kind === "suspend" ? "subscription" : "api_key",
+          action,
+          targetType: kind === "revoke" ? "api_key" : "subscription",
           targetId: id,
           detail: { reason },
         });
-      }
+      const saved =
+        kind === "revoke"
+          ? undefined
+          : (
+              await c.query(
+                "SELECT status, quota_used FROM subscriptions WHERE id=$1",
+                [id],
+              )
+            ).rows[0];
       await c.query("COMMIT");
-      return { id, changed };
+      return {
+        id,
+        changed,
+        status: saved?.status as string | undefined,
+        quotaUsed: saved ? String(saved.quota_used) : quotaUsed,
+      };
     } catch (e) {
       await c.query("ROLLBACK");
       throw e;

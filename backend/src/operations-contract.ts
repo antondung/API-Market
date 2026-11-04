@@ -69,6 +69,13 @@ export const operationsPaths = {
       true,
     ),
   },
+  "/api/admin/subscriptions/{id}/restore": {
+    post: op(
+      "Restore a suspended subscription to Active without changing quota",
+      [id],
+      true,
+    ),
+  },
   "/api/admin/api-keys/{id}/revoke": {
     post: op(
       "Immediately revoke API key and record audit atomically",
