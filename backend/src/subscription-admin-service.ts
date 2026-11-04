@@ -157,7 +157,7 @@ export class SubscriptionAdminService {
         action = "SUBSCRIPTION_SUSPENDED";
         if (changed)
           await c.query(
-            "UPDATE subscriptions SET status='Suspended' WHERE id=$1",
+            "UPDATE subscriptions SET status='Suspended', status_before_suspend=status WHERE id=$1",
             [id],
           );
       } else if (kind === "restore") {
@@ -170,17 +170,23 @@ export class SubscriptionAdminService {
         changed = true;
         const periodEnded =
           new Date(row.current_period_end).getTime() <= Date.now();
-        if (periodEnded) {
+        const remembered = row.status_before_suspend;
+        const next = periodEnded
+          ? "Expired"
+          : remembered === "Past Due" || remembered === "Active"
+            ? remembered
+            : "Active";
+        if (next === "Expired") {
           action = "SUBSCRIPTION_EXPIRED";
           await c.query(
-            "UPDATE subscriptions SET status='Expired', expired_at=NOW() WHERE id=$1",
+            "UPDATE subscriptions SET status='Expired', expired_at=NOW(), status_before_suspend=NULL WHERE id=$1",
             [id],
           );
         } else {
           action = "SUBSCRIPTION_RESTORED";
           await c.query(
-            "UPDATE subscriptions SET status='Active' WHERE id=$1",
-            [id],
+            "UPDATE subscriptions SET status=$2, status_before_suspend=NULL WHERE id=$1",
+            [id, next],
           );
         }
       } else {

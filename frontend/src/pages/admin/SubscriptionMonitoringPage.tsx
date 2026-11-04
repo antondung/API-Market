@@ -77,7 +77,7 @@ export const SubscriptionMonitoringPage: React.FC = () => {
       </h1>
       <p>
         {t(
-          "Dữ liệu trực tiếp từ backend. Đình chỉ và thu hồi key chặn các yêu cầu Gateway tiếp theo; yêu cầu đang xử lý có thể hoàn tất.",
+          "Dữ liệu trực tiếp từ backend. Đình chỉ, mở khóa và thu hồi key áp dụng cho yêu cầu Gateway tiếp theo; yêu cầu đang xử lý có thể hoàn tất.",
         )}
       </p>
       <div className="flex flex-wrap gap-3">
@@ -150,7 +150,7 @@ export const SubscriptionMonitoringPage: React.FC = () => {
         </button>
       </div>
       <label className="block">
-        {t("Lý do quản trị (bắt buộc cho Suspend/Revoke)")}{" "}
+        {t("Lý do quản trị (bắt buộc cho Suspend/Mở khóa/Revoke)")}{" "}
         <input
           aria-label="Admin reason"
           maxLength={2000}
@@ -216,6 +216,16 @@ export const SubscriptionMonitoringPage: React.FC = () => {
                       >
                         {t("Suspend")}
                       </button>{" "}
+                      {s.status === "Suspended" && (
+                        <button
+                          disabled={busy || !reason.trim()}
+                          onClick={() =>
+                            void act(() => api.restore(s.id, reason.trim()))
+                          }
+                        >
+                          {t("Mở khóa")}
+                        </button>
+                      )}{" "}
                       <button
                         disabled={busy}
                         onClick={() => void loadKeys(s.id)}

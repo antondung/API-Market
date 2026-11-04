@@ -71,7 +71,7 @@ export const operationsPaths = {
   },
   "/api/admin/subscriptions/{id}/restore": {
     post: op(
-      "Restore a suspended subscription. A period that has already ended becomes Expired; otherwise Active. Quota is unchanged",
+      "Restore the status held before suspension. A period that has already ended becomes Expired. Quota is unchanged. Older rows without a stored status return to Active",
       [id],
       true,
     ),

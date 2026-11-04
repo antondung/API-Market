@@ -321,6 +321,105 @@ test("Restore of a suspended subscription whose period already ended expires it 
     await f.close();
   }
 });
+test("Restore returns the status held before suspension and expires a finished period", async () => {
+  const f = await fixture();
+  try {
+    const auth = { Authorization: `Bearer ${f.adminToken}` };
+    const pastDue = await f.billing.subscribe(f.consumer.id, f.plan);
+    await f.store.pool.query(
+      "UPDATE subscriptions SET status='Past Due', quota_used=6 WHERE id=$1",
+      [pastDue.id],
+    );
+    await request(f.app)
+      .post(`/api/admin/subscriptions/${pastDue.id}/suspend`)
+      .set(auth)
+      .send({ reason: "Tam khoa" })
+      .expect(200);
+    const held = (
+      await f.store.pool.query(
+        "SELECT status, status_before_suspend, quota_used FROM subscriptions WHERE id=$1",
+        [pastDue.id],
+      )
+    ).rows[0];
+    assert.equal(held.status, "Suspended");
+    assert.equal(held.status_before_suspend, "Past Due");
+    assert.equal(String(held.quota_used), "6");
+    const restored = await request(f.app)
+      .post(`/api/admin/subscriptions/${pastDue.id}/restore`)
+      .set(auth)
+      .send({ reason: "Mo khoa" })
+      .expect(200);
+    assert.equal(restored.body.data.status, "Past Due");
+    assert.equal(restored.body.data.quotaUsed, "6");
+    const after = (
+      await f.store.pool.query(
+        "SELECT status, status_before_suspend, quota_used FROM subscriptions WHERE id=$1",
+        [pastDue.id],
+      )
+    ).rows[0];
+    assert.equal(after.status, "Past Due");
+    assert.equal(after.status_before_suspend, null);
+    assert.equal(String(after.quota_used), "6");
+    await f.store.pool.query(
+      "UPDATE subscriptions SET status='Expired', expired_at=NOW() WHERE id=$1",
+      [pastDue.id],
+    );
+
+    const legacy = await f.billing.subscribe(f.consumer.id, f.plan);
+    await f.store.pool.query(
+      "UPDATE subscriptions SET status='Suspended', status_before_suspend=NULL, quota_used=3 WHERE id=$1",
+      [legacy.id],
+    );
+    const legacyResult = await request(f.app)
+      .post(`/api/admin/subscriptions/${legacy.id}/restore`)
+      .set(auth)
+      .send({ reason: "Ban ghi cu" })
+      .expect(200);
+    assert.equal(legacyResult.body.data.status, "Active");
+    assert.equal(legacyResult.body.data.quotaUsed, "3");
+    await f.store.pool.query(
+      "UPDATE subscriptions SET status='Expired', expired_at=NOW() WHERE id=$1",
+      [legacy.id],
+    );
+
+    const ended = await f.billing.subscribe(f.consumer.id, f.plan);
+    await f.store.pool.query(
+      "UPDATE subscriptions SET status='Past Due', quota_used=8 WHERE id=$1",
+      [ended.id],
+    );
+    await request(f.app)
+      .post(`/api/admin/subscriptions/${ended.id}/suspend`)
+      .set(auth)
+      .send({ reason: "Truoc khi het ky" })
+      .expect(200);
+    await f.store.pool.query(
+      "UPDATE subscriptions SET current_period_start=NOW()-INTERVAL '31 days', current_period_end=NOW()-INTERVAL '1 second' WHERE id=$1",
+      [ended.id],
+    );
+    const expired = await request(f.app)
+      .post(`/api/admin/subscriptions/${ended.id}/restore`)
+      .set(auth)
+      .send({ reason: "Ky da het" })
+      .expect(200);
+    assert.equal(expired.body.data.status, "Expired");
+    assert.equal(expired.body.data.quotaUsed, "8");
+    const audits = (
+      await f.store.pool.query(
+        "SELECT action, detail->>'reason' AS reason FROM audit_logs WHERE action IN ('SUBSCRIPTION_RESTORED','SUBSCRIPTION_EXPIRED') ORDER BY id",
+      )
+    ).rows;
+    assert.deepEqual(
+      audits.map((row) => [row.action, row.reason]),
+      [
+        ["SUBSCRIPTION_RESTORED", "Mo khoa"],
+        ["SUBSCRIPTION_RESTORED", "Ban ghi cu"],
+        ["SUBSCRIPTION_EXPIRED", "Ky da het"],
+      ],
+    );
+  } finally {
+    await f.close();
+  }
+});
 test("Worker expires elapsed periods, resets valid quota only once, serializes replicas and exposes real health", async () => {
   const f = await fixture();
   try {

@@ -54,6 +54,27 @@ it("loads real ledgers, requires an audit reason, suspends and reloads state", a
   );
   await waitFor(() => expect(api.subscriptions).toHaveBeenCalledTimes(2));
 });
+it("offers Mo khoa only for a suspended subscription and posts the reason", async () => {
+  vi.mocked(api.subscriptions).mockResolvedValue({
+    items: [{ ...sub, status: "Suspended" }],
+    total: 1,
+    page: 1,
+    pageSize: 20,
+  });
+  const restore = vi.spyOn(api, "restore").mockResolvedValue({});
+  render(<SubscriptionMonitoringPage />);
+  const button = (await screen.findByRole("button", {
+    name: "Mở khóa",
+  })) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Admin reason"), {
+    target: { value: "Da ra soat" },
+  });
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(restore).toHaveBeenCalledWith("7", "Da ra soat"),
+  );
+});
 it("loads key metadata and revokes through the Admin backend", async () => {
   vi.spyOn(api, "keys").mockResolvedValue([
     { id: "9", isActive: true, revokedAt: null, lastUsedAt: null },

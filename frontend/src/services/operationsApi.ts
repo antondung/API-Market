@@ -76,6 +76,12 @@ export async function suspend(id: string, reason: string) {
     { method: "POST", body: JSON.stringify({ reason }) },
   );
 }
+export async function restore(id: string, reason: string) {
+  return authenticatedRequest(
+    `/api/admin/subscriptions/${encodeURIComponent(id)}/restore`,
+    { method: "POST", body: JSON.stringify({ reason }) },
+  );
+}
 export async function revoke(id: string, reason: string) {
   return authenticatedRequest(
     `/api/admin/api-keys/${encodeURIComponent(id)}/revoke`,
