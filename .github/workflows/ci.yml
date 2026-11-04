@@ -2,7 +2,7 @@
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, feature/18-sprint4-frontend-billing]
   push:
     branches: [main, develop]
   workflow_dispatch:

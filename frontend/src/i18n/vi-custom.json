@@ -609,7 +609,7 @@
   "Health: 100% OK (PostgreSQL connected)": "Trạng thái: 100% Tốt (Đã kết nối PostgreSQL)",
   "Data Plane Gateway (:4000)": "Data Plane Gateway (:4000)",
   "Measured proxy overhead (US-23). Key verification and HMAC header signing.": "Độ trễ trung gian đo được qua proxy (US-23). Kiểm tra Key và ký header HMAC.",
-  "RPS: 4,820 req/s across edge nodes": "RPS: 4.820 req/giây trên toàn bộ edge node",
+  "RPS: 4,820 req/s across edge nodes": "4.820 lượt/phút trên toàn bộ edge node",
   "Redis Counter Cluster (:6379)": "Cụm bộ đếm Redis (:6379)",
   "In-memory sliding window rate limits & active sandbox quota counters.": "Bộ nhớ lưu trữ cửa sổ trượt giới hạn tốc độ & bộ đếm hạn mức sandbox đang hoạt động.",
   "Mode: Fail-Closed Protection": "Chế độ: Bảo vệ Fail-Closed",
