@@ -1,13 +1,13 @@
 # API HUB — FRONTEND SPRINT 4 ACCEPTANCE MATRIX
 ## Issue #18: Consumer Billing · Usage & History · Provider Analytics · Code Generator
 
-- **Engineer:** Nguyễn Tấn Dũng (Frontend Tech Lead & Integration Engineer)
-- **GitHub Account:** `@antondung` / `@leduwn`
+- **Assignee (Issue #18):** Lê Hải Dương (`@leduwn`, Frontend Developer)
+- **Git Committer & Operations Lead:** Nguyễn Tấn Dũng (`@antondung`, Frontend Tech Lead & Operations)
 - **Branch:** `feature/18-sprint4-frontend-billing`
 - **Target Branch:** `develop`
 - **Pull Request:** [antondung/API-Market#96](https://github.com/antondung/API-Market/pull/96) (Draft)
 - **Audit Date:** 2026-11-05
-- **Quality Verification:** 39 test suites passed, 509 tests passed, 0 errors, 0 regressions
+- **Quality Verification:** 40 test suites passed, 517 tests passed, 0 errors, 0 regressions
 
 ---
 
@@ -29,26 +29,25 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **ISSUE C01** | Tránh rò rỉ snapshot cũ khi chuyển đổi tài khoản tại ConsumerDashboard | `ConsumerDashboardPage.tsx` | Ràng buộc `useEffect` theo `user.id`, hủy request dở dang bằng `AbortController`, làm sạch dữ liệu cũ (`setUsageSummary(null)`) trước khi tải mới. | **VERIFIED** |
 | **ISSUE C02** | Không nuốt lỗi mạng thành danh sách rỗng, không đếm `Pending` là `Active` | `ConsumerDashboardPage.tsx`<br>`ConsumerPages.test.tsx` | Lưu trữ `usageError` riêng biệt, cung cấp nút "Thử lại", chỉ đếm các thuê bao có `status === 'Active'`. | **VERIFIED** |
-| **ISSUE C03** | Loại bỏ triệt để nhãn `req/sec` / `RPS` gây hiểu lầm điều tiết Gateway | `PricingPage.tsx`<br>`TrySandboxPage.tsx`<br>`DocumentationViewer.tsx`<br>`AppContext.tsx`<br>`vi.json`, `vi-custom.json` | Đồng bộ toàn bộ giao diện sang đơn vị chuẩn `req/phút` (RPM), bảo đảm khớp 100% với Redis rate-limiter 1 phút của Gateway. | **VERIFIED** |
+| **ISSUE C03** | Loại bỏ triệt để nhãn `req/sec` / `RPS` gây hiểu lầm điều tiết Gateway | `PricingPage.tsx`<br>`TrySandboxPage.tsx`<br>`DocumentationViewer.tsx`<br>`AppContext.tsx`<br>`vi.json`, `vi-custom.json` | Đồng bộ toàn bộ giao diện sang đơn vị chuẩn `req/phút` (RPM), bảo đảm khớp 100% với cơ chế fixed window (calendar minute bucket) của Redis Gateway. | **VERIFIED** |
 | **ISSUE C04** | Hỗ trợ tìm kiếm phục hồi gói `Pending` phân trang vượt mốc 100 đăng ký | `CheckoutPage.tsx` | Vòng lặp quét phân trang có giới hạn an toàn (tối đa 10 trang, 100 mục/trang), ưu tiên nhận `resumeSubscriptionId` từ route state. | **VERIFIED** |
 | **ISSUE C05** | Minh bạch hóa kết quả mô phỏng đổi gói Sandbox | `MySubscriptionsPage.tsx` | Thêm radio chọn kết quả mô phỏng (Thành công / Thất bại). Khi thất bại, không reset hạn mức và không hủy gói hiện có. | **VERIFIED** |
 | **ISSUE C06** | Khả năng phục hồi toàn diện trên các trang người tiêu dùng khi đổi tài khoản / lỗi HTTP | `UsageQuotaPage.tsx`<br>`RequestHistoryPage.tsx`<br>`MySubscriptionsPage.tsx` | Sử dụng `AbortController` và `querySeqRef` trên tất cả các trang, phân định rõ ràng lỗi 401/403/429/503. | **VERIFIED** |
 | **ISSUE C07** | Hiệu chỉnh tài liệu kiểm toán hợp đồng payload cho change-plan và checkout | `SPRINT4_FE_04_2_CONTRACT_AUDIT.md` | Sửa payload bảng: `change-plan` gồm `{ planId, idempotencyKey }`, `checkout` gồm `{ idempotencyKey }`. | **VERIFIED** |
-| **ISSUE C08** | Duy trì quyền tác giả chính xác cho Frontend Tech Lead | `CONTRIBUTORS.md`<br>Git commits<br>PR #96 | Đảm bảo attribution Nguyễn Tấn Dũng (`@antondung` / `@leduwn`), không thêm `Co-Authored-By`. | **VERIFIED** |
+| **ISSUE C08** | Duy trì quyền tác giả chính xác cho Issue #18 và Committer | `CONTRIBUTORS.md`<br>Git commits<br>PR #96 | Đảm bảo đúng vai trò: Assignee Lê Hải Dương (`@leduwn`), Git Committer & Operations Nguyễn Tấn Dũng (`@antondung`), không thêm `Co-Authored-By`. | **VERIFIED** |
 
 ---
 
 ## 3. Tóm tắt Kiểm thử & Đảm bảo Chất lượng
 
 ```
-Test Suites: 39 passed, 39 total
-Tests:       509 passed, 509 total
+Test Suites: 40 passed, 40 total
+Tests:       517 passed, 517 total
 Snapshots:   0 total
-Time:        57.66s
 Lint:        0 error (oxlint)
 TypeScript:  0 error (tsc -b)
-Vite Build:  2.54s (Production bundle clean)
-Hygiene:     363 files passed (kiem-tra-kho-ma-nguon.ps1)
+Vite Build:  2.44s (Production bundle clean)
+Hygiene:     368 files passed (kiem-tra-kho-ma-nguon.ps1)
 ```
 
 **Kết luận:** Đạt 100% tiêu chí nghiệm thu Sprint 4 (AC-01 đến AC-05). Sẵn sàng chuyển giao cho vòng kiểm thử tích hợp tiếp theo.

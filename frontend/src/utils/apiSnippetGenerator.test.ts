@@ -11,6 +11,11 @@ import {
   generateFetchSnippet,
   generatePythonSnippet,
   buildGatewayPath,
+  substitutePathParams,
+  extractSampleQueryParams,
+  generateSampleJsonBody,
+  buildEndpointSnippetOptions,
+  getDefaultBaseUrl,
 } from './apiSnippetGenerator';
 
 describe('apiSnippetGenerator Security & Shell Escaping', () => {
@@ -363,6 +368,161 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       const gatewayRoute = buildGatewayPath('api_weather', '/forecast/daily');
       const fullUrl = buildSafeUrl('https://api.apihub.vn/v1', gatewayRoute, { city: 'Hanoi' });
       expect(fullUrl).toBe('https://api.apihub.vn/api/gateway/api_weather/forecast/daily?city=Hanoi');
+    });
+
+    it('sanitizes invalid API ID characters to prevent path manipulation', () => {
+      expect(buildGatewayPath('../../etc/passwd', '/users')).toBe('/api/gateway/etcpasswd/users');
+      expect(buildGatewayPath('  api 123 !@#  ', '/test')).toBe('/api/gateway/api123/test');
+      expect(buildGatewayPath('', '/status')).toBe('/api/gateway/api_id/status');
+    });
+  });
+
+  describe('Contract Completeness: Parameter Substitution, Queries & JSON Body', () => {
+    it('substitutes path parameters in both OpenAPI {param} and Express :param syntax', () => {
+      expect(substitutePathParams('/users/{userId}/posts/{postId}', { userId: 'usr_42', postId: 'post_99' }))
+        .toBe('/users/usr_42/posts/post_99');
+
+      expect(substitutePathParams('/v1/orders/:orderId/items/:itemId', { orderId: 1001, itemId: 2002 }))
+        .toBe('/v1/orders/1001/items/2002');
+
+      // Uses safe default when parameter not explicitly provided
+      expect(substitutePathParams('/organizations/{orgId}/members/{memberId}'))
+        .toBe('/organizations/1/members/1');
+
+      expect(substitutePathParams('/catalog/:categorySlug'))
+        .toBe('/catalog/sample_categorySlug');
+    });
+
+    it('extracts sample query parameters from endpoint definitions', () => {
+      const params = [
+        { name: 'page', in: 'query', type: 'integer' },
+        { name: 'pageSize', in: 'query', type: 'integer' },
+        { name: 'activeOnly', in: 'query', type: 'boolean' },
+        { name: 'filter', in: 'query', type: 'string' },
+        { name: 'X-Header', in: 'header', type: 'string' },
+      ];
+
+      const qs = extractSampleQueryParams(params);
+      expect(qs).toEqual({
+        page: '1',
+        pageSize: '20',
+        activeOnly: 'true',
+        filter: 'sample_filter',
+      });
+    });
+
+    it('generates sample JSON body for POST/PUT/PATCH schemas and returns null for GET/DELETE', () => {
+      expect(generateSampleJsonBody({}, 'GET')).toBeNull();
+      expect(generateSampleJsonBody({}, 'DELETE')).toBeNull();
+
+      const schema = {
+        properties: {
+          title: { type: 'string' },
+          count: { type: 'integer' },
+          isActive: { type: 'boolean' },
+        },
+      };
+
+      const body = generateSampleJsonBody(schema, 'POST');
+      expect(body).not.toBeNull();
+      const parsed = JSON.parse(body!);
+      expect(parsed).toEqual({
+        title: 'sample_title',
+        count: 100,
+        isActive: true,
+      });
+
+      // Uses schema example if available
+      const exampleSchema = {
+        example: { status: 'verified', score: 98 },
+      };
+      expect(JSON.parse(generateSampleJsonBody(exampleSchema, 'PATCH')!)).toEqual({
+        status: 'verified',
+        score: 98,
+      });
+    });
+
+    it('assembles complete SnippetOptions for GET, POST, PATCH, DELETE endpoints with credentials', () => {
+      // 1. GET with path and query params
+      const getEndpoint = {
+        method: 'GET',
+        path: '/users/{id}',
+        parameters: [{ name: 'fields', in: 'query', type: 'string' }],
+      };
+      const getOpts = buildEndpointSnippetOptions('api_users', getEndpoint, {
+        apiKey: 'ak_test_get',
+        pathParams: { id: 'usr_abc' },
+      });
+      expect(getOpts.method).toBe('GET');
+      expect(getOpts.urlPath).toBe('/api/gateway/api_users/users/usr_abc');
+      expect(getOpts.apiKey).toBe('ak_test_get');
+      expect(getOpts.queryParams).toEqual({ fields: 'sample_fields' });
+      expect(getOpts.body).toBeNull();
+
+      const getCurl = generateCurlSnippet(getOpts);
+      expect(getCurl).toContain('curl -X GET');
+      expect(getCurl).toContain('/api/gateway/api_users/users/usr_abc?fields=sample_fields');
+      expect(getCurl).toContain("-H 'X-API-Key: ak_test_get'");
+
+      // 2. POST with JSON body
+      const postEndpoint = {
+        method: 'POST',
+        path: '/v1/items',
+        requestSchema: {
+          properties: { name: { type: 'string' } },
+        },
+      };
+      const postOpts = buildEndpointSnippetOptions('api_items', postEndpoint, {
+        apiKey: '', // Empty apiKey must fallback to YOUR_API_KEY
+      });
+      expect(postOpts.method).toBe('POST');
+      expect(postOpts.urlPath).toBe('/api/gateway/api_items/v1/items');
+      expect(postOpts.apiKey).toBe('YOUR_API_KEY');
+      expect(postOpts.body).toContain('"name": "sample_name"');
+
+      const postFetch = generateFetchSnippet(postOpts);
+      expect(postFetch).toContain('method: "POST"');
+      expect(postFetch).toContain('"X-API-Key": "YOUR_API_KEY"');
+      expect(postFetch).toContain('JSON.stringify(');
+
+      // 3. PATCH with partial body
+      const patchEndpoint = {
+        method: 'PATCH',
+        path: '/v1/items/{itemId}',
+        requestSchema: {
+          properties: { status: { type: 'string' } },
+        },
+      };
+      const patchOpts = buildEndpointSnippetOptions('api_items', patchEndpoint, {
+        apiKey: 'ak_patch_123',
+        pathParams: { itemId: 'item_77' },
+      });
+      expect(patchOpts.method).toBe('PATCH');
+      expect(patchOpts.urlPath).toBe('/api/gateway/api_items/v1/items/item_77');
+      const patchPy = generatePythonSnippet(patchOpts);
+      expect(patchPy).toContain('requests.patch(');
+      expect(patchPy).toContain('"X-API-Key": "ak_patch_123"');
+
+      // 4. DELETE without body
+      const deleteEndpoint = {
+        method: 'DELETE',
+        path: '/v1/items/{itemId}',
+      };
+      const deleteOpts = buildEndpointSnippetOptions('api_items', deleteEndpoint, {
+        apiKey: 'ak_del_456',
+        pathParams: { itemId: 'item_88' },
+      });
+      expect(deleteOpts.method).toBe('DELETE');
+      expect(deleteOpts.body).toBeNull();
+      const delCurl = generateCurlSnippet(deleteOpts);
+      expect(delCurl).toContain('curl -X DELETE');
+      expect(delCurl).not.toContain(' -d ');
+    });
+
+    it('resolves default base URL without trailing slash', () => {
+      const base = getDefaultBaseUrl();
+      expect(base.endsWith('/')).toBe(false);
+      expect(base.length).toBeGreaterThan(0);
     });
   });
 });

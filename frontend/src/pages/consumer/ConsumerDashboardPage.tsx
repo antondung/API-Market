@@ -73,9 +73,13 @@ export const ConsumerDashboardPage: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
     setIsKeysLoading(true);
     setKeysError(null);
-    listConsumerApiKeys(1, 100)
+    setKeys([]);
+    setTotalKeys(null);
+
+    listConsumerApiKeys(1, 100, controller.signal)
       .then(res => {
         if (isMounted) {
           setKeys(res.items);
@@ -84,6 +88,7 @@ export const ConsumerDashboardPage: React.FC = () => {
         }
       })
       .catch((err: any) => {
+        if (controller.signal.aborted) return;
         if (isMounted) {
           setKeys([]);
           setTotalKeys(null);
@@ -91,12 +96,15 @@ export const ConsumerDashboardPage: React.FC = () => {
         }
       })
       .finally(() => {
-        if (isMounted) setIsKeysLoading(false);
+        if (isMounted && !controller.signal.aborted) {
+          setIsKeysLoading(false);
+        }
       });
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [retryKeys]);
+  }, [user.id, retryKeys]);
 
   const activeKeys = keys.filter(k => k.isActive);
   const hasMoreKeysThanFetched = totalKeys !== null && totalKeys > keys.length;

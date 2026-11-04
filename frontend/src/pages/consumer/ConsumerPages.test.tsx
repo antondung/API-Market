@@ -28,6 +28,11 @@ vi.mock('../../context/AuthContext', () => ({
     isAuthenticated: true,
     refreshCurrentUser: refreshCurrentUserMock,
   }),
+  useOptionalAuth: () => ({
+    currentUser: mockCurrentUser,
+    isAuthenticated: true,
+    refreshCurrentUser: refreshCurrentUserMock,
+  }),
 }));
 
 vi.mock('../../i18n', () => ({
@@ -209,6 +214,91 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
       fireEvent.click(retryButtons[0]);
 
       expect(await screen.findByText('0')).toBeDefined();
+    });
+
+    it('enforces cross-account data isolation on user switch (A -> B -> A) and clears prior snapshot', async () => {
+      mockCurrentUser = {
+        id: 'usr_alice_1',
+        email: 'alice@example.com',
+        name: 'Alice Developer',
+        role: 'Consumer',
+      };
+
+      const aliceKeys = [
+        {
+          id: 'k_alice_1',
+          apiId: '10',
+          keyPrefix: 'ak_alice_123',
+          label: 'Alice Key 1',
+          isActive: true,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: '2026-10-27T00:00:00Z',
+        },
+        {
+          id: 'k_alice_2',
+          apiId: '20',
+          keyPrefix: 'ak_alice_456',
+          label: 'Alice Key 2',
+          isActive: true,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: '2026-10-28T00:00:00Z',
+        },
+      ];
+
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockImplementation(async (_page, _size, signal) => {
+        if (signal?.aborted) throw new Error('Aborted');
+        if (mockCurrentUser?.id === 'usr_alice_1') {
+          return { items: aliceKeys, total: 2, page: 1, pageSize: 100 };
+        }
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      });
+
+      const { rerender } = render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Alice Developer/)).toBeDefined();
+      expect(await screen.findByText('2 Keys')).toBeDefined();
+
+      // Switch to User B (Bob)
+      mockCurrentUser = {
+        id: 'usr_bob_2',
+        email: 'bob@example.com',
+        name: 'Bob Analyst',
+        role: 'Consumer',
+      };
+
+      rerender(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      // Must display Bob's information, NOT Alice's credentials
+      expect(await screen.findByText(/Bob Analyst/)).toBeDefined();
+      expect(await screen.findByText('0 Keys')).toBeDefined();
+      expect(screen.queryByText('2 Keys')).toBeNull();
+
+      // Switch back to User A (Alice)
+      mockCurrentUser = {
+        id: 'usr_alice_1',
+        email: 'alice@example.com',
+        name: 'Alice Developer',
+        role: 'Consumer',
+      };
+
+      rerender(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Alice Developer/)).toBeDefined();
+      expect(await screen.findByText('2 Keys')).toBeDefined();
     });
   });
 

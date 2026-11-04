@@ -1,6 +1,7 @@
 /* oxlint-disable react/only-export-components */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useOptionalAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
@@ -133,6 +134,7 @@ export function renderSubscriptionStatusBadge(status: SubscriptionStatus) {
 }
 
 export const UsageQuotaPage: React.FC = () => {
+  const userId = useOptionalAuth()?.currentUser?.id;
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -194,11 +196,12 @@ export const UsageQuotaPage: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
+    setUsageData(null);
     fetchUsage(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [fetchUsage, retryTrigger]);
+  }, [userId, fetchUsage, retryTrigger]);
 
   const subscriptions: UsageSubscriptionSummary[] = useMemo(
     () => usageData?.subscriptions || [],

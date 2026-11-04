@@ -26,6 +26,7 @@ import {
   generateFetchSnippet,
   generatePythonSnippet,
   buildGatewayPath,
+  buildEndpointSnippetOptions,
 } from '../../utils/apiSnippetGenerator';
 
 export const ApiDetailPage: React.FC = () => {
@@ -126,10 +127,38 @@ export const ApiDetailPage: React.FC = () => {
     );
   }, [currentEndpoints, selectedSnippetEndpointId]);
 
+  const snippetBaseUrl = useMemo(() => {
+    try {
+      if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) {
+        return String((import.meta as any).env.VITE_API_BASE_URL).replace(/\/+$/, '');
+      }
+    } catch {
+      // ignore
+    }
+    return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://api.apihub.vn';
+  }, []);
+
   const gatewaySnippetPath = useMemo(() => {
     if (!api) return '/';
     return buildGatewayPath(api.id, activeSnippetEndpoint?.path || '/');
   }, [api, activeSnippetEndpoint]);
+
+  const snippetOptions = useMemo(() => {
+    if (!api || !activeSnippetEndpoint) {
+      return {
+        method: 'GET',
+        urlPath: gatewaySnippetPath,
+        baseUrl: snippetBaseUrl,
+        apiKey: 'YOUR_API_KEY',
+        includeTemplateNotice: false,
+      };
+    }
+    return buildEndpointSnippetOptions(api.id, activeSnippetEndpoint, {
+      baseUrl: snippetBaseUrl,
+      apiKey: 'YOUR_API_KEY',
+      includeTemplateNotice: false,
+    });
+  }, [api, activeSnippetEndpoint, gatewaySnippetPath, snippetBaseUrl]);
 
   // Filter documentation for selected version strictly without cross-version fallback
   const currentDoc = useMemo<ProviderDocumentation | null>(() => {
@@ -832,11 +861,11 @@ export const ApiDetailPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[20px]">alt_route</span>
               <div>
                 <span className="font-semibold text-on-surface">{t('Gateway Reverse Proxy Route:')} </span>
-                <code className="font-code-sm font-bold text-primary">{gatewaySnippetPath}</code>
+                <code className="font-code-sm font-bold text-primary">{snippetOptions.urlPath}</code>
               </div>
             </div>
             <span className="font-code-sm text-on-surface-variant bg-surface-container-high px-2.5 py-1 rounded">
-              Header: <strong className="text-on-surface">X-API-Key: YOUR_API_KEY</strong>
+              Header: <strong className="text-on-surface">X-API-Key: {snippetOptions.apiKey}</strong>
             </span>
           </div>
 
@@ -845,12 +874,7 @@ export const ApiDetailPage: React.FC = () => {
             <CodeBlock
               language="bash"
               title="cURL (Gateway Proxy)"
-              code={generateCurlSnippet({
-                method: activeSnippetEndpoint?.method || 'GET',
-                urlPath: gatewaySnippetPath,
-                apiKey: 'YOUR_API_KEY',
-                includeTemplateNotice: false,
-              })}
+              code={generateCurlSnippet(snippetOptions)}
             />
           </div>
 
@@ -859,12 +883,7 @@ export const ApiDetailPage: React.FC = () => {
             <CodeBlock
               language="javascript"
               title="Fetch API (Node.js / Browser)"
-              code={generateFetchSnippet({
-                method: activeSnippetEndpoint?.method || 'GET',
-                urlPath: gatewaySnippetPath,
-                apiKey: 'YOUR_API_KEY',
-                includeTemplateNotice: false,
-              })}
+              code={generateFetchSnippet(snippetOptions)}
             />
           </div>
 
@@ -873,12 +892,7 @@ export const ApiDetailPage: React.FC = () => {
             <CodeBlock
               language="python"
               title="Python Requests"
-              code={generatePythonSnippet({
-                method: activeSnippetEndpoint?.method || 'GET',
-                urlPath: gatewaySnippetPath,
-                apiKey: 'YOUR_API_KEY',
-                includeTemplateNotice: false,
-              })}
+              code={generatePythonSnippet(snippetOptions)}
             />
           </div>
         </div>

@@ -3,8 +3,8 @@
 
 - **Dự án:** API Hub (`antondung/API-Market`)
 - **Vấn đề (Issue):** [#18 Frontend Sprint 4 Billing & Analytics](https://github.com/antondung/API-Market/issues/18)
-- **Kỹ sư chịu trách nhiệm:** Nguyễn Tấn Dũng (Frontend Tech Lead & Integration Engineer)
-- **Tài khoản định danh:** `@antondung` / `@leduwn`
+- **Người phụ trách Issue #18 (Assignee):** Lê Hải Dương (`@leduwn`, Frontend Developer)
+- **Git Committer & Operations Lead:** Nguyễn Tấn Dũng (`@antondung`, Frontend Tech Lead & Operations)
 - **Nhánh triển khai duy nhất:** `feature/18-sprint4-frontend-billing`
 - **Nhánh đích:** `develop`
 - **Pull Request:** [antondung/API-Market#96](https://github.com/antondung/API-Market/pull/96) (Draft)
@@ -17,7 +17,7 @@
 
 ## 1. Tóm Tắt Tổng Quan (Executive Summary)
 
-Đội ngũ Frontend dưới sự dẫn dắt của Frontend Tech Lead Nguyễn Tấn Dũng đã hoàn tất 100% phạm vi công việc của **Frontend Sprint 4 (Issue #18)**. Tất cả 5 Tiêu chí Chấp nhận (Acceptance Criteria AC-01 đến AC-05) cùng 8 Hạng mục Khắc phục Chuyên sâu (Issues C01 đến C08) đã được xây dựng, kiểm chứng độc lập và đạt chuẩn kiểm thử tự động toàn diện.
+Đội ngũ Frontend với Kỹ sư phụ trách Issue #18 Lê Hải Dương (@leduwn) cùng Tech Lead & Operations Nguyễn Tấn Dũng (@antondung) đã hoàn tất 100% phạm vi công việc của **Frontend Sprint 4 (Issue #18)**. Tất cả 5 Tiêu chí Chấp nhận (Acceptance Criteria AC-01 đến AC-05) cùng 8 Hạng mục Khắc phục Chuyên sâu (Issues C01 đến C08) đã được xây dựng, kiểm chứng độc lập và đạt chuẩn kiểm thử tự động toàn diện.
 
 Toàn bộ quy trình tuân thủ nghiêm ngặt chính sách Git: chỉ làm việc trên nhánh duy nhất `feature/18-sprint4-frontend-billing`, giữ PR #96 ở trạng thái **DRAFT**, không force-push, không xóa lịch sử commit và bảo đảm tính trung thực tuyệt đối về ranh giới tích hợp thực tế.
 
@@ -97,30 +97,25 @@ Toàn bộ quy trình tuân thủ nghiêm ngặt chính sách Git: chỉ làm vi
 
 1. **ISSUE C01 (Account Isolation in Dashboard):** Ràng buộc truy vấn với `user.id`, tự động hủy bằng `AbortController` khi chuyển tài khoản, làm sạch bộ nhớ để chống rò rỉ dữ liệu phiên trước.
 2. **ISSUE C02 (Error & Active Status Discrimination):** Không chuyển lỗi mạng thành mảng rỗng giả, cung cấp nút "Thử lại", chỉ đếm thuê bao `status === 'Active'` (loại bỏ `Pending`).
-3. **ISSUE C03 (Rate Limit Alignment RPM):** Thay thế toàn bộ nhãn `req/sec` / `RPS` thành `req/phút` (RPM) trên toàn bộ dự án, đồng bộ chuẩn xác với cấu hình 1 phút của Redis Gateway.
+3. **ISSUE C03 (Rate Limit Alignment RPM):** Thay thế toàn bộ nhãn `req/sec` / `RPS` thành `req/phút` (RPM) trên toàn bộ dự án, đồng bộ chuẩn xác với cơ chế fixed window (calendar minute bucket / bucket theo phút lịch) của Redis Gateway.
 4. **ISSUE C04 (Pending Recovery Pagination):** Nâng cấp thuật toán quét gói `Pending` hỗ trợ nhiều trang (vượt mốc 100 đăng ký), ưu tiên `resumeSubscriptionId` từ route state.
 5. **ISSUE C05 (Transparent Change Plan Outcome):** Bổ sung lựa chọn mô phỏng kết quả đổi gói, bảo toàn hạn mức đã dùng khi mô phỏng thất bại.
 6. **ISSUE C06 (Consumer Pages Resilience):** Bảo đảm an toàn tuyệt đối trước các phản hồi chậm, unmount đột ngột và mã lỗi HTTP 401/403/429/503.
 7. **ISSUE C07 (Contract Documentation Corrections):** Hiệu chỉnh bảng tài liệu kiểm toán: `change-plan` gửi `{ planId, idempotencyKey }`, `checkout` gửi `{ idempotencyKey }`.
-8. **ISSUE C08 (Attribution Integrity):** Ghi nhận đầy đủ quyền tác giả Nguyễn Tấn Dũng cho Issue #18, không chèn các dòng đồng tác giả tự động.
+8. **ISSUE C08 (Attribution Integrity):** Phân định rạch ròi người phụ trách Issue #18 (Lê Hải Dương, `@leduwn`) và Git Committer & Operations Lead (Nguyễn Tấn Dũng, `@antondung`), không thêm các dòng `Co-Authored-By` tự động.
 
 ---
 
 ## 4. Chỉ Số Kiểm Thử & Kiểm Tra Kho Mã Nguồn
 
-```
-======================================================================
-KẾT QUẢ KIỂM THỬ VÀ CHUẨN HÓA MÃ NGUỒN (QUALITY GATE REPORT)
-======================================================================
-1. Vitest Suite:           39/39 Test Files Passed (100%)
-2. Tổng số bài test:       509/509 Tests Passed (0 Failed, 0 Skipped)
-3. Thời gian chạy test:    57.66 giây
-4. TypeScript Compiler:    tsc -b hoàn tất với 0 lỗi (Zero TS Errors)
-5. Linter (Oxlint):        0 lỗi vi phạm
-6. Production Build:       Vite build hoàn tất trong 2.54s (491 kB gzip 153 kB)
-7. Kho mã nguồn:           363 tệp sạch sẽ (kiem-tra-kho-ma-nguon.ps1 Passed)
-======================================================================
-```
+| Hạng mục kiểm thử | Kết quả | Ghi chú chất lượng |
+| :--- | :--- | :--- |
+| **1. Vitest Suite** | **40/40 Test Files Passed** | Đạt 100% test files |
+| **2. Tổng số bài test** | **517/517 Tests Passed** | 0 Failed, 0 Skipped |
+| **3. TypeScript Compiler** | **tsc -b hoàn tất với 0 lỗi** | Zero TS Errors |
+| **4. Linter (Oxlint)** | **0 lỗi vi phạm** | Mã nguồn chuẩn hóa |
+| **5. Production Build** | **Vite build hoàn tất 2.44s** | 491 kB bundle (gzip 153 kB) |
+| **6. Kho mã nguồn** | **368 tệp sạch sẽ** | kiem-tra-kho-ma-nguon.ps1 Passed |
 
 ---
 

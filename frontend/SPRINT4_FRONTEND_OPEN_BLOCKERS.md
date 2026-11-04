@@ -1,7 +1,8 @@
 # API HUB — SPRINT 4 FRONTEND OPEN BLOCKERS & STATUS ADVISORIES
 ## Quản Lý Rủi Ro Tích Hợp · Điểm Chặn Kiến Trúc · Khuyến Nghị Phối Hợp
 
-- **Tác giả:** Nguyễn Tấn Dũng (Frontend Tech Lead)
+- **Assignee (Issue #18):** Lê Hải Dương (`@leduwn`, Frontend Developer)
+- **Git Committer & Operations Lead:** Nguyễn Tấn Dũng (`@antondung`, Frontend Tech Lead & Operations)
 - **Ngày lập:** 2026-11-05
 - **Nhánh:** `feature/18-sprint4-frontend-billing`
 - **Mục tiêu:** Báo cáo chi tiết các điểm nghẽn kỹ thuật bên ngoài phạm vi Frontend cần sự phối hợp giữa Backend, Database và DevOps trước khi sáp nhập vào `develop`.

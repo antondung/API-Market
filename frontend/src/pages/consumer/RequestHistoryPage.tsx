@@ -1,5 +1,6 @@
 /* oxlint-disable react/only-export-components */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useOptionalAuth } from '../../context/AuthContext';
 import { MethodBadge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -81,6 +82,7 @@ export function mapRequestHistoryError(err: unknown): string {
 }
 
 export const RequestHistoryPage: React.FC = () => {
+  const userId = useOptionalAuth()?.currentUser?.id;
   const { t } = useLanguage();
 
   const [items, setItems] = useState<UsageHistoryItem[]>([]);
@@ -169,6 +171,8 @@ export const RequestHistoryPage: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
+    setItems([]);
+    setTotal(0);
     fetchHistory(
       page,
       selectedStatus,
@@ -181,7 +185,7 @@ export const RequestHistoryPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [fetchHistory, page, selectedStatus, activeApiId, activeDateFrom, activeDateTo]);
+  }, [userId, fetchHistory, page, selectedStatus, activeApiId, activeDateFrom, activeDateTo]);
 
   const handleApplyFilter = (e?: React.FormEvent) => {
     if (e) e.preventDefault();

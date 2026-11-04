@@ -1,6 +1,7 @@
 /* oxlint-disable react/only-export-components, react/set-state-in-effect */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useOptionalAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
@@ -76,6 +77,7 @@ export function mapSubscriptionError(err: unknown, defaultMsg = 'Đã có lỗi 
 }
 
 export const MySubscriptionsPage: React.FC = () => {
+  const userId = useOptionalAuth()?.currentUser?.id;
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -120,11 +122,15 @@ export const MySubscriptionsPage: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
+    setSubscriptions([]);
+    setTotal(0);
+    setCancelModalSub(null);
+    setChangePlanSub(null);
     fetchSubscriptions(page, controller.signal);
     return () => {
       controller.abort();
     };
-  }, [page, fetchSubscriptions]);
+  }, [userId, page, fetchSubscriptions]);
 
   const handleConfirmCancel = async () => {
     if (!cancelModalSub) return;

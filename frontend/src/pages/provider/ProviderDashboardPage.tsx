@@ -50,6 +50,7 @@ export const ProviderDashboardPage: React.FC = () => {
 
     setIsAnalyticsLoading(true);
     setAnalyticsError(null);
+    setAnalytics(null);
 
     Promise.all([
       getProviderVerification(controller.signal),

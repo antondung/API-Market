@@ -1,7 +1,8 @@
 # API HUB — SPRINT 4 FRONTEND INTEGRATION EVIDENCE
 ## Bằng Chứng Kỹ Thuật · Giao Thức Mạng · Xác Thực Tích Hợp
 
-- **Tác giả:** Nguyễn Tấn Dũng (Frontend Tech Lead)
+- **Assignee (Issue #18):** Lê Hải Dương (`@leduwn`, Frontend Developer)
+- **Git Committer & Operations Lead:** Nguyễn Tấn Dũng (`@antondung`, Frontend Tech Lead & Operations)
 - **Nhánh triển khai:** `feature/18-sprint4-frontend-billing`
 - **Hệ tham chiếu Backend:** Commit `2c8a873023e071a93097a3d32b17bffbc3e41585` (PR #92)
 - **Hệ tham chiếu Database:** Commit `a475d353c1bc9ec4af09d92a934094eabae1ce45` (PR #91)

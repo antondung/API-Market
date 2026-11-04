@@ -24,7 +24,8 @@ const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'
  * Strips leading slashes from rest path to ensure single slash separation.
  */
 export function buildGatewayPath(apiId: string | number, endpointPath: string): string {
-  const cleanApiId = String(apiId).trim();
+  const rawId = String(apiId ?? '').trim();
+  const cleanApiId = rawId.replace(/[^a-zA-Z0-9_-]/g, '') || 'api_id';
   const rawPath = (endpointPath || '').trim();
   const normalizedRest = rawPath.replace(/^\/+/, '');
   return normalizedRest ? `/api/gateway/${cleanApiId}/${normalizedRest}` : `/api/gateway/${cleanApiId}`;
@@ -395,4 +396,160 @@ headers = ${pyHeaders}
 ${pyBodySetup}response = ${requestCall}
 print(response.status_code)
 print(response.json())`;
+}
+
+/**
+ * Returns the effective base URL honoring VITE_API_BASE_URL environment variable.
+ */
+export function getDefaultBaseUrl(): string {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) {
+      return String((import.meta as any).env.VITE_API_BASE_URL).replace(/\/+$/, '');
+    }
+  } catch {
+    // ignore
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'https://api.apihub.vn';
+}
+
+/**
+ * Substitutes path parameters (both {param} and :param styles) with values or safe defaults.
+ */
+export function substitutePathParams(
+  endpointPath: string,
+  params?: Record<string, string | number>
+): string {
+  let result = endpointPath || '/';
+
+  // Replace {paramName}
+  result = result.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, paramName) => {
+    if (params && params[paramName] !== undefined && params[paramName] !== null) {
+      return String(params[paramName]);
+    }
+    if (paramName.toLowerCase().endsWith('id')) return '1';
+    return `sample_${paramName}`;
+  });
+
+  // Replace :paramName
+  result = result.replace(/:([a-zA-Z0-9_]+)/g, (_match, paramName) => {
+    if (params && params[paramName] !== undefined && params[paramName] !== null) {
+      return String(params[paramName]);
+    }
+    if (paramName.toLowerCase().endsWith('id')) return '1';
+    return `sample_${paramName}`;
+  });
+
+  return result;
+}
+
+/**
+ * Extracts query parameter key-values from endpoint parameter specifications.
+ */
+export function extractSampleQueryParams(
+  parameters?: Array<Record<string, any>>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!parameters || !Array.isArray(parameters)) return result;
+
+  for (const p of parameters) {
+    if (p && p.in === 'query' && p.name) {
+      const name = String(p.name).trim();
+      const type = String(p.type || p.schema?.type || '').toLowerCase();
+      if (name.toLowerCase() === 'page') {
+        result[name] = '1';
+      } else if (name.toLowerCase() === 'limit' || name.toLowerCase() === 'pagesize') {
+        result[name] = '20';
+      } else if (type === 'integer' || type === 'number') {
+        result[name] = '10';
+      } else if (type === 'boolean') {
+        result[name] = 'true';
+      } else {
+        result[name] = `sample_${name}`;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Generates sample JSON body for POST/PUT/PATCH endpoints based on requestSchema.
+ */
+export function generateSampleJsonBody(
+  requestSchema?: Record<string, unknown> | null,
+  method = 'POST'
+): string | null {
+  const m = method.toUpperCase();
+  if (m === 'GET' || m === 'DELETE' || m === 'HEAD' || m === 'OPTIONS') {
+    return null;
+  }
+
+  if (requestSchema && typeof requestSchema === 'object') {
+    if (requestSchema.example && typeof requestSchema.example === 'object') {
+      return JSON.stringify(requestSchema.example, null, 2);
+    }
+    if (requestSchema.properties && typeof requestSchema.properties === 'object') {
+      const sampleObj: Record<string, unknown> = {};
+      for (const [key, propDef] of Object.entries(requestSchema.properties as Record<string, any>)) {
+        const propType = (propDef?.type || '').toLowerCase();
+        if (propType === 'integer' || propType === 'number') {
+          sampleObj[key] = 100;
+        } else if (propType === 'boolean') {
+          sampleObj[key] = true;
+        } else if (propType === 'array') {
+          sampleObj[key] = [];
+        } else if (propType === 'object') {
+          sampleObj[key] = {};
+        } else {
+          sampleObj[key] = `sample_${key}`;
+        }
+      }
+      return JSON.stringify(sampleObj, null, 2);
+    }
+  }
+
+  return JSON.stringify({ example: 'payload' }, null, 2);
+}
+
+/**
+ * Assembles complete SnippetOptions for an endpoint, handling path substitution,
+ * query parameters, body, credentials, and environment base URL.
+ */
+export function buildEndpointSnippetOptions(
+  apiId: string | number,
+  endpoint: {
+    method?: string;
+    path?: string;
+    parameters?: Array<Record<string, any>> | any[];
+    requestSchema?: Record<string, unknown> | null;
+  },
+  overrides?: Partial<SnippetOptions> & { pathParams?: Record<string, string | number> }
+): SnippetOptions {
+  const method = (endpoint.method || overrides?.method || 'GET').toUpperCase();
+  const rawPath = endpoint.path || '/';
+  const substitutedPath = substitutePathParams(rawPath, overrides?.pathParams);
+  const gatewayPath = buildGatewayPath(apiId, substitutedPath);
+
+  const queryParams = {
+    ...extractSampleQueryParams(endpoint.parameters),
+    ...(overrides?.queryParams && !Array.isArray(overrides.queryParams) ? overrides.queryParams : {}),
+  };
+
+  const body = overrides?.body !== undefined
+    ? overrides.body
+    : generateSampleJsonBody(endpoint.requestSchema, method);
+
+  return {
+    method,
+    urlPath: gatewayPath,
+    baseUrl: overrides?.baseUrl || getDefaultBaseUrl(),
+    apiKey: overrides?.apiKey || 'YOUR_API_KEY',
+    queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    headers: overrides?.headers,
+    body,
+    includeTemplateNotice: overrides?.includeTemplateNotice ?? false,
+  };
 }
