@@ -82,11 +82,21 @@ export function mapRequestHistoryError(err: unknown): string {
 }
 
 export const RequestHistoryPage: React.FC = () => {
-  const userId = useOptionalAuth()?.currentUser?.id;
+  const auth = useOptionalAuth();
+  const userId = auth === undefined ? '__standalone__' : (auth?.currentUser?.id ?? null);
   const { t } = useLanguage();
 
-  const [items, setItems] = useState<UsageHistoryItem[]>([]);
-  const [total, setTotal] = useState<number>(0);
+  const [historyData, setHistoryData] = useState<{
+    ownerId: string | number | null | undefined;
+    items: UsageHistoryItem[];
+    total: number;
+    error: string | null;
+  }>({
+    ownerId: userId,
+    items: [],
+    total: 0,
+    error: null,
+  });
   const [page, setPage] = useState<number>(1);
   const pageSize = 20;
 
@@ -100,9 +110,16 @@ export const RequestHistoryPage: React.FC = () => {
   const [dateError, setDateError] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeLog, setActiveLog] = useState<UsageHistoryItem | null>(null);
+  const [rawActiveLog, setRawActiveLog] = useState<UsageHistoryItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Render guard: zero stale render on account switch or logout
+  const isOwner = Boolean(userId && historyData.ownerId === userId);
+  const items = isOwner ? historyData.items : [];
+  const total = isOwner ? historyData.total : 0;
+  const error = isOwner ? historyData.error : null;
+  const activeLog = isOwner ? rawActiveLog : null;
+  const setActiveLog = setRawActiveLog;
 
   const requestIdRef = useRef<number>(0);
 
@@ -117,7 +134,6 @@ export const RequestHistoryPage: React.FC = () => {
     ) => {
       const currentReqId = ++requestIdRef.current;
       setIsLoading(true);
-      setError(null);
 
       try {
         const params: UsageQueryParams = {
@@ -150,8 +166,12 @@ export const RequestHistoryPage: React.FC = () => {
           return;
         }
 
-        setItems(res.items || []);
-        setTotal(res.total || 0);
+        setHistoryData({
+          ownerId: userId,
+          items: res.items || [],
+          total: res.total || 0,
+          error: null,
+        });
       } catch (err: unknown) {
         if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
           return;
@@ -159,28 +179,36 @@ export const RequestHistoryPage: React.FC = () => {
         if (currentReqId !== requestIdRef.current) {
           return;
         }
-        setError(mapRequestHistoryError(err));
+        setHistoryData(prev => ({
+          ...prev,
+          ownerId: userId,
+          error: mapRequestHistoryError(err),
+        }));
       } finally {
         if (currentReqId === requestIdRef.current) {
           setIsLoading(false);
         }
       }
     },
-    [pageSize]
+    [userId, pageSize]
   );
 
   useEffect(() => {
     const controller = new AbortController();
-    setItems([]);
-    setTotal(0);
-    fetchHistory(
-      page,
-      selectedStatus,
-      activeApiId,
-      activeDateFrom,
-      activeDateTo,
-      controller.signal
-    );
+    setHistoryData({ ownerId: userId, items: [], total: 0, error: null });
+    setRawActiveLog(null);
+    if (userId) {
+      fetchHistory(
+        page,
+        selectedStatus,
+        activeApiId,
+        activeDateFrom,
+        activeDateTo,
+        controller.signal
+      );
+    } else {
+      setIsLoading(false);
+    }
 
     return () => {
       controller.abort();

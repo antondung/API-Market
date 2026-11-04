@@ -16,6 +16,8 @@ import {
   generateSampleJsonBody,
   buildEndpointSnippetOptions,
   getDefaultBaseUrl,
+  isValidPositiveIntegerApiId,
+  isPlaceholderGatewayRoute,
 } from './apiSnippetGenerator';
 
 describe('apiSnippetGenerator Security & Shell Escaping', () => {
@@ -348,32 +350,63 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
     });
   });
 
-  describe('buildGatewayPath - Gateway Reverse Proxy Route Contract', () => {
-    it('constructs canonical /api/gateway/:apiId/*rest path', () => {
-      const path = buildGatewayPath('api_sms_99', '/v1/messages/send');
-      expect(path).toBe('/api/gateway/api_sms_99/v1/messages/send');
+  describe('buildGatewayPath - Gateway Reverse Proxy Route Contract & Integer ID', () => {
+    it('constructs canonical /api/gateway/:apiId/*rest path for positive integer API IDs', () => {
+      const path1 = buildGatewayPath(42, '/v1/messages/send');
+      expect(path1).toBe('/api/gateway/42/v1/messages/send');
+
+      const path2 = buildGatewayPath('100', '///users/query');
+      expect(path2).toBe('/api/gateway/100/users/query');
     });
 
-    it('strips redundant leading slashes from endpoint path', () => {
-      const path = buildGatewayPath('100', '///users/query');
-      expect(path).toBe('/api/gateway/100/users/query');
-    });
-
-    it('handles empty endpoint path cleanly', () => {
-      expect(buildGatewayPath('api_finance', '')).toBe('/api/gateway/api_finance');
-      expect(buildGatewayPath('api_finance', '/')).toBe('/api/gateway/api_finance');
+    it('handles empty endpoint path cleanly with positive integer ID', () => {
+      expect(buildGatewayPath(7, '')).toBe('/api/gateway/7');
+      expect(buildGatewayPath('7', '/')).toBe('/api/gateway/7');
     });
 
     it('strips /v1 from default baseUrl when generating safe URL for gateway route', () => {
-      const gatewayRoute = buildGatewayPath('api_weather', '/forecast/daily');
+      const gatewayRoute = buildGatewayPath(15, '/forecast/daily');
       const fullUrl = buildSafeUrl('https://api.apihub.vn/v1', gatewayRoute, { city: 'Hanoi' });
-      expect(fullUrl).toBe('https://api.apihub.vn/api/gateway/api_weather/forecast/daily?city=Hanoi');
+      expect(fullUrl).toBe('https://api.apihub.vn/api/gateway/15/forecast/daily?city=Hanoi');
     });
 
-    it('sanitizes invalid API ID characters to prevent path manipulation', () => {
-      expect(buildGatewayPath('../../etc/passwd', '/users')).toBe('/api/gateway/etcpasswd/users');
-      expect(buildGatewayPath('  api 123 !@#  ', '/test')).toBe('/api/gateway/api123/test');
-      expect(buildGatewayPath('', '/status')).toBe('/api/gateway/api_id/status');
+    it('enforces backend integer contract and maps invalid or non-integer IDs to template placeholder :apiId', () => {
+      // Backend strictly accepts integer ID (1 to 2147483647).
+      // Never silently mutate invalid IDs into arbitrary strings like etcpasswd or api_id.
+      expect(buildGatewayPath('../../etc/passwd', '/users')).toBe('/api/gateway/:apiId/users');
+      expect(buildGatewayPath('api_sms_99', '/test')).toBe('/api/gateway/:apiId/test');
+      expect(buildGatewayPath('  api 123 !@#  ', '/test')).toBe('/api/gateway/:apiId/test');
+      expect(buildGatewayPath('', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath('0', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath('-5', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath('2147483648', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath(':apiId', '/users')).toBe('/api/gateway/:apiId/users');
+      expect(buildGatewayPath('<API_ID>', '/users')).toBe('/api/gateway/:apiId/users');
+    });
+
+    it('validates positive 32-bit integer API IDs with isValidPositiveIntegerApiId', () => {
+      expect(isValidPositiveIntegerApiId(1)).toBe(true);
+      expect(isValidPositiveIntegerApiId('42')).toBe(true);
+      expect(isValidPositiveIntegerApiId('2147483647')).toBe(true);
+
+      expect(isValidPositiveIntegerApiId(0)).toBe(false);
+      expect(isValidPositiveIntegerApiId(-1)).toBe(false);
+      expect(isValidPositiveIntegerApiId('2147483648')).toBe(false); // 32-bit overflow
+      expect(isValidPositiveIntegerApiId('1.5')).toBe(false);
+      expect(isValidPositiveIntegerApiId('api_10')).toBe(false);
+      expect(isValidPositiveIntegerApiId(null)).toBe(false);
+      expect(isValidPositiveIntegerApiId(undefined)).toBe(false);
+      expect(isValidPositiveIntegerApiId('')).toBe(false);
+    });
+
+    it('differentiates valid gateway URLs from placeholder URLs with isPlaceholderGatewayRoute', () => {
+      expect(isPlaceholderGatewayRoute('/api/gateway/42/v1/messages')).toBe(false);
+      expect(isPlaceholderGatewayRoute('https://api.apihub.vn/api/gateway/1/users')).toBe(false);
+
+      expect(isPlaceholderGatewayRoute('/api/gateway/:apiId/v1/messages')).toBe(true);
+      expect(isPlaceholderGatewayRoute('/api/gateway/<API_ID>/v1/messages')).toBe(true);
+      expect(isPlaceholderGatewayRoute('/api/gateway/api_id/status')).toBe(true);
+      expect(isPlaceholderGatewayRoute('https://api.apihub.vn/api/gateway/:apiId/users')).toBe(true);
     });
   });
 
@@ -443,28 +476,29 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
     });
 
     it('assembles complete SnippetOptions for GET, POST, PATCH, DELETE endpoints with credentials', () => {
-      // 1. GET with path and query params
+      // 1. GET with path and query params (API ID 101)
       const getEndpoint = {
         method: 'GET',
         path: '/users/{id}',
         parameters: [{ name: 'fields', in: 'query', type: 'string' }],
       };
-      const getOpts = buildEndpointSnippetOptions('api_users', getEndpoint, {
+      const getOpts = buildEndpointSnippetOptions(101, getEndpoint, {
         apiKey: 'ak_test_get',
         pathParams: { id: 'usr_abc' },
       });
       expect(getOpts.method).toBe('GET');
-      expect(getOpts.urlPath).toBe('/api/gateway/api_users/users/usr_abc');
+      expect(getOpts.urlPath).toBe('/api/gateway/101/users/usr_abc');
       expect(getOpts.apiKey).toBe('ak_test_get');
       expect(getOpts.queryParams).toEqual({ fields: 'sample_fields' });
       expect(getOpts.body).toBeNull();
+      expect(getOpts.includeTemplateNotice).toBe(false);
 
       const getCurl = generateCurlSnippet(getOpts);
       expect(getCurl).toContain('curl -X GET');
-      expect(getCurl).toContain('/api/gateway/api_users/users/usr_abc?fields=sample_fields');
+      expect(getCurl).toContain('/api/gateway/101/users/usr_abc?fields=sample_fields');
       expect(getCurl).toContain("-H 'X-API-Key: ak_test_get'");
 
-      // 2. POST with JSON body
+      // 2. POST with JSON body (API ID 202)
       const postEndpoint = {
         method: 'POST',
         path: '/v1/items',
@@ -472,20 +506,21 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
           properties: { name: { type: 'string' } },
         },
       };
-      const postOpts = buildEndpointSnippetOptions('api_items', postEndpoint, {
+      const postOpts = buildEndpointSnippetOptions('202', postEndpoint, {
         apiKey: '', // Empty apiKey must fallback to YOUR_API_KEY
       });
       expect(postOpts.method).toBe('POST');
-      expect(postOpts.urlPath).toBe('/api/gateway/api_items/v1/items');
+      expect(postOpts.urlPath).toBe('/api/gateway/202/v1/items');
       expect(postOpts.apiKey).toBe('YOUR_API_KEY');
       expect(postOpts.body).toContain('"name": "sample_name"');
+      expect(postOpts.includeTemplateNotice).toBe(false);
 
       const postFetch = generateFetchSnippet(postOpts);
       expect(postFetch).toContain('method: "POST"');
       expect(postFetch).toContain('"X-API-Key": "YOUR_API_KEY"');
       expect(postFetch).toContain('JSON.stringify(');
 
-      // 3. PATCH with partial body
+      // 3. PATCH with partial body (API ID 303)
       const patchEndpoint = {
         method: 'PATCH',
         path: '/v1/items/{itemId}',
@@ -493,22 +528,22 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
           properties: { status: { type: 'string' } },
         },
       };
-      const patchOpts = buildEndpointSnippetOptions('api_items', patchEndpoint, {
+      const patchOpts = buildEndpointSnippetOptions(303, patchEndpoint, {
         apiKey: 'ak_patch_123',
         pathParams: { itemId: 'item_77' },
       });
       expect(patchOpts.method).toBe('PATCH');
-      expect(patchOpts.urlPath).toBe('/api/gateway/api_items/v1/items/item_77');
+      expect(patchOpts.urlPath).toBe('/api/gateway/303/v1/items/item_77');
       const patchPy = generatePythonSnippet(patchOpts);
       expect(patchPy).toContain('requests.patch(');
       expect(patchPy).toContain('"X-API-Key": "ak_patch_123"');
 
-      // 4. DELETE without body
+      // 4. DELETE without body (API ID 404)
       const deleteEndpoint = {
         method: 'DELETE',
         path: '/v1/items/{itemId}',
       };
-      const deleteOpts = buildEndpointSnippetOptions('api_items', deleteEndpoint, {
+      const deleteOpts = buildEndpointSnippetOptions(404, deleteEndpoint, {
         apiKey: 'ak_del_456',
         pathParams: { itemId: 'item_88' },
       });
@@ -517,6 +552,13 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       const delCurl = generateCurlSnippet(deleteOpts);
       expect(delCurl).toContain('curl -X DELETE');
       expect(delCurl).not.toContain(' -d ');
+
+      // 5. Template fallback when API ID is invalid or placeholder
+      const placeholderOpts = buildEndpointSnippetOptions('invalid_non_int', getEndpoint);
+      expect(placeholderOpts.urlPath).toBe('/api/gateway/:apiId/users/1');
+      expect(placeholderOpts.includeTemplateNotice).toBe(true);
+      const placeholderCurl = generateCurlSnippet(placeholderOpts);
+      expect(placeholderCurl).toContain('# Template — Gateway route');
     });
 
     it('resolves default base URL without trailing slash', () => {

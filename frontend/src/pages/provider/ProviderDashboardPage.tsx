@@ -37,9 +37,13 @@ export const ProviderDashboardPage: React.FC = () => {
     message: string;
   } | null>(null);
 
-  const [analytics, setAnalytics] = useState<ProviderAnalyticsOverview | null>(null);
+  const [analyticsSnapshot, setAnalyticsSnapshot] = useState<{
+    userId: string;
+    revision: number;
+    data: ProviderAnalyticsOverview | null;
+    error: string | null;
+  } | null>(null);
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(true);
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   const [revision, setRevision] = useState(0);
   const userId = currentUser?.id;
@@ -49,8 +53,7 @@ export const ProviderDashboardPage: React.FC = () => {
     if (!userId) return () => controller.abort();
 
     setIsAnalyticsLoading(true);
-    setAnalyticsError(null);
-    setAnalytics(null);
+    setAnalyticsSnapshot(null);
 
     Promise.all([
       getProviderVerification(controller.signal),
@@ -70,16 +73,18 @@ export const ProviderDashboardPage: React.FC = () => {
     getProviderAnalyticsOverview(undefined, controller.signal)
       .then((res) => {
         if (!controller.signal.aborted) {
-          setAnalytics(res);
-          setAnalyticsError(null);
+          setAnalyticsSnapshot({ userId, revision, data: res, error: null });
         }
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
-          setAnalytics(null);
-          setAnalyticsError(
-            err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ'))
-          );
+          setAnalyticsSnapshot({
+            userId,
+            revision,
+            data: null,
+            error:
+              err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')),
+          });
         }
       })
       .finally(() => {
@@ -112,6 +117,16 @@ export const ProviderDashboardPage: React.FC = () => {
     : error
       ? 'Không tải được trạng thái'
       : 'Đang tải trạng thái…';
+
+  // Analytics Render Guard: strictly match active userId and revision to prevent stale rendering
+  const isAnalyticsOwner = Boolean(
+    userId &&
+    analyticsSnapshot &&
+    analyticsSnapshot.userId === userId &&
+    analyticsSnapshot.revision === revision
+  );
+  const analytics = isAnalyticsOwner ? analyticsSnapshot!.data : null;
+  const analyticsError = isAnalyticsOwner ? analyticsSnapshot!.error : null;
 
   // Analytics Metrics Computation
   const totalRequests = parseSafeBigInt(analytics?.requests?.requestCount);

@@ -134,7 +134,8 @@ export function renderSubscriptionStatusBadge(status: SubscriptionStatus) {
 }
 
 export const UsageQuotaPage: React.FC = () => {
-  const userId = useOptionalAuth()?.currentUser?.id;
+  const auth = useOptionalAuth();
+  const userId = auth === undefined ? '__standalone__' : (auth?.currentUser?.id ?? null);
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -148,10 +149,22 @@ export const UsageQuotaPage: React.FC = () => {
   const [toDate, setToDate] = useState(initialTo);
   const [dateError, setDateError] = useState<string | null>(null);
 
+  const [usageState, setUsageState] = useState<{
+    ownerId: string | number | null | undefined;
+    data: UsageSummaryResponse | null;
+    error: string | null;
+  }>({
+    ownerId: userId,
+    data: null,
+    error: null,
+  });
   const [isLoading, setIsLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [usageData, setUsageData] = useState<UsageSummaryResponse | null>(null);
   const [retryTrigger, setRetryTrigger] = useState(0);
+
+  // Render guard: zero stale render on account switch or logout
+  const isOwner = Boolean(userId && usageState.ownerId === userId);
+  const usageData = isOwner ? usageState.data : null;
+  const fetchError = isOwner ? usageState.error : null;
 
   const fetchUsage = useCallback(
     async (signal?: AbortSignal) => {
@@ -163,7 +176,6 @@ export const UsageQuotaPage: React.FC = () => {
       }
       setDateError(null);
       setIsLoading(true);
-      setFetchError(null);
 
       const params: UsageQueryParams = {};
       if (apiIdFilter.trim()) {
@@ -179,25 +191,37 @@ export const UsageQuotaPage: React.FC = () => {
       try {
         const data = await getConsumerUsageSummary(params, signal);
         if (signal?.aborted) return;
-        setUsageData(data);
+        setUsageState({
+          ownerId: userId,
+          data,
+          error: null,
+        });
       } catch (err: unknown) {
         if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
           return;
         }
-        setFetchError(mapUsageError(err));
+        setUsageState(prev => ({
+          ...prev,
+          ownerId: userId,
+          error: mapUsageError(err),
+        }));
       } finally {
         if (!signal?.aborted) {
           setIsLoading(false);
         }
       }
     },
-    [apiIdFilter, fromDate, toDate]
+    [userId, apiIdFilter, fromDate, toDate]
   );
 
   useEffect(() => {
     const controller = new AbortController();
-    setUsageData(null);
-    fetchUsage(controller.signal);
+    setUsageState({ ownerId: userId, data: null, error: null });
+    if (userId) {
+      fetchUsage(controller.signal);
+    } else {
+      setIsLoading(false);
+    }
     return () => {
       controller.abort();
     };

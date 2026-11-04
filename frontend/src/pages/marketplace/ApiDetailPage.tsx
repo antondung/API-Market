@@ -27,6 +27,7 @@ import {
   generatePythonSnippet,
   buildGatewayPath,
   buildEndpointSnippetOptions,
+  isValidPositiveIntegerApiId,
 } from '../../utils/apiSnippetGenerator';
 
 export const ApiDetailPage: React.FC = () => {
@@ -150,13 +151,12 @@ export const ApiDetailPage: React.FC = () => {
         urlPath: gatewaySnippetPath,
         baseUrl: snippetBaseUrl,
         apiKey: 'YOUR_API_KEY',
-        includeTemplateNotice: false,
+        includeTemplateNotice: !isValidPositiveIntegerApiId(api?.id),
       };
     }
     return buildEndpointSnippetOptions(api.id, activeSnippetEndpoint, {
       baseUrl: snippetBaseUrl,
       apiKey: 'YOUR_API_KEY',
-      includeTemplateNotice: false,
     });
   }, [api, activeSnippetEndpoint, gatewaySnippetPath, snippetBaseUrl]);
 

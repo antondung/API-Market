@@ -77,24 +77,33 @@ export function mapSubscriptionError(err: unknown, defaultMsg = 'Đã có lỗi 
 }
 
 export const MySubscriptionsPage: React.FC = () => {
-  const userId = useOptionalAuth()?.currentUser?.id;
+  const auth = useOptionalAuth();
+  const userId = auth === undefined ? '__standalone__' : (auth?.currentUser?.id ?? null);
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const [subscriptions, setSubscriptions] = useState<SubscriptionView[]>([]);
-  const [total, setTotal] = useState(0);
+  const [subsData, setSubsData] = useState<{
+    ownerId: string | number | null | undefined;
+    items: SubscriptionView[];
+    total: number;
+    error: string | null;
+  }>({
+    ownerId: userId,
+    items: [],
+    total: 0,
+    error: null,
+  });
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const [cancelModalSub, setCancelModalSub] = useState<SubscriptionView | null>(null);
+  const [rawCancelModalSub, setRawCancelModalSub] = useState<SubscriptionView | null>(null);
   const [cancelImmediate, setCancelImmediate] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
-  const [changePlanSub, setChangePlanSub] = useState<SubscriptionView | null>(null);
+  const [rawChangePlanSub, setRawChangePlanSub] = useState<SubscriptionView | null>(null);
   const [availablePlans, setAvailablePlans] = useState<MarketplacePricingPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [changePlanOutcome, setChangePlanOutcome] = useState<'success' | 'failure'>('success');
@@ -102,31 +111,51 @@ export const MySubscriptionsPage: React.FC = () => {
   const [isChangingPlan, setIsChangingPlan] = useState(false);
   const [changePlanError, setChangePlanError] = useState<string | null>(null);
 
+  // Render guard: zero stale render on account switch or logout
+  const isOwner = Boolean(userId && subsData.ownerId === userId);
+  const subscriptions = isOwner ? subsData.items : [];
+  const total = isOwner ? subsData.total : 0;
+  const fetchError = isOwner ? subsData.error : null;
+  const cancelModalSub = isOwner ? rawCancelModalSub : null;
+  const setCancelModalSub = setRawCancelModalSub;
+  const changePlanSub = isOwner ? rawChangePlanSub : null;
+  const setChangePlanSub = setRawChangePlanSub;
+
   const fetchSubscriptions = useCallback(async (targetPage: number, signal?: AbortSignal) => {
     setIsLoading(true);
-    setFetchError(null);
     try {
       const res = await listSubscriptions(targetPage, pageSize, signal);
       if (signal?.aborted) return;
-      setSubscriptions(res.items || []);
-      setTotal(res.total || 0);
+      setSubsData({
+        ownerId: userId,
+        items: res.items || [],
+        total: res.total || 0,
+        error: null,
+      });
     } catch (err) {
       if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) return;
-      setFetchError(mapSubscriptionError(err, 'Không thể tải danh sách gói đăng ký.'));
+      setSubsData(prev => ({
+        ...prev,
+        ownerId: userId,
+        error: mapSubscriptionError(err, 'Không thể tải danh sách gói đăng ký.'),
+      }));
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false);
       }
     }
-  }, [pageSize]);
+  }, [userId, pageSize]);
 
   useEffect(() => {
     const controller = new AbortController();
-    setSubscriptions([]);
-    setTotal(0);
-    setCancelModalSub(null);
-    setChangePlanSub(null);
-    fetchSubscriptions(page, controller.signal);
+    setSubsData({ ownerId: userId, items: [], total: 0, error: null });
+    setRawCancelModalSub(null);
+    setRawChangePlanSub(null);
+    if (userId) {
+      fetchSubscriptions(page, controller.signal);
+    } else {
+      setIsLoading(false);
+    }
     return () => {
       controller.abort();
     };

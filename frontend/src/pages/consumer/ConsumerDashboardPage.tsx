@@ -19,36 +19,62 @@ export const ConsumerDashboardPage: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const [keys, setKeys] = useState<ConsumerApiKey[]>([]);
-  const [totalKeys, setTotalKeys] = useState<number | null>(null);
+  const [keysState, setKeysState] = useState<{
+    ownerId: string | number;
+    items: ConsumerApiKey[];
+    total: number | null;
+    error: string | null;
+  }>({
+    ownerId: user.id,
+    items: [],
+    total: null,
+    error: null,
+  });
   const [isKeysLoading, setIsKeysLoading] = useState(true);
-  const [keysError, setKeysError] = useState<string | null>(null);
   const [retryKeys, setRetryKeys] = useState(0);
 
-  const [usageSummary, setUsageSummary] = useState<UsageSummaryResponse | null>(null);
+  const [usageState, setUsageState] = useState<{
+    ownerId: string | number;
+    summary: UsageSummaryResponse | null;
+    error: string | null;
+  }>({
+    ownerId: user.id,
+    summary: null,
+    error: null,
+  });
   const [isUsageLoading, setIsUsageLoading] = useState(true);
-  const [usageError, setUsageError] = useState<string | null>(null);
   const [retryUsage, setRetryUsage] = useState(0);
+
+  // Render guard: zero stale render on account switch
+  const isKeysOwner = keysState.ownerId === user.id;
+  const keys = isKeysOwner ? keysState.items : [];
+  const totalKeys = isKeysOwner ? keysState.total : null;
+  const keysError = isKeysOwner ? keysState.error : null;
+
+  const isUsageOwner = usageState.ownerId === user.id;
+  const usageSummary = isUsageOwner ? usageState.summary : null;
+  const usageError = isUsageOwner ? usageState.error : null;
 
   useEffect(() => {
     let isMounted = true;
     const controller = new AbortController();
     setIsUsageLoading(true);
-    setUsageError(null);
-    setUsageSummary(null);
+    setUsageState({ ownerId: user.id, summary: null, error: null });
 
     getConsumerUsageSummary(undefined, controller.signal)
       .then(res => {
         if (isMounted) {
-          setUsageSummary(res);
-          setUsageError(null);
+          setUsageState({ ownerId: user.id, summary: res, error: null });
         }
       })
       .catch((err: any) => {
         if (controller.signal.aborted) return;
         if (isMounted) {
-          setUsageSummary(null);
-          setUsageError(err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')));
+          setUsageState({
+            ownerId: user.id,
+            summary: null,
+            error: err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')),
+          });
         }
       })
       .finally(() => {
@@ -75,24 +101,23 @@ export const ConsumerDashboardPage: React.FC = () => {
     let isMounted = true;
     const controller = new AbortController();
     setIsKeysLoading(true);
-    setKeysError(null);
-    setKeys([]);
-    setTotalKeys(null);
+    setKeysState({ ownerId: user.id, items: [], total: null, error: null });
 
     listConsumerApiKeys(1, 100, controller.signal)
       .then(res => {
         if (isMounted) {
-          setKeys(res.items);
-          setTotalKeys(res.total);
-          setKeysError(null);
+          setKeysState({ ownerId: user.id, items: res.items, total: res.total, error: null });
         }
       })
       .catch((err: any) => {
         if (controller.signal.aborted) return;
         if (isMounted) {
-          setKeys([]);
-          setTotalKeys(null);
-          setKeysError(err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')));
+          setKeysState({
+            ownerId: user.id,
+            items: [],
+            total: null,
+            error: err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')),
+          });
         }
       })
       .finally(() => {

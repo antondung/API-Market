@@ -19,16 +19,50 @@ const DEFAULT_BASE_URL = 'https://api.apihub.vn/v1';
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'TRACE']);
 
 /**
+ * Backend Gateway contract: apiId must be a positive 32-bit integer (1 to 2147483647).
+ * Matches backend `marketplaceId = z.string().regex(/^[1-9][0-9]{0,9}$/).refine(value => Number(value) <= 2147483647)`.
+ */
+export function isValidPositiveIntegerApiId(apiId: unknown): boolean {
+  if (apiId === null || apiId === undefined) return false;
+  const raw = String(apiId).trim();
+  if (!/^[1-9][0-9]{0,9}$/.test(raw)) return false;
+  const num = Number(raw);
+  return Number.isSafeInteger(num) && num > 0 && num <= 2147483647;
+}
+
+/**
+ * Detects whether a path or URL uses a template/placeholder API ID rather than a verified positive integer.
+ */
+export function isPlaceholderGatewayRoute(pathOrUrl: string): boolean {
+  if (!pathOrUrl) return false;
+  return /\/api\/gateway\/(?::apiId|<API_ID>|api_id)(?:\/|$)/.test(pathOrUrl) ||
+         /\/api\/gateway\/[^/]+(?:\/|$)/.test(pathOrUrl) && !/\/api\/gateway\/[1-9][0-9]{0,9}(?:\/|$)/.test(pathOrUrl);
+}
+
+/**
  * Constructs the canonical Gateway reverse-proxy path for an API endpoint:
  * /api/gateway/:apiId/*rest
+ * Backend strictly accepts positive integer API IDs (1 to 2147483647).
+ * Non-integer or placeholder inputs resolve to canonical template route :apiId.
  * Strips leading slashes from rest path to ensure single slash separation.
  */
 export function buildGatewayPath(apiId: string | number, endpointPath: string): string {
   const rawId = String(apiId ?? '').trim();
-  const cleanApiId = rawId.replace(/[^a-zA-Z0-9_-]/g, '') || 'api_id';
   const rawPath = (endpointPath || '').trim();
   const normalizedRest = rawPath.replace(/^\/+/, '');
-  return normalizedRest ? `/api/gateway/${cleanApiId}/${normalizedRest}` : `/api/gateway/${cleanApiId}`;
+
+  let routeApiId: string;
+  if (isValidPositiveIntegerApiId(rawId)) {
+    routeApiId = rawId;
+  } else if (rawId === ':apiId' || rawId === '<API_ID>') {
+    routeApiId = ':apiId';
+  } else {
+    // Backend strictly requires a positive 32-bit integer API ID (1 to 2147483647).
+    // Do not silently mutate invalid IDs into arbitrary strings. Emit canonical template placeholder :apiId.
+    routeApiId = ':apiId';
+  }
+
+  return normalizedRest ? `/api/gateway/${routeApiId}/${normalizedRest}` : `/api/gateway/${routeApiId}`;
 }
 
 /**
@@ -550,6 +584,9 @@ export function buildEndpointSnippetOptions(
     queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
     headers: overrides?.headers,
     body,
-    includeTemplateNotice: overrides?.includeTemplateNotice ?? false,
+    includeTemplateNotice:
+      overrides?.includeTemplateNotice !== undefined
+        ? overrides.includeTemplateNotice
+        : !isValidPositiveIntegerApiId(apiId),
   };
 }

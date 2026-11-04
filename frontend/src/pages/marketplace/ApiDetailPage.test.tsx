@@ -13,7 +13,7 @@ vi.mock('../../i18n', () => ({
 }));
 
 const mockApiDetail: MarketplaceApiDetail = {
-  id: 'api-detail-1',
+  id: '1',
   name: 'Global Climate Metrics API',
   description: 'Enterprise grade climate observations and atmospheric data streams.',
   providerId: 'prov-88',
@@ -102,7 +102,7 @@ const mockApiDetail: MarketplaceApiDetail = {
   },
 };
 
-const renderPage = (apiId = 'api-detail-1') => {
+const renderPage = (apiId = '1') => {
   return render(
     <MemoryRouter initialEntries={[`/api/${apiId}`]}>
       <Routes>
@@ -288,10 +288,10 @@ describe('ApiDetailPage', () => {
 
     // Should display canonical Gateway route callout
     expect(screen.getByText(/Gateway Reverse Proxy Route:/)).toBeDefined();
-    expect(screen.getByText('/api/gateway/api-detail-1/v2/observations/current')).toBeDefined();
+    expect(screen.getByText('/api/gateway/1/v2/observations/current')).toBeDefined();
 
     // Verify code block contains Gateway path
-    expect(screen.getAllByText(/\/api\/gateway\/api-detail-1\/v2\/observations\/current/)[0]).toBeDefined();
+    expect(screen.getAllByText(/\/api\/gateway\/1\/v2\/observations\/current/)[0]).toBeDefined();
 
     // Verify rate limit unit is req/phút in pricing plans
     const pricingTab = screen.getByRole('button', { name: /Pricing Plans/ });
