@@ -12,6 +12,9 @@
  * Ghi đè bằng biến môi trường MOCK_PORT.
  */
 import { createServer } from 'node:http';
+import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
+import {upstreamVerifier,originSigningKey} from './gateway-auth.mjs';
 
 const WEATHER = {
   Hanoi: { temperatureC: 31, condition: 'Cloudy', humidity: 78 },
@@ -70,13 +73,17 @@ const SERVICES = {
   catalog: { port: 4013, path: '/v1/products', handler: catalogHandler },
 };
 
-export function startService(name, portOverride) {
+export function startService(name, portOverride, options = {}) {
   const spec = SERVICES[name];
   if (!spec) throw new Error(`API demo không hợp lệ: ${name}`);
   const port = Number(portOverride ?? spec.port);
+  const origin=options.origin ?? process.env.MOCK_PUBLIC_ORIGIN ?? `http://${name}:${port}`;
+  const leaf=options.secret ?? process.env.UPSTREAM_GATEWAY_KEY ?? originSigningKey(process.env.GATEWAY_UPSTREAM_SECRET ?? '',origin);
+  const verify = upstreamVerifier(leaf,origin);
   const server = createServer((req, res) => {
     const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
     if (url.pathname === '/health') return send(res, 200, { status: 'ok', service: name });
+    if (!verify(req.method, req.url, req.headers)) return send(res, 401, {error:'GATEWAY_SIGNATURE_REQUIRED'});
     if (url.pathname !== spec.path) return send(res, 404, { error: 'NOT_FOUND', message: 'Route not found' });
     if (req.method !== 'GET') return send(res, 405, { error: 'METHOD_NOT_ALLOWED', message: 'Chỉ hỗ trợ GET' });
     spec.handler(req, res, url);
@@ -88,6 +95,7 @@ export function startService(name, portOverride) {
 }
 
 const target = process.argv[2];
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 if (target === 'all') {
   for (const name of Object.keys(SERVICES)) startService(name);
 } else if (SERVICES[target]) {
@@ -95,4 +103,5 @@ if (target === 'all') {
 } else {
   console.error('Dùng: node mock-services/server.mjs <weather|currency|catalog|all>');
   process.exit(1);
+}
 }

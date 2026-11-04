@@ -35,6 +35,9 @@ import {billingRouter,webhookRouter} from './billing-router.js';
 import type {UsageAnalytics} from './usage-analytics.js';
 import {usageConsumerRouter,usageProviderRouter} from './usage-router.js';
 import {sprint4Paths} from './sprint4-contract.js';
+import {operationsRouter, type OperationsHealth} from './operations-router.js';
+import type {SubscriptionAdminService} from './subscription-admin-service.js';
+import {operationsPaths} from './operations-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -62,7 +65,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics; operations?:{admin:SubscriptionAdminService;health:OperationsHealth} }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -113,7 +116,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   } : openapi;
   const document = { ...baseDocument,
     paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
-      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}) } };
+      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}),...(options.operations?operationsPaths:{}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -134,6 +137,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if(options.billing)app.use('/api/consumer/subscriptions',billingRouter(options.billing,requireAuth,requireRole('Consumer')));
   if(options.usage){app.use('/api/consumer/usage',usageConsumerRouter(options.usage,requireAuth,requireRole('Consumer')));app.use('/api/provider/analytics',usageProviderRouter(options.usage,requireAuth,requireRole('Provider')));}
+  if(options.operations)app.use('/api/admin',operationsRouter(options.operations.admin,options.operations.health,requireAuth,requireRole('Admin')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
   if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
   // US-15: Consumers file reports; Admins decide them.

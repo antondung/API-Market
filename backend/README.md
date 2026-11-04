@@ -101,3 +101,7 @@ Hợp đồng Sandbox, API Key, Playground và registry nội bộ: [SPRINT-3-CO
 ## Backend Sprint 4
 
 Subscription, payment sandbox có chữ ký/idempotency, Gateway Redis rate/quota và durable usage/analytics: [SPRINT-4-HANDOFF.md](SPRINT-4-HANDOFF.md). Cần migrate đến 012 và Redis trước khi nghiệm thu Gateway. `npm test` cần Redis test ngoài PostgreSQL; `npm run benchmark:gateway` đo đường đi backend trên fixture local. Backend dựa trên schema PR #91 của Danh; hướng dẫn FE, vận hành và giới hạn kiểm chứng nằm trong bàn giao.
+
+## Sprint 4 — Admin/Operations
+
+Phần Dũng: [SPRINT-4-DUNG-HANDOFF.md](SPRINT-4-DUNG-HANDOFF.md) có Admin Subscription/Payment Monitoring thật, Audit-backed Suspend/Revoke, upstream HMAC, worker expiry/reset/aggregate/partition, staging template và script smoke. Chạy migrate013 trước backend mới; production cần GATEWAY_UPSTREAM_SECRET độc lập. Trạng thái staging/feature freeze được ghi riêng, không suy ra từ CI.

@@ -1,4 +1,4 @@
-﻿# Docker Compose cho môi trường development — EN-05
+# Docker Compose cho môi trường development — EN-05
 #
 # Một lệnh dựng cả hệ thống:
 #   docker compose --env-file .env.docker up --build -d
@@ -84,6 +84,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-api_market_dev}
       REDIS_URL: redis://redis:6379
       SANDBOX_WEBHOOK_SECRET: ${SANDBOX_WEBHOOK_SECRET:-}
+      GATEWAY_UPSTREAM_SECRET: ${GATEWAY_UPSTREAM_SECRET:-}
       PORT: 3000
       # Phải bind 0.0.0.0 để truy cập được từ ngoài container
       HOST: 0.0.0.0
@@ -184,6 +185,9 @@ services:
     container_name: api-market-weather
     restart: unless-stopped
     command: ["weather"]
+    environment:
+      GATEWAY_UPSTREAM_SECRET: ${GATEWAY_UPSTREAM_SECRET:-}
+      MOCK_PUBLIC_ORIGIN: ${WEATHER_PUBLIC_ORIGIN:-http://weather:4011}
     profiles: ["demo"]
     ports:
       - "${WEATHER_PORT:-4011}:4011"
@@ -203,6 +207,9 @@ services:
     container_name: api-market-currency
     restart: unless-stopped
     command: ["currency"]
+    environment:
+      GATEWAY_UPSTREAM_SECRET: ${GATEWAY_UPSTREAM_SECRET:-}
+      MOCK_PUBLIC_ORIGIN: ${CURRENCY_PUBLIC_ORIGIN:-http://currency:4012}
     profiles: ["demo"]
     ports:
       - "${CURRENCY_PORT:-4012}:4012"
@@ -222,6 +229,9 @@ services:
     container_name: api-market-catalog
     restart: unless-stopped
     command: ["catalog"]
+    environment:
+      GATEWAY_UPSTREAM_SECRET: ${GATEWAY_UPSTREAM_SECRET:-}
+      MOCK_PUBLIC_ORIGIN: ${CATALOG_PUBLIC_ORIGIN:-http://catalog:4013}
     profiles: ["demo"]
     ports:
       - "${CATALOG_PORT:-4013}:4013"

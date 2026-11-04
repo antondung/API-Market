@@ -16,6 +16,12 @@ import {UsageService} from './usage-service.js';
 import {UsageAnalytics} from './usage-analytics.js';
 import {RedisMeter} from './redis-meter.js';
 import {GatewayEntitlement} from './gateway-entitlement.js';
+import {SafeProxy} from './safe-proxy.js';
+import {PlaygroundService} from './playground-service.js';
+import {upstreamSecret} from './upstream-signing.js';
+import {OperationsWorker} from './operations-worker.js';
+import {SubscriptionAdminService} from './subscription-admin-service.js';
+import {OperationsHealth} from './operations-router.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
 if (!['postgres', 'memory'].includes(mode)) throw new Error('AUTH_STORE must be postgres or memory');
@@ -48,13 +54,19 @@ usage?.start();
 const sandboxSecret=resolveSandboxSecret(secret,process.env.SANDBOX_WEBHOOK_SECRET,process.env.NODE_ENV==='production');
 const billing=store instanceof PostgresAuthStore?new BillingService(store.pool,sandboxSecret):undefined;
 const analytics=store instanceof PostgresAuthStore?new UsageAnalytics(store.pool):undefined;
-const gateway = store instanceof PostgresAuthStore&&redis&&usage ? new GatewayService(store.pool,undefined,undefined,new GatewayEntitlement(store.pool,new RedisMeter(redis),usage)) : undefined;
+const proxy=new SafeProxy({signingSecret:upstreamSecret(secret,process.env.GATEWAY_UPSTREAM_SECRET,process.env.NODE_ENV==='production')});
+const gateway = store instanceof PostgresAuthStore&&redis&&usage ? new GatewayService(store.pool,undefined,proxy,new GatewayEntitlement(store.pool,new RedisMeter(redis),usage)) : undefined;
+const playground=store instanceof PostgresAuthStore?new PlaygroundService(store.pool,undefined,undefined,proxy):undefined;
+const worker=store instanceof PostgresAuthStore?new OperationsWorker(store.pool):undefined;
+if(store instanceof PostgresAuthStore)await store.pool.query('SELECT name FROM backend_job_runs LIMIT 0');
+worker?.start();
+const operations=store instanceof PostgresAuthStore&&redis?{admin:new SubscriptionAdminService(store.pool),health:new OperationsHealth(store.pool,redis)}:undefined;
 const reports = store instanceof PostgresAuthStore ? new ReportService(store.pool) : undefined;
 if (reports) await reports.ready();
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace, gateway, reports,billing,usage:analytics });
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace, gateway, playground, reports,billing,usage:analytics,operations });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => { server.close(async () => { try{await usage?.close();}catch{console.error('Usage outbox retained for retry');}if(redis?.isOpen)redis.destroy();if (store instanceof PostgresAuthStore) await store.close(); process.exit(0); }); });
+  process.on(signal, () => { server.close(async () => { await worker?.close();try{await usage?.close();}catch{console.error('Usage outbox retained for retry');}if(redis?.isOpen)redis.destroy();if (store instanceof PostgresAuthStore) await store.close(); process.exit(0); }); });
 }
