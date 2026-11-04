@@ -82,6 +82,8 @@ services:
       AUTH_STORE: postgres
       # Trong mạng nội bộ của compose, host là tên service "postgres"
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-api_market_dev}
+      REDIS_URL: redis://redis:6379
+      SANDBOX_WEBHOOK_SECRET: ${SANDBOX_WEBHOOK_SECRET:-}
       PORT: 3000
       # Phải bind 0.0.0.0 để truy cập được từ ngoài container
       HOST: 0.0.0.0

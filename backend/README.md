@@ -97,3 +97,7 @@ Hướng dẫn endpoint, upload OpenAPI, kết quả kiểm thử và phụ thu�
 ## Bổ sung Sprint 3 Consumer
 
 Hợp đồng Sandbox, API Key, Playground và registry nội bộ: [SPRINT-3-CONSUMER-HANDOFF.md](SPRINT-3-CONSUMER-HANDOFF.md).
+
+## Backend Sprint 4
+
+Subscription, payment sandbox có chữ ký/idempotency, Gateway Redis rate/quota và durable usage/analytics: [SPRINT-4-HANDOFF.md](SPRINT-4-HANDOFF.md). Cần migrate đến 012 và Redis trước khi nghiệm thu Gateway. `npm test` cần Redis test ngoài PostgreSQL; `npm run benchmark:gateway` đo đường đi backend trên fixture local. Backend dựa trên schema PR #91 của Danh; hướng dẫn FE, vận hành và giới hạn kiểm chứng nằm trong bàn giao.

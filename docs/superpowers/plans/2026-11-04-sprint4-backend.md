@@ -21,3 +21,13 @@ Webhook retries/concurrency never duplicate charges or quota; Redis eviction can
 5. Verification and handoff: full tests/build/lint, real Redis HTTP integration/benchmark, Swagger validation, fresh branch review; fix important findings with regression; commit/push feature branch and PR to develop (#91 dependency), attach PR. Do not claim review/staging complete.
 
 Each task follows failing test -> verify failure -> minimum implementation -> tests pass -> commit. Execution ledger is backend/SPRINT-4-HANDOFF.md; describe design rulings and test evidence there.
+
+## Execution ledger — 2026-11-04
+
+- [x] Baseline: schema #91 at a475d35, design/plan committed as 8499b47. Existing database fixture failed Draft trigger; subsequent aggregate query failed GROUP BY. Fixed fixture and added migration012 without editing009.
+- [x] Billing: test-first failures observed; free/paid snapshots, owner-bound token, raw HMAC, settlement retry, plan-change and cancel covered.
+- [x] Metering/usage: Gateway RED expected403/429 but got200 before admission; Redis/PG production gate now passes concurrent HTTP cases; durable writer retry/recovery covered.
+- [x] Integration: JWT/RBAC routers, Swagger validator, environment/Compose and startup secret regression, real Redis harness/CI provisioning.
+- [x] Final review: identified and fixed quota-reset and blank Docker-secret High findings; follow-up read-only review found no remaining Critical/High. No independent staging QA claim.
+- [x] Local verification: npm test 160/160, zero skips/failures; build/lint/source checks pass. Sprint3 upgrade/rerun preserves rows. Local benchmark application p50=13.09ms/p95=19.21ms/max=23.86ms, 110 durable usage rows; fixture conditions documented in handoff.
+- [ ] Publish feature PR to develop, verify CI on final head, hand off for maintainer review and integrated QA. Dependency #91 is still open; do not self-approve/merge.

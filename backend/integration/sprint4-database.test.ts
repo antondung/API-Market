@@ -20,8 +20,8 @@ async function fixture() {
     ), pu AS (INSERT INTO users(name,email,password_hash,role_id) VALUES
       ('Provider',$2,'test',(SELECT id FROM roles WHERE name='API_PROVIDER')) RETURNING id),
     p AS (INSERT INTO api_providers(user_id,provider_name) SELECT id,'Sprint 4 Provider' FROM pu RETURNING id),
-    a AS (INSERT INTO apis(provider_id,name,description,category,base_url,status,published_at)
-      SELECT id,'Sprint 4 API','Billing test API','Test','https://example.test','Published',now() FROM p RETURNING id),
+    a AS (INSERT INTO apis(provider_id,name,description,category,base_url)
+      SELECT id,'Sprint 4 API','Billing test API','Test','https://example.test' FROM p RETURNING id),
     pl AS (INSERT INTO api_plans(api_id,name,price_monthly,quota,rate_limit)
       SELECT id,'Basic',99000,100,10 FROM a RETURNING id,api_id)
     SELECT u.id consumer_id,pl.id plan_id,pl.api_id FROM u,pl`,
