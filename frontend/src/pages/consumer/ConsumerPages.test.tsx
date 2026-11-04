@@ -10,6 +10,7 @@ import { CostGuardPage } from './CostGuardPage';
 import { RequestHistoryPage } from './RequestHistoryPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
 import * as consumerApi from '../../services/consumerApi';
+import * as billingApi from '../../services/billingApi';
 import { ApiError } from '../../services/authApi';
 
 let mockCurrentUser: { id: string; email: string; name: string; role: string } | null = {
@@ -128,7 +129,14 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
   });
 
   describe('MySubscriptionsPage', () => {
-    it('renders clean layout, honest Sprint 4 advisory, and empty state without fake mutations', () => {
+    it('renders clean layout, honest Sprint 4 advisory, and empty state without fake mutations', async () => {
+      vi.spyOn(billingApi, 'listSubscriptions').mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+      });
+
       render(
         <MemoryRouter>
           <AppProvider>
@@ -139,7 +147,7 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
 
       expect(screen.getByText(/Lộ trình triển khai \(Sprint 3 & Sprint 4\)/)).toBeDefined();
       expect(screen.getByText(/Gói dùng thử Sandbox/)).toBeDefined();
-      expect(screen.getByText('No Subscriptions Found')).toBeDefined();
+      expect(await screen.findByText('No Subscriptions Found')).toBeDefined();
     });
   });
 

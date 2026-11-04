@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import { Badge } from '../../components/ui/Badge';
@@ -16,9 +16,69 @@ import type {
   MarketplacePricingPlan,
 } from '../../services/marketplaceTypes';
 import { ApiError } from '../../services/authApi';
+import {
+  subscribePlan,
+  checkoutSubscription,
+  confirmPayment,
+  getSubscription,
+  generateIdempotencyKey,
+  generateEventId,
+} from '../../services/billingApi';
+import {
+  isZeroAmount,
+  formatBigIntCount,
+  type SubscriptionView,
+} from '../../services/sprint4Types';
+
+function mapCheckoutError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 400) {
+      return 'Dữ liệu yêu cầu không hợp lệ. Vui lòng kiểm tra lại.';
+    }
+    if (err.status === 401) {
+      return 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.';
+    }
+    if (err.status === 403) {
+      return 'Tài khoản không có quyền thực hiện thao tác này.';
+    }
+    if (err.status === 404) {
+      return 'Gói dịch vụ không tồn tại hoặc đã ngừng cung cấp.';
+    }
+    if (err.status === 409) {
+      if (err.code === 'SUBSCRIPTION_ALREADY_EXISTS') {
+        return 'Bạn đã có gói đăng ký đang hoạt động hoặc đang chờ xử lý cho API này.';
+      }
+      if (err.code === 'SUBSCRIPTION_PERIOD_LOCKED') {
+        return 'Chu kỳ đăng ký hiện tại đang được khóa xử lý. Vui lòng thử lại sau.';
+      }
+      if (err.code === 'IDEMPOTENCY_CONFLICT') {
+        return 'Yêu cầu thanh toán trùng lặp. Vui lòng thử lại với mã mới.';
+      }
+      if (err.code === 'CHECKOUT_PENDING') {
+        return 'Đang có giao dịch thanh toán chờ xử lý.';
+      }
+      if (err.code === 'CHECKOUT_EXPIRED') {
+        return 'Phiên thanh toán đã hết hạn. Vui lòng thực hiện lại.';
+      }
+      return err.message || 'Xung đột dữ liệu đăng ký (409 Conflict).';
+    }
+    if (err.status === 429) {
+      return 'Hệ thống đang quá tải. Vui lòng chờ một lát rồi thử lại.';
+    }
+    if (err.status === 503) {
+      return 'Dịch vụ thanh toán tạm thời không khả dụng. Vui lòng thử lại sau.';
+    }
+    return err.message || 'Có lỗi xảy ra khi xử lý đăng ký.';
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return 'Lỗi kết nối máy chủ. Vui lòng thử lại.';
+}
 
 export const CheckoutPage: React.FC = () => {
   const { apiId, planId } = useParams<{ apiId: string; planId: string }>();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const { t } = useLanguage();
 
@@ -27,11 +87,23 @@ export const CheckoutPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
 
-  const [paymentMethod, setPaymentMethod] = useState<'sandbox_card' | 'sandbox_vnpay'>('sandbox_card');
-  const [termsAccepted, setTermsAccepted] = useState(true);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [sandboxOutcome, setSandboxOutcome] = useState<'success' | 'failure'>('success');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [paymentFailure, setPaymentFailure] = useState(false);
+  const [successSubscription, setSuccessSubscription] = useState<SubscriptionView | null>(null);
+
+  const submitControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!apiId) return;
+    return () => {
+      submitControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!apiId || !planId) return;
     const controller = new AbortController();
 
     const fetchDetail = async () => {
@@ -77,7 +149,7 @@ export const CheckoutPage: React.FC = () => {
     );
   }
 
-  if (error || !api || !plan) {
+  if (!apiId || !planId || error || !api || !plan) {
     return <PublicApiUnavailable />;
   }
 
@@ -94,7 +166,7 @@ export const CheckoutPage: React.FC = () => {
           {t('Vui lòng đăng nhập để xem thông tin đăng ký và kích hoạt gói.')}
         </p>
         <Link
-          to={`/login?redirect=${encodeURIComponent(`/checkout/${apiId}/${planId}`)}`}
+          to={`/login?redirect=${encodeURIComponent(location.pathname)}`}
           className="inline-flex items-center justify-center font-label-md px-4 py-2 text-body-md rounded-xl font-medium bg-primary text-on-primary hover:bg-primary/90 shadow-sm"
         >
           {t('Đăng nhập')}
@@ -103,16 +175,161 @@ export const CheckoutPage: React.FC = () => {
     );
   }
 
+  const isConsumer =
+    currentUser.role === 'USER' ||
+    (typeof currentUser.role === 'string' &&
+      currentUser.role.toLowerCase() === 'consumer');
+
+  const isFreePlan =
+    isZeroAmount(String(plan.priceMonthly)) || plan.priceMonthly === 0;
+
+  const handleSubmit = async () => {
+    if (isSubmitting || !termsAccepted || !isConsumer || !plan) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setPaymentFailure(false);
+
+    const controller = new AbortController();
+    submitControllerRef.current = controller;
+
+    try {
+      if (isFreePlan) {
+        const sub = await subscribePlan(plan.id, controller.signal);
+        if (controller.signal.aborted) return;
+        setSuccessSubscription(sub);
+        return;
+      }
+
+      // Paid plan flow
+      // Step 1: subscribePlan
+      const sub = await subscribePlan(plan.id, controller.signal);
+      if (controller.signal.aborted) return;
+
+      // Step 2: checkoutSubscription
+      const idempotencyKey = generateIdempotencyKey('chk');
+      const payment = await checkoutSubscription(sub.id, idempotencyKey, controller.signal);
+      if (controller.signal.aborted) return;
+
+      // Step 3: confirmPayment (token passed in memory, never stored)
+      const eventId = generateEventId('evt');
+      const confirmResult = await confirmPayment(
+        {
+          paymentId: payment.paymentId,
+          token: payment.token,
+          outcome: sandboxOutcome,
+          eventId,
+        },
+        controller.signal
+      );
+      if (controller.signal.aborted) return;
+
+      // Step 4: Outcome evaluation
+      if (sandboxOutcome === 'success' && confirmResult.status === 'Succeeded') {
+        const activeSub = await getSubscription(sub.id, controller.signal);
+        if (controller.signal.aborted) return;
+        setSuccessSubscription(activeSub);
+      } else {
+        setPaymentFailure(true);
+      }
+    } catch (err: unknown) {
+      if (controller.signal.aborted) return;
+      setSubmitError(mapCheckoutError(err));
+    } finally {
+      if (submitControllerRef.current === controller) {
+        submitControllerRef.current = null;
+        setIsSubmitting(false);
+      }
+    }
+  };
+
+  if (successSubscription) {
+    return (
+      <PageReveal className="pt-20 pb-20 px-4 sm:px-6 lg:px-12 max-w-2xl mx-auto">
+        <AnimatedCard className="bg-surface-container-low border border-primary/30 rounded-2xl p-8 text-center shadow-lg">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+            <span className="material-symbols-outlined text-[36px]">check_circle</span>
+          </div>
+          <div className="inline-block mb-3">
+            <Badge variant="primary">{successSubscription.status}</Badge>
+          </div>
+          <h2 className="text-headline-sm font-bold text-on-surface mb-2">
+            {t('Đăng ký gói thành công!')}
+          </h2>
+          <p className="text-body-md text-on-surface-variant mb-6">
+            {isFreePlan
+              ? t('Gói Sandbox Miễn phí đã được kích hoạt thành công.')
+              : t('Thanh toán mô phỏng thành công và gói dịch vụ đã hoạt động.')}
+          </p>
+
+          <div className="bg-surface-container rounded-xl p-4 mb-6 text-left space-y-2 border border-outline-variant/20">
+            <div className="flex justify-between text-body-sm">
+              <span className="text-on-surface-variant">{t('API')}</span>
+              <span className="font-semibold text-on-surface">{api.name}</span>
+            </div>
+            <div className="flex justify-between text-body-sm">
+              <span className="text-on-surface-variant">{t('Gói dịch vụ')}</span>
+              <span className="font-semibold text-on-surface">{plan.name}</span>
+            </div>
+            <div className="flex justify-between text-body-sm">
+              <span className="text-on-surface-variant">{t('Trạng thái')}</span>
+              <span className="font-semibold text-emerald-600">{successSubscription.status}</span>
+            </div>
+            <div className="flex justify-between text-body-sm">
+              <span className="text-on-surface-variant">{t('Hạn mức (Quota)')}</span>
+              <span className="font-semibold text-on-surface font-code-sm">
+                {formatBigIntCount(successSubscription.quotaLimit || plan.quota)} {t('yêu cầu/chu kỳ')}
+              </span>
+            </div>
+            {successSubscription.currentPeriodEnd && (
+              <div className="flex justify-between text-body-sm">
+                <span className="text-on-surface-variant">{t('Thời hạn chu kỳ')}</span>
+                <span className="font-semibold text-on-surface">
+                  {new Date(successSubscription.currentPeriodEnd).toLocaleDateString('vi-VN')}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              to="/consumer/subscriptions"
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-medium bg-primary text-on-primary hover:bg-primary/90 transition-colors shadow-sm"
+            >
+              {t('Quản lý gói đăng ký')}
+            </Link>
+            <Link
+              to="/consumer/api-keys"
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-medium bg-surface-container-high text-on-surface hover:bg-surface-container transition-colors border border-outline-variant/30"
+            >
+              {t('Tạo API Key')}
+            </Link>
+          </div>
+        </AnimatedCard>
+      </PageReveal>
+    );
+  }
+
   return (
     <PageReveal className="pt-20 pb-20 px-4 sm:px-6 lg:px-12 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <Link to={`/api/${api.id}`} className="text-body-sm text-on-surface-variant hover:text-primary flex items-center gap-1 mb-2">
-          <span className="material-symbols-outlined text-[16px]">arrow_back</span> {t('Quay lại')} {api.name}
+        <Link
+          to={`/api/${api.id}`}
+          className="text-body-sm text-on-surface-variant hover:text-primary flex items-center gap-1 mb-2"
+        >
+          <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+          {t('Quay lại')} {api.name}
         </Link>
-        <h1 className="text-headline-lg font-bold text-on-surface">{t('Complete Your Subscription')}</h1>
+        <h1 className="text-headline-lg font-bold text-on-surface">
+          {t('Complete Your Subscription')}
+        </h1>
         <p className="text-body-md text-on-surface-variant">
-          {t('Giao diện chuẩn bị cho Sprint 4. Backend Subscription và thanh toán đang phát triển; chưa thể kích hoạt gói tự động tại đây.')}
+          {isFreePlan
+            ? t('Kích hoạt gói dịch vụ Miễn phí trên môi trường Sandbox.')
+            : t('Kích hoạt gói dịch vụ thông qua cơ chế mô phỏng thanh toán Sandbox.')}
         </p>
       </div>
 
@@ -125,8 +342,10 @@ export const CheckoutPage: React.FC = () => {
             className="bg-surface-container-low border border-primary/25 rounded-2xl p-6 shadow-sm ring-1 ring-primary/10"
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-body-lg font-bold text-on-surface">{t('Subscription Target')}</h3>
-              <Badge variant="primary">Sprint 3 Review</Badge>
+              <h3 className="text-body-lg font-bold text-on-surface">
+                {t('Subscription Target')}
+              </h3>
+              <Badge variant="primary">{isFreePlan ? 'Sandbox Free' : 'Sandbox Tier'}</Badge>
             </div>
             <div className="flex items-center gap-4 p-4 bg-surface-container rounded-xl border border-outline-variant/20 mb-4">
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
@@ -168,85 +387,196 @@ export const CheckoutPage: React.FC = () => {
             </div>
           </AnimatedCard>
 
-          {/* Payment Sandbox Simulation */}
+          {/* Payment Sandbox Simulation Card */}
           <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
             <h3 className="text-body-lg font-bold text-on-surface mb-2 flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-[20px]">account_balance_wallet</span>
-              {t('Phương thức kích hoạt (Sandbox)')}
+              <span className="material-symbols-outlined text-primary text-[20px]">
+                account_balance_wallet
+              </span>
+              {isFreePlan
+                ? t('Kích hoạt gói Miễn phí (Sandbox)')
+                : t('Phương thức kích hoạt (Sandbox)')}
             </h3>
             <p className="text-body-sm text-on-surface-variant mb-4">
-              {t('Chưa có kết quả thanh toán từ máy chủ. Các lựa chọn dưới đây là giao diện tham khảo cho Sprint 4.')}
+              {isFreePlan
+                ? t('Gói Sandbox Miễn phí không yêu cầu thông tin thanh toán. Hạn mức sẽ được kích hoạt ngay lập tức.')
+                : t('Môi trường Sandbox phục vụ thử nghiệm tính năng thanh toán. Vui lòng chọn kịch bản kết quả để kiểm tra luồng xử lý.')}
             </p>
 
-            <div className="space-y-3 mb-6">
-              <label
-                onClick={() => setPaymentMethod('sandbox_card')}
-                className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
-                  paymentMethod === 'sandbox_card'
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-outline-variant/40 bg-surface-container hover:border-outline-variant'
-                }`}
+            {/* Role warning */}
+            {!isConsumer && (
+              <div
+                data-testid="role-warning-banner"
+                className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-body-sm text-amber-800 dark:text-amber-200 mb-6"
               >
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-[24px]">credit_card</span>
-                  <div>
-                    <span className="font-semibold text-on-surface text-body-sm block">{t('Thẻ thanh toán quốc tế')}</span>
-                    <span className="text-[12px] text-on-surface-variant">{t('Sandbox Mock Card (Visa/Mastercard)')}</span>
-                  </div>
+                <div className="flex items-center gap-2 font-semibold mb-1">
+                  <span className="material-symbols-outlined text-[18px]">warning</span>
+                  <span>{t('Chỉ dành cho tài khoản Consumer')}</span>
                 </div>
-                <input type="radio" checked={paymentMethod === 'sandbox_card'} readOnly className="accent-primary" />
-              </label>
+                <p>
+                  {t(
+                    'Tài khoản hiện tại ({role}) không có quyền đăng ký gói API Consumer. Chỉ tài khoản Consumer mới có thể thực hiện thao tác này.'
+                  ).replace('{role}', String(currentUser.role))}
+                </p>
+              </div>
+            )}
 
-              <label
-                onClick={() => setPaymentMethod('sandbox_vnpay')}
-                className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
-                  paymentMethod === 'sandbox_vnpay'
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-outline-variant/40 bg-surface-container hover:border-outline-variant'
-                }`}
+            {/* Sandbox Outcome Selector for Paid Plans */}
+            {!isFreePlan && (
+              <div className="space-y-3 mb-6">
+                <label
+                  data-testid="outcome-success-label"
+                  onClick={() => setSandboxOutcome('success')}
+                  className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
+                    sandboxOutcome === 'success'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-outline-variant/40 bg-surface-container hover:border-outline-variant'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-emerald-600 text-[24px]">
+                      check_circle
+                    </span>
+                    <div>
+                      <span className="font-semibold text-on-surface text-body-sm block">
+                        {t('Mô phỏng Thanh toán Thành công')}
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant">
+                        {t('Giao dịch sandbox thành công, kích hoạt gói ngay')}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="sandboxOutcome"
+                    value="success"
+                    checked={sandboxOutcome === 'success'}
+                    onChange={() => setSandboxOutcome('success')}
+                    className="accent-primary"
+                  />
+                </label>
+
+                <label
+                  data-testid="outcome-failure-label"
+                  onClick={() => setSandboxOutcome('failure')}
+                  className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
+                    sandboxOutcome === 'failure'
+                      ? 'border-error bg-error/5 ring-1 ring-error'
+                      : 'border-outline-variant/40 bg-surface-container hover:border-outline-variant'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-error text-[24px]">
+                      cancel
+                    </span>
+                    <div>
+                      <span className="font-semibold text-on-surface text-body-sm block">
+                        {t('Mô phỏng Thanh toán Thất bại')}
+                      </span>
+                      <span className="text-[12px] text-on-surface-variant">
+                        {t('Giao dịch sandbox bị từ chối (Sandbox Declined) để kiểm tra luồng lỗi')}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="sandboxOutcome"
+                    value="failure"
+                    checked={sandboxOutcome === 'failure'}
+                    onChange={() => setSandboxOutcome('failure')}
+                    className="accent-primary"
+                  />
+                </label>
+              </div>
+            )}
+
+            {/* Payment simulation failure banner */}
+            {paymentFailure && (
+              <div
+                data-testid="payment-failure-banner"
+                className="p-4 bg-error/10 border border-error/30 rounded-xl mb-6"
               >
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-[24px]">qr_code_2</span>
-                  <div>
-                    <span className="font-semibold text-on-surface text-body-sm block">{t('Cổng thanh toán VNPay')}</span>
-                    <span className="text-[12px] text-on-surface-variant">{t('Mã QR Sandbox / Chuyển khoản nội địa')}</span>
+                <div className="flex items-center gap-2 text-error font-bold mb-1">
+                  <span className="material-symbols-outlined text-[20px]">error</span>
+                  <span>{t('Thanh toán mô phỏng thất bại (Sandbox Declined)')}</span>
+                </div>
+                <p className="text-body-sm text-on-surface-variant mb-3">
+                  {t(
+                    'Giao dịch mô phỏng đã bị từ chối theo lựa chọn kịch bản thử nghiệm.'
+                  )}
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPaymentFailure(false);
+                    setSubmitError(null);
+                  }}
+                  data-testid="retry-button"
+                >
+                  {t('Thử lại')}
+                </Button>
+              </div>
+            )}
+
+            {/* General submit error banner */}
+            {submitError && (
+              <div
+                data-testid="checkout-error-banner"
+                className="p-4 bg-error/10 border border-error/30 rounded-xl text-body-sm text-error mb-6"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-[18px] flex-shrink-0 mt-0.5">
+                    error
+                  </span>
+                  <div className="flex-1">
+                    <p className="font-medium">{submitError}</p>
+                    {submitError.includes('Bạn đã có gói đăng ký') && (
+                      <Link
+                        to="/consumer/subscriptions"
+                        className="underline mt-1.5 inline-block text-body-xs font-semibold hover:opacity-80"
+                      >
+                        {t('Quản lý gói đăng ký')}
+                      </Link>
+                    )}
                   </div>
                 </div>
-                <input type="radio" checked={paymentMethod === 'sandbox_vnpay'} readOnly className="accent-primary" />
-              </label>
-            </div>
+              </div>
+            )}
 
             {/* Terms checkbox */}
             <label className="flex items-start gap-2.5 text-body-sm text-on-surface cursor-pointer select-none mb-6">
               <input
                 type="checkbox"
+                data-testid="terms-checkbox"
                 checked={termsAccepted}
                 onChange={(e) => setTermsAccepted(e.target.checked)}
                 className="rounded accent-primary w-4 h-4 mt-0.5 cursor-pointer"
               />
               <span className="text-on-surface-variant">
-                {t('Tôi đồng ý với Quy chế hoạt động sàn API HUB, chính sách hạn mức và điều khoản dịch vụ.')}
+                {t(
+                  'Tôi đồng ý với Quy chế hoạt động sàn API HUB, chính sách hạn mức và điều khoản dịch vụ.'
+                )}
               </span>
             </label>
-
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-body-xs text-amber-700 dark:text-amber-300 mb-4">
-              <div className="flex items-center gap-1.5 font-semibold mb-1">
-                <span className="material-symbols-outlined text-[16px]">info</span>
-                <span>{t('Sprint 3 Sandbox Preview — Live backend billing activates in Sprint 4')}</span>
-              </div>
-              {t('Chức năng thanh toán và kích hoạt gói sẽ ra mắt trong Sprint 4 (Subscription & Billing). Hệ thống không lưu gói giả để đảm bảo tính toàn vẹn dữ liệu.')}
-            </div>
 
             <Button
               variant="primary"
               size="lg"
               className="w-full"
-              disabled={true}
-              title={t('Chức năng đang chờ Backend Subscription trong Sprint 4')}
+              disabled={!termsAccepted || isSubmitting || !isConsumer}
+              onClick={handleSubmit}
+              aria-label={
+                isFreePlan
+                  ? 'Activate Free Sandbox Tier - Kích hoạt gói Miễn phí (Sandbox)'
+                  : undefined
+              }
             >
-              {plan.priceMonthly === 0
-                ? t('Activate Free Sandbox Tier')
-                : `${t('Đăng ký gói')} - ${t('Xác nhận đăng ký')} (${formatPrice(plan.priceMonthly, plan.currency)} - Chờ Sprint 4)`}
+              {isSubmitting
+                ? t('Đang xử lý...')
+                : isFreePlan
+                  ? t('Kích hoạt gói Miễn phí (Sandbox)')
+                  : `${t('Xác nhận đăng ký')} (${formatPrice(plan.priceMonthly, plan.currency)})`}
             </Button>
           </div>
         </div>
@@ -255,20 +585,28 @@ export const CheckoutPage: React.FC = () => {
         <div className="space-y-6">
           <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
             <h4 className="text-body-md font-bold text-on-surface mb-3 flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-[20px]">verified_user</span>
+              <span className="material-symbols-outlined text-primary text-[20px]">
+                verified_user
+              </span>
               {t('Bảo đảm tính minh bạch')}
             </h4>
             <ul className="space-y-3 text-body-sm text-on-surface-variant">
               <li className="flex items-start gap-2">
-                <span className="material-symbols-outlined text-primary text-[18px] flex-shrink-0">check</span>
+                <span className="material-symbols-outlined text-primary text-[18px] flex-shrink-0">
+                  check
+                </span>
                 <span>{t('Nhà cung cấp đã công bố chính thức bảng giá.')}</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="material-symbols-outlined text-primary text-[18px] flex-shrink-0">check</span>
+                <span className="material-symbols-outlined text-primary text-[18px] flex-shrink-0">
+                  check
+                </span>
                 <span>{t('Hạn mức và giới hạn tần suất được ghi nhận trên hợp đồng.')}</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="material-symbols-outlined text-primary text-[18px] flex-shrink-0">check</span>
+                <span className="material-symbols-outlined text-primary text-[18px] flex-shrink-0">
+                  check
+                </span>
                 <span>{t('Tài khoản được bảo vệ qua hạ tầng Gateway trung tâm.')}</span>
               </li>
             </ul>
@@ -276,20 +614,28 @@ export const CheckoutPage: React.FC = () => {
 
           <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
             <h4 className="text-body-md font-bold text-on-surface mb-3 flex items-center gap-2">
-              <span className="material-symbols-outlined text-emerald-600 text-[20px]">security</span>
+              <span className="material-symbols-outlined text-emerald-600 text-[20px]">
+                security
+              </span>
               {t('Tiêu chuẩn Bảo mật')}
             </h4>
             <div className="space-y-2.5 text-body-xs text-on-surface-variant">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-on-surface-variant/70 text-[16px]">lock</span>
+                <span className="material-symbols-outlined text-on-surface-variant/70 text-[16px]">
+                  lock
+                </span>
                 <span>Mã hóa TLS 1.3 / 256-bit đường truyền</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-on-surface-variant/70 text-[16px]">shield</span>
+                <span className="material-symbols-outlined text-on-surface-variant/70 text-[16px]">
+                  shield
+                </span>
                 <span>Anti-SSRF Centralized Reverse Proxy</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-on-surface-variant/70 text-[16px]">key</span>
+                <span className="material-symbols-outlined text-on-surface-variant/70 text-[16px]">
+                  key
+                </span>
                 <span>Zero Plaintext Cryptographic Storage</span>
               </div>
             </div>
