@@ -16,6 +16,9 @@ import {
   parseSafeBigInt,
 } from '../../services/sprint4Types';
 import { ApiError } from '../../services/authApi';
+import { DailyRequestChart } from '../../components/usage/DailyRequestChart';
+import { marketplaceApiIdError, usageRatePercent } from '../../components/usage/usageQuery';
+import { canUseConsumerWorkspace } from '../../components/auth/workspaceRole';
 
 export function calculateQuotaProgress(usedStr: string, limitStr: string): number {
   try {
@@ -148,6 +151,9 @@ export const UsageQuotaPage: React.FC = () => {
   const [fromDate, setFromDate] = useState(initialFrom);
   const [toDate, setToDate] = useState(initialTo);
   const [dateError, setDateError] = useState<string | null>(null);
+  const [apiIdError, setApiIdError] = useState<string | null>(null);
+  const workspaceRole = auth?.currentUser?.role;
+  const consumerAllowed = canUseConsumerWorkspace(workspaceRole);
 
   const [usageState, setUsageState] = useState<{
     ownerId: string | number | null | undefined;
@@ -169,12 +175,13 @@ export const UsageQuotaPage: React.FC = () => {
   const fetchUsage = useCallback(
     async (signal?: AbortSignal) => {
       const vErr = validateDateRange(fromDate, toDate);
-      if (vErr) {
-        setDateError(vErr);
+      const idErr = marketplaceApiIdError(apiIdFilter);
+      setDateError(vErr);
+      setApiIdError(idErr);
+      if (vErr || idErr) {
         setIsLoading(false);
         return;
       }
-      setDateError(null);
       setIsLoading(true);
 
       const params: UsageQueryParams = {};
@@ -217,6 +224,10 @@ export const UsageQuotaPage: React.FC = () => {
   useEffect(() => {
     const controller = new AbortController();
     setUsageState({ ownerId: userId, data: null, error: null });
+    if (!consumerAllowed) {
+      setIsLoading(false);
+      return () => controller.abort();
+    }
     if (userId) {
       fetchUsage(controller.signal);
     } else {
@@ -225,7 +236,7 @@ export const UsageQuotaPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [userId, fetchUsage, retryTrigger]);
+  }, [userId, fetchUsage, retryTrigger, consumerAllowed]);
 
   const subscriptions: UsageSubscriptionSummary[] = useMemo(
     () => usageData?.subscriptions || [],
@@ -251,15 +262,12 @@ export const UsageQuotaPage: React.FC = () => {
       (acc, d) => acc + parseSafeBigInt(d.errorCount),
       0n
     );
-    const successRate =
-      totalRequests > 0n
-        ? Number((totalSuccess * 10000n) / totalRequests) / 100
-        : 100;
     return {
       totalRequests,
       totalSuccess,
       totalError,
-      successRate,
+      successRate: usageRatePercent(totalSuccess, totalRequests),
+      errorRate: usageRatePercent(totalError, totalRequests),
     };
   }, [daily]);
 
@@ -268,6 +276,7 @@ export const UsageQuotaPage: React.FC = () => {
     setFromDate('');
     setToDate('');
     setDateError(null);
+    setApiIdError(null);
   };
 
   const handleApplyFilters = () => {
@@ -286,6 +295,23 @@ export const UsageQuotaPage: React.FC = () => {
     usageData !== null &&
     subscriptions.length === 0 &&
     daily.length === 0;
+
+  if (!consumerAllowed) {
+    return (
+      <div
+        role="alert"
+        data-testid="consumer-role-guard"
+        className="rounded-2xl border border-error/30 bg-error/10 p-8 text-center space-y-2"
+      >
+        <h1 className="text-headline-sm font-bold text-on-surface">
+          {t('Màn hình dành cho Consumer')}
+        </h1>
+        <p className="text-body-sm text-on-surface-variant">
+          {t('Hạn ngạch và lịch sử request chỉ mở cho Consumer và Provider. Tài khoản Admin dùng Admin Console.')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -365,7 +391,7 @@ export const UsageQuotaPage: React.FC = () => {
               id="filter-api-id"
               data-testid="filter-api-id"
               type="text"
-              placeholder={t('Nhập API ID (ví dụ: api_weather)...')}
+              placeholder={t('Nhập API ID dạng số (ví dụ: 12)')}
               value={apiIdFilter}
               onChange={e => setApiIdFilter(e.target.value)}
               className="w-full px-3 py-2 text-body-sm rounded-xl border border-outline-variant/50 bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -442,6 +468,16 @@ export const UsageQuotaPage: React.FC = () => {
           >
             <span className="material-symbols-outlined text-[16px]">error</span>
             <span>{dateError}</span>
+          </div>
+        )}
+        {apiIdError && (
+          <div
+            role="alert"
+            data-testid="filter-api-error"
+            className="rounded-xl border border-error/30 bg-error/10 px-3 py-2 text-body-xs text-error flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[16px]">error</span>
+            <span>{apiIdError}</span>
           </div>
         )}
       </div>
@@ -616,7 +652,7 @@ export const UsageQuotaPage: React.FC = () => {
                               Hạn ngạch đã cạn (Quota Exhausted)
                             </strong>
                             <span className="text-body-xs text-on-surface-variant sm:ml-2">
-                              Lệnh gọi tiếp theo có thể nhận mã HTTP 429 hoặc cần nâng cấp gói cước.
+                              Lệnh gọi tiếp theo bị Gateway từ chối với HTTP 403. Vượt tốc độ theo phút vẫn là HTTP 429.
                             </span>
                           </div>
                         </div>
@@ -698,7 +734,7 @@ export const UsageQuotaPage: React.FC = () => {
                             {t('Chính sách vượt ngạch')}
                           </span>
                           <span className="font-semibold text-error">
-                            {t('Hard Cutoff (HTTP 429)')}
+                            {t('Hard Cutoff (HTTP 403)')}
                           </span>
                         </div>
                       </div>
@@ -744,7 +780,8 @@ export const UsageQuotaPage: React.FC = () => {
                   {formatBigIntCount(dailyTotals.totalSuccess)}
                 </div>
                 <span className="text-body-xs text-on-surface-variant mt-1 block">
-                  {t('Tỷ lệ thành công:')} {dailyTotals.successRate.toFixed(1)}%
+                  {t('Tỷ lệ thành công:')}{' '}
+                  {dailyTotals.successRate === null ? '—' : `${dailyTotals.successRate.toFixed(1)}%`}
                 </span>
               </div>
 
@@ -756,10 +793,18 @@ export const UsageQuotaPage: React.FC = () => {
                   {formatBigIntCount(dailyTotals.totalError)}
                 </div>
                 <span className="text-body-xs text-on-surface-variant mt-1 block">
-                  {t('Mã phản hồi 4xx / 5xx')}
+                  {t('Tỷ lệ lỗi:')}{' '}
+                  {dailyTotals.errorRate === null ? '—' : `${dailyTotals.errorRate.toFixed(1)}%`}
                 </span>
               </div>
             </div>
+
+            {daily.length > 0 && (
+              <DailyRequestChart
+                points={daily}
+                title={t('Biểu đồ lượt gọi theo ngày')}
+              />
+            )}
 
             {/* Daily Breakdown Table / List */}
             {daily.length === 0 ? (

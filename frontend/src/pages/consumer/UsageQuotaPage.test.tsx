@@ -103,6 +103,10 @@ describe('UsageQuotaPage (FE-04.2 Consumer Usage Dashboard)', () => {
     expect(screen.getByTestId('subscription-usage-card-sub_live_01')).toBeDefined();
     expect(screen.getByTestId('daily-row-2026-11-01')).toBeDefined();
     expect(screen.getByTestId('daily-row-2026-11-02')).toBeDefined();
+    expect(screen.getByTestId('daily-request-chart')).toBeDefined();
+    expect(screen.getByTestId('chart-bar-2026-11-01')).toBeDefined();
+    expect(screen.getByText(/96\.0%/)).toBeDefined();
+    expect(screen.getByText(/4\.0%/)).toBeDefined();
     expect(screen.getByText('1.500')).toBeDefined();
     expect(screen.getByText('1.440')).toBeDefined();
     expect(screen.getByText('60')).toBeDefined();
@@ -265,8 +269,8 @@ describe('UsageQuotaPage (FE-04.2 Consumer Usage Dashboard)', () => {
     });
   });
 
-  // 8. API filter query parameter
-  it('supports API filter via URL search params and user input', async () => {
+  // 8. API filter query parameter — marketplace id is a positive integer
+  it('supports a numeric API filter and blocks non-numeric ids before the request', async () => {
     const summarySpy = vi
       .spyOn(usageApi, 'getConsumerUsageSummary')
       .mockResolvedValue({
@@ -275,24 +279,32 @@ describe('UsageQuotaPage (FE-04.2 Consumer Usage Dashboard)', () => {
       });
 
     render(
-      <MemoryRouter initialEntries={['/dashboard/usage?apiId=finance_api']}>
+      <MemoryRouter initialEntries={['/dashboard/usage?apiId=12']}>
         <UsageQuotaPage />
       </MemoryRouter>
     );
 
     expect(summarySpy).toHaveBeenCalledWith(
-      expect.objectContaining({ apiId: 'finance_api' }),
+      expect.objectContaining({ apiId: '12' }),
       expect.anything()
     );
 
     const apiInput = screen.getByTestId('filter-api-id') as HTMLInputElement;
-    expect(apiInput.value).toBe('finance_api');
+    expect(apiInput.value).toBe('12');
 
     fireEvent.change(apiInput, { target: { value: 'logistics_api' } });
 
+    expect(await screen.findByTestId('filter-api-error')).toBeDefined();
+    expect(summarySpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ apiId: 'logistics_api' }),
+      expect.anything()
+    );
+
+    fireEvent.change(apiInput, { target: { value: '34' } });
+
     await waitFor(() => {
       expect(summarySpy).toHaveBeenCalledWith(
-        expect.objectContaining({ apiId: 'logistics_api' }),
+        expect.objectContaining({ apiId: '34' }),
         expect.anything()
       );
     });
