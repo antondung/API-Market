@@ -168,11 +168,21 @@ export class SubscriptionAdminService {
             "Only a suspended subscription can be restored",
           );
         changed = true;
-        action = "SUBSCRIPTION_RESTORED";
-        await c.query(
-          "UPDATE subscriptions SET status='Active' WHERE id=$1",
-          [id],
-        );
+        const periodEnded =
+          new Date(row.current_period_end).getTime() <= Date.now();
+        if (periodEnded) {
+          action = "SUBSCRIPTION_EXPIRED";
+          await c.query(
+            "UPDATE subscriptions SET status='Expired', expired_at=NOW() WHERE id=$1",
+            [id],
+          );
+        } else {
+          action = "SUBSCRIPTION_RESTORED";
+          await c.query(
+            "UPDATE subscriptions SET status='Active' WHERE id=$1",
+            [id],
+          );
+        }
       } else {
         changed = row.is_active;
         action = "API_KEY_REVOKED";

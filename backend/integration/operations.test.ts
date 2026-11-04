@@ -277,6 +277,50 @@ test("Admin subscription/payment ledger enforces JWT/RBAC, strict filters and at
     await f.close();
   }
 });
+test("Restore of a suspended subscription whose period already ended expires it and keeps quota", async () => {
+  const f = await fixture();
+  try {
+    const auth = { Authorization: `Bearer ${f.adminToken}` };
+    const sub = await f.billing.subscribe(f.consumer.id, f.plan);
+    const created = await request(f.app)
+      .post("/api/consumer/api-keys")
+      .set("Authorization", `Bearer ${f.consumerToken}`)
+      .send({ apiId: f.api, label: "Het ky" })
+      .expect(201);
+    await f.store.pool.query(
+      "UPDATE subscriptions SET status='Suspended', quota_used=4, current_period_start=NOW()-INTERVAL '31 days', current_period_end=NOW()-INTERVAL '1 second' WHERE id=$1",
+      [sub.id],
+    );
+    const result = await request(f.app)
+      .post(`/api/admin/subscriptions/${sub.id}/restore`)
+      .set(auth)
+      .send({ reason: "Ky da het" })
+      .expect(200);
+    assert.equal(result.body.data.status, "Expired");
+    assert.equal(result.body.data.quotaUsed, "4");
+    const row = (
+      await f.store.pool.query(
+        "SELECT status, quota_used, expired_at FROM subscriptions WHERE id=$1",
+        [sub.id],
+      )
+    ).rows[0];
+    assert.equal(row.status, "Expired");
+    assert.equal(String(row.quota_used), "4");
+    assert.ok(row.expired_at);
+    const audit = (
+      await f.store.pool.query(
+        "SELECT action, detail FROM audit_logs WHERE action='SUBSCRIPTION_EXPIRED'",
+      )
+    ).rows[0];
+    assert.equal(audit.detail.reason, "Ky da het");
+    await request(f.app)
+      .get(`/api/gateway/${f.api}/v1/weather`)
+      .set("x-api-key", created.body.data.key)
+      .expect(403);
+  } finally {
+    await f.close();
+  }
+});
 test("Worker expires elapsed periods, resets valid quota only once, serializes replicas and exposes real health", async () => {
   const f = await fixture();
   try {
