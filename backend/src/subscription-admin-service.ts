@@ -12,6 +12,13 @@ export const operationId = z
       return false;
     }
   });
+const integerId = operationId.refine((s) => {
+  try {
+    return BigInt(s) <= 2147483647n;
+  } catch {
+    return false;
+  }
+});
 export const monitorQuery = z
   .object({
     page: z.coerce.number().int().min(1).max(10000).default(1),
@@ -29,8 +36,8 @@ export const monitorQuery = z
     paymentStatus: z
       .enum(["Pending", "Succeeded", "Failed", "Refunded"])
       .optional(),
-    consumerId: operationId.refine((s) => BigInt(s) <= 2147483647n).optional(),
-    apiId: operationId.refine((s) => BigInt(s) <= 2147483647n).optional(),
+    consumerId: integerId.optional(),
+    apiId: integerId.optional(),
   })
   .strict();
 export class SubscriptionAdminService {
