@@ -275,4 +275,28 @@ describe('ApiDetailPage', () => {
     expect(await screen.findByText(/chưa có OpenAPI spec công bố/)).toBeDefined();
     expect(screen.queryByText(/1\. Tổng quan \(Overview\)/)).toBeNull();
   });
+
+  it('renders Gateway route and allows endpoint selection in SDKs & Code Snippets tab', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Global Climate Metrics API' });
+
+    // Switch to SDKs tab
+    const sdksTab = screen.getByRole('button', { name: /Quickstart/ });
+    fireEvent.click(sdksTab);
+
+    // Should display canonical Gateway route callout
+    expect(screen.getByText(/Gateway Reverse Proxy Route:/)).toBeDefined();
+    expect(screen.getByText('/api/gateway/api-detail-1/v2/observations/current')).toBeDefined();
+
+    // Verify code block contains Gateway path
+    expect(screen.getAllByText(/\/api\/gateway\/api-detail-1\/v2\/observations\/current/)[0]).toBeDefined();
+
+    // Verify rate limit unit is req/phút in pricing plans
+    const pricingTab = screen.getByRole('button', { name: /Pricing Plans/ });
+    fireEvent.click(pricingTab);
+    expect(screen.getByText(/5 req\/phút/)).toBeDefined();
+    expect(screen.getByText(/50 req\/phút/)).toBeDefined();
+  });
 });

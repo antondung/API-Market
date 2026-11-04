@@ -27,27 +27,43 @@ export const ConsumerDashboardPage: React.FC = () => {
 
   const [usageSummary, setUsageSummary] = useState<UsageSummaryResponse | null>(null);
   const [isUsageLoading, setIsUsageLoading] = useState(true);
+  const [usageError, setUsageError] = useState<string | null>(null);
+  const [retryUsage, setRetryUsage] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
     setIsUsageLoading(true);
-    getConsumerUsageSummary()
+    setUsageError(null);
+    setUsageSummary(null);
+
+    getConsumerUsageSummary(undefined, controller.signal)
       .then(res => {
-        if (isMounted) setUsageSummary(res);
+        if (isMounted) {
+          setUsageSummary(res);
+          setUsageError(null);
+        }
       })
-      .catch(() => {
-        if (isMounted) setUsageSummary({ subscriptions: [], daily: [] });
+      .catch((err: any) => {
+        if (controller.signal.aborted) return;
+        if (isMounted) {
+          setUsageSummary(null);
+          setUsageError(err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')));
+        }
       })
       .finally(() => {
-        if (isMounted) setIsUsageLoading(false);
+        if (isMounted && !controller.signal.aborted) {
+          setIsUsageLoading(false);
+        }
       });
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, []);
+  }, [user.id, retryUsage]);
 
   const activeSubsCount = (usageSummary?.subscriptions || []).filter(
-    s => s.status === 'Active' || s.status === 'Pending'
+    s => s.status === 'Active'
   ).length;
 
   const totalMonthlyQuotaUsed = (usageSummary?.subscriptions || []).reduce(
@@ -145,17 +161,34 @@ export const ConsumerDashboardPage: React.FC = () => {
             <div className="text-3xl font-extrabold text-on-surface font-code-md">
               {isUsageLoading ? (
                 <span className="text-2xl text-on-surface-variant animate-pulse">{t('Đang tải...')}</span>
+              ) : usageError ? (
+                <span className="text-xl font-bold text-error">{t('Không thể tải')}</span>
               ) : (
                 `${activeSubsCount}`
               )}
             </div>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              {t('Tổng quota đã dùng tháng này:')}{' '}
-              <strong className="text-on-surface font-code-sm">
-                {formatBigIntCount(totalMonthlyQuotaUsed)}
-              </strong>{' '}
-              {t('lượt')}
-            </p>
+            <div className="text-body-sm text-on-surface-variant mt-1">
+              {usageError ? (
+                <div className="text-error flex items-center justify-between gap-2">
+                  <span className="truncate" title={usageError}>{usageError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRetryUsage(c => c + 1)}
+                    className="text-primary underline hover:text-primary-hover font-medium shrink-0"
+                  >
+                    {t('Thử lại')}
+                  </button>
+                </div>
+              ) : (
+                <p>
+                  {t('Tổng quota đã dùng tháng này:')}{' '}
+                  <strong className="text-on-surface font-code-sm">
+                    {formatBigIntCount(totalMonthlyQuotaUsed)}
+                  </strong>{' '}
+                  {t('lượt')}
+                </p>
+              )}
+            </div>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/subscriptions" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">

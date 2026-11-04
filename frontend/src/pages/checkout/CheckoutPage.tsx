@@ -157,45 +157,59 @@ export const CheckoutPage: React.FC = () => {
     const validateOrDetectPending = async () => {
       try {
         if (resumeSubscriptionId) {
-          const sub = await getSubscription(resumeSubscriptionId, controller.signal);
+          try {
+            const sub = await getSubscription(resumeSubscriptionId, controller.signal);
+            if (controller.signal.aborted) return;
+            const isOwner =
+              !sub.consumerId ||
+              !currentUser.id ||
+              String(sub.consumerId) === String(currentUser.id);
+            const isPending = sub.status === 'Pending';
+            const isApiMatch = String(sub.apiId) === String(apiId);
+            const isPlanMatch = String(sub.planId) === String(planId);
+            if (isOwner && isPending && isApiMatch && isPlanMatch) {
+              setExistingPendingSub(sub);
+              return;
+            }
+          } catch {
+            // Resume id invalid or inaccessible, fallback to list pagination
+          }
+        }
+
+        let page = 1;
+        const pageSize = 100;
+        while (page <= 10) {
+          const list = await listSubscriptions(page, pageSize, controller.signal);
           if (controller.signal.aborted) return;
-          const isOwner =
-            !sub.consumerId ||
-            !currentUser.id ||
-            String(sub.consumerId) === String(currentUser.id);
-          const isPending = sub.status === 'Pending';
-          const isApiMatch = String(sub.apiId) === String(apiId);
-          const isPlanMatch = String(sub.planId) === String(planId);
-          if (isOwner && isPending && isApiMatch && isPlanMatch) {
-            setExistingPendingSub(sub);
-            return;
+
+          const matchingActive = list.items?.find(
+            (s) => String(s.apiId) === String(apiId) && s.status === 'Active'
+          );
+          if (matchingActive) {
+            setHasActiveSub(true);
           }
-        }
 
-        const list = await listSubscriptions(1, 100, controller.signal);
-        if (controller.signal.aborted) return;
-
-        const matchingActive = list.items?.find(
-          (s) => String(s.apiId) === String(apiId) && s.status === 'Active'
-        );
-        if (matchingActive) {
-          setHasActiveSub(true);
-        }
-
-        const matchingPending = list.items?.find(
-          (s) =>
-            String(s.apiId) === String(apiId) &&
-            String(s.planId) === String(planId) &&
-            s.status === 'Pending'
-        );
-        if (matchingPending) {
-          const isOwner =
-            !matchingPending.consumerId ||
-            !currentUser.id ||
-            String(matchingPending.consumerId) === String(currentUser.id);
-          if (isOwner) {
-            setExistingPendingSub(matchingPending);
+          const matchingPending = list.items?.find(
+            (s) =>
+              String(s.apiId) === String(apiId) &&
+              String(s.planId) === String(planId) &&
+              s.status === 'Pending'
+          );
+          if (matchingPending) {
+            const isOwner =
+              !matchingPending.consumerId ||
+              !currentUser.id ||
+              String(matchingPending.consumerId) === String(currentUser.id);
+            if (isOwner) {
+              setExistingPendingSub(matchingPending);
+              break;
+            }
           }
+
+          if (!list.items || list.items.length < pageSize || page * pageSize >= list.total) {
+            break;
+          }
+          page++;
         }
       } catch {
         // Non-blocking background check
@@ -333,25 +347,42 @@ export const CheckoutPage: React.FC = () => {
             err.status === 409 &&
             (err.code === 'SUBSCRIPTION_ALREADY_EXISTS' || err.message?.includes('SUBSCRIPTION_ALREADY_EXISTS'))
           ) {
-            // Catch 409 SUBSCRIPTION_ALREADY_EXISTS: inspect existing subscriptions
-            const subList = await listSubscriptions(1, 100, controller.signal);
-            if (controller.signal.aborted) return;
+            // Catch 409 SUBSCRIPTION_ALREADY_EXISTS: inspect existing subscriptions safely with pagination
+            let scanPage = 1;
+            const scanPageSize = 100;
+            let matchingPending: SubscriptionView | undefined;
+            let matchingActive: SubscriptionView | undefined;
 
-            const matchingPending = subList.items?.find(
-              (s) =>
-                String(s.apiId) === String(api.id) &&
-                String(s.planId) === String(plan.id) &&
-                s.status === 'Pending'
-            );
+            while (scanPage <= 10) {
+              const subList = await listSubscriptions(scanPage, scanPageSize, controller.signal);
+              if (controller.signal.aborted) return;
+
+              if (!matchingPending) {
+                matchingPending = subList.items?.find(
+                  (s) =>
+                    String(s.apiId) === String(api.id) &&
+                    String(s.planId) === String(plan.id) &&
+                    s.status === 'Pending'
+                );
+              }
+              if (!matchingActive) {
+                matchingActive = subList.items?.find(
+                  (s) => String(s.apiId) === String(api.id) && s.status === 'Active'
+                );
+              }
+
+              if (matchingPending || matchingActive) break;
+              if (!subList.items || subList.items.length < scanPageSize || scanPage * scanPageSize >= subList.total) {
+                break;
+              }
+              scanPage++;
+            }
 
             if (matchingPending) {
               // Seamlessly resume checkout
               targetSubId = matchingPending.id;
               setExistingPendingSub(matchingPending);
             } else {
-              const matchingActive = subList.items?.find(
-                (s) => String(s.apiId) === String(api.id) && s.status === 'Active'
-              );
               if (matchingActive) {
                 setHasActiveSub(true);
                 setSubmitError('Bạn đã có gói đăng ký đang hoạt động cho API này.');

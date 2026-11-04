@@ -95,6 +95,7 @@ export const MySubscriptionsPage: React.FC = () => {
   const [changePlanSub, setChangePlanSub] = useState<SubscriptionView | null>(null);
   const [availablePlans, setAvailablePlans] = useState<MarketplacePricingPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [changePlanOutcome, setChangePlanOutcome] = useState<'success' | 'failure'>('success');
   const [isLoadingPlans, setIsLoadingPlans] = useState(false);
   const [isChangingPlan, setIsChangingPlan] = useState(false);
   const [changePlanError, setChangePlanError] = useState<string | null>(null);
@@ -148,6 +149,7 @@ export const MySubscriptionsPage: React.FC = () => {
   const handleOpenChangePlan = async (sub: SubscriptionView) => {
     setChangePlanSub(sub);
     setSelectedPlanId('');
+    setChangePlanOutcome('success');
     setChangePlanError(null);
     setIsLoadingPlans(true);
     try {
@@ -171,16 +173,22 @@ export const MySubscriptionsPage: React.FC = () => {
     try {
       const payment = await changeSubscriptionPlan(changePlanSub.id, selectedPlanId);
       const eventId = generateEventId('chg');
-      await confirmPayment({
+      const confirmResult = await confirmPayment({
         paymentId: payment.paymentId,
         token: payment.token,
-        outcome: 'success',
+        outcome: changePlanOutcome,
         eventId,
       });
 
-      setFeedbackNotice(t('Đổi gói dịch vụ thành công!'));
-      setChangePlanSub(null);
-      await fetchSubscriptions(page);
+      if (changePlanOutcome === 'failure' || confirmResult.status === 'Failed') {
+        setChangePlanError(
+          t('Mô phỏng thanh toán thất bại: Giao dịch bị từ chối. Gói dịch vụ hiện tại và hạn ngạch của bạn được giữ nguyên không đổi.')
+        );
+      } else {
+        setFeedbackNotice(t('Đổi gói dịch vụ thành công!'));
+        setChangePlanSub(null);
+        await fetchSubscriptions(page);
+      }
     } catch (err) {
       setChangePlanError(mapSubscriptionError(err, t('Lỗi khi đổi gói dịch vụ.')));
     } finally {
@@ -736,6 +744,60 @@ export const MySubscriptionsPage: React.FC = () => {
                     </label>
                   );
                 })}
+              </div>
+            )}
+
+            {availablePlans.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-surface-container border border-outline-variant/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-body-sm font-semibold text-on-surface">
+                    {t('Mô phỏng Sandbox:')}
+                  </span>
+                  <span className="text-[11px] font-code-sm text-primary font-semibold bg-primary/10 px-2 py-0.5 rounded">
+                    Sandbox Test
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      changePlanOutcome === 'success'
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold'
+                        : 'border-outline-variant/40 hover:bg-surface-container-high text-on-surface'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="changePlanOutcome"
+                      value="success"
+                      checked={changePlanOutcome === 'success'}
+                      onChange={() => setChangePlanOutcome('success')}
+                      className="accent-emerald-500"
+                    />
+                    <span className="text-body-sm">{t('Thành công')}</span>
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      changePlanOutcome === 'failure'
+                        ? 'border-rose-500 bg-rose-500/10 text-rose-600 dark:text-rose-400 font-semibold'
+                        : 'border-outline-variant/40 hover:bg-surface-container-high text-on-surface'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="changePlanOutcome"
+                      value="failure"
+                      checked={changePlanOutcome === 'failure'}
+                      onChange={() => setChangePlanOutcome('failure')}
+                      className="accent-rose-500"
+                    />
+                    <span className="text-body-sm">{t('Thất bại')}</span>
+                  </label>
+                </div>
+                <p className="text-body-xs text-on-surface-variant">
+                  {changePlanOutcome === 'success'
+                    ? t('Mô phỏng thanh toán thành công: Gói mới sẽ được kích hoạt ngay, bảo toàn hạn ngạch hiện tại.')
+                    : t('Mô phỏng thanh toán thất bại: Giao dịch bị từ chối, gói hiện tại và hạn ngạch được giữ nguyên.')}
+                </p>
               </div>
             )}
 

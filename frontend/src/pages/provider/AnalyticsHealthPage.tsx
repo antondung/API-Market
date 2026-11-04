@@ -11,9 +11,9 @@ export const AnalyticsHealthPage: React.FC = () => {
   const client4xx = requestLogs.filter(l => l.statusCode >= 400 && l.statusCode < 500).length;
   const server5xx = requestLogs.filter(l => l.statusCode >= 500).length;
 
-  const successRate = totalLogs > 0 ? ((success2xx / totalLogs) * 100).toFixed(2) + '%' : '100.0%';
-  const clientErrorRate = totalLogs > 0 ? ((client4xx / totalLogs) * 100).toFixed(2) + '%' : '0.00%';
-  const serverErrorRate = totalLogs > 0 ? ((server5xx / totalLogs) * 100).toFixed(2) + '%' : '0.00%';
+  const successRate = totalLogs > 0 ? ((success2xx / totalLogs) * 100).toFixed(2) + '%' : '—';
+  const clientErrorRate = totalLogs > 0 ? ((client4xx / totalLogs) * 100).toFixed(2) + '%' : '—';
+  const serverErrorRate = totalLogs > 0 ? ((server5xx / totalLogs) * 100).toFixed(2) + '%' : '—';
 
   return (
     <div className="space-y-8">

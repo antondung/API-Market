@@ -31,16 +31,16 @@ Phạm vi thẩm định bao gồm:
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `/api/consumer/usage/summary` | `GET` | Consumer | `apiId?: string`, `from?: string`, `to?: string` | `{ data: { subscriptions: SubscriptionUsageItem[], daily: DailyUsageAggregateItem[] } }` | Khớp 100% | **PASS** |
 | `/api/consumer/usage/history` | `GET` | Consumer | `apiId?: string`, `status?: number`, `from?: string`, `to?: string`, `page?: number`, `pageSize?: number` | `{ data: { items: UsageHistoryItem[], total: number, page: number, pageSize: number } }` | Khớp 100% | **PASS** |
-| `/api/consumer/subscriptions/{id}/change-plan` | `POST` | Consumer | Body: `{ newPlanId: string }` | `{ data: PaymentView }` | Khớp 100% | **PASS** |
+| `/api/consumer/subscriptions/{id}/change-plan` | `POST` | Consumer | Body: `{ planId: string, idempotencyKey: string }` | `{ data: PaymentView }` | Khớp 100% | **PASS** |
 | `/api/consumer/subscriptions/confirm` | `POST` | Consumer | Body: `{ paymentId, token, outcome, eventId }` | `{ data: ConfirmPaymentResult }` | Khớp 100% | **PASS** |
 | `/api/consumer/subscriptions` | `GET` | Consumer | `page?: number`, `pageSize?: number` | `{ data: SubscriptionsListResponse }` | Khớp 100% | **PASS** |
 | `/api/consumer/subscriptions` | `POST` | Consumer | Body: `{ planId: string }` | `{ data: SubscriptionView }` (Free: `Active`, Paid: `Pending`) | Khớp 100% | **PASS** |
-| `/api/consumer/subscriptions/{id}/checkout` | `POST` | Consumer | Header: `Idempotency-Key` | `{ data: PaymentView }` | Khớp 100% | **PASS** |
+| `/api/consumer/subscriptions/{id}/checkout` | `POST` | Consumer | Body: `{ idempotencyKey: string }` | `{ data: PaymentView }` | Khớp 100% | **PASS** |
 | `/api/consumer/subscriptions/{id}/cancel` | `POST` | Consumer | Body: `{ immediate: boolean }` | `{ data: SubscriptionView }` | Khớp 100% | **PASS** |
 
 ### Chi tiết kiểm tra Envelope & Headers
 - **Envelope Unwrapping**: 100% các hàm trong `usageApi.ts` và `billingApi.ts` bóc tách vỏ bọc `{ data: ... }` thông qua `authenticatedRequest<{ data: T }>()` trước khi trả dữ liệu cho tầng UI.
-- **Idempotency Key**: Sinh khóa theo chuẩn RFC và biểu thức chính quy `^[A-Za-z0-9_.:-]{1,100}$`, gắn qua header `Idempotency-Key` trong lời gọi `/checkout`.
+- **Idempotency Key**: Sinh khóa theo chuẩn RFC và biểu thức chính quy `^[A-Za-z0-9_.:-]{1,100}$`, truyền trong body payload `{ idempotencyKey }` cho lời gọi `POST /checkout` và `{ planId, idempotencyKey }` cho `POST /change-plan` khớp chính xác với `backend/src/billing-router.ts`.
 - **Event ID**: Truyền an toàn trong payload `POST /confirm` phục vụ kiểm toán idempotent thanh toán phía Backend.
 
 ---

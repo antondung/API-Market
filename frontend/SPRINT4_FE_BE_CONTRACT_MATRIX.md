@@ -17,7 +17,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Database Schema** | `a475d353c1bc9ec4af09d92a934094eabae1ce45` | PR #91 (`origin/feature/19-sprint4-database`) | ❌ Failing (Fixture status trigger) | OPEN | Blocked by fixture trigger (BLOCKER-02) |
 | **Backend API** | `2c8a873023e071a93097a3d32b17bffbc3e41585` | PR #92 (`origin/codex/sprint4-backend`) | ✅ SUCCESS | OPEN | Pinned contract ready for FE alignment |
-| **Frontend Control** | `feature/18-sprint4-frontend-billing` | PR #96 ([Issue #18](https://github.com/antondung/API-Market/issues/18)) | ✅ SUCCESS (493 tests, 0 errors) | DRAFT | Aligned 100% to Backend PR #92 specification |
+| **Frontend Control** | `feature/18-sprint4-frontend-billing` | PR #96 ([Issue #18](https://github.com/antondung/API-Market/issues/18)) | ✅ SUCCESS (509 tests, 39 test suites, 0 errors) | DRAFT | Aligned 100% to Backend PR #92 specification |
 
 *Note: Frontend tests against mock contracts and isolated integration stubs; no claim of live end-to-end integration is made until PR #91 and PR #92 are merged into `develop`.*
 

@@ -172,8 +172,43 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
         </MemoryRouter>
       );
 
-      expect(await screen.findByText('2')).toBeDefined();
+      expect(await screen.findByText('1')).toBeDefined();
       expect(screen.getByText('3.000')).toBeDefined();
+    });
+
+    it('differentiates usage summary loading error from empty subscriptions with retry action', async () => {
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 100,
+      });
+
+      let usageCallCount = 0;
+      vi.spyOn(usageApi, 'getConsumerUsageSummary').mockImplementation(async () => {
+        usageCallCount++;
+        if (usageCallCount === 1) {
+          throw new ApiError(500, 'FAIL', 'Usage analytics query failed');
+        }
+        return {
+          subscriptions: [],
+          daily: [],
+        };
+      });
+
+      render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText('Usage analytics query failed')).toBeDefined();
+      expect(screen.getByText('Không thể tải')).toBeDefined();
+
+      const retryButtons = screen.getAllByRole('button', { name: /Thử lại/i });
+      fireEvent.click(retryButtons[0]);
+
+      expect(await screen.findByText('0')).toBeDefined();
     });
   });
 

@@ -10,6 +10,7 @@ import {
   generateCurlSnippet,
   generateFetchSnippet,
   generatePythonSnippet,
+  buildGatewayPath,
 } from './apiSnippetGenerator';
 
 describe('apiSnippetGenerator Security & Shell Escaping', () => {
@@ -339,6 +340,29 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(py).toContain('# Warning: Request body is not valid JSON. Passing as raw text data.');
       expect(py).toContain('payload = "invalid json { not_a_json"');
       expect(py).toContain('data=payload');
+    });
+  });
+
+  describe('buildGatewayPath - Gateway Reverse Proxy Route Contract', () => {
+    it('constructs canonical /api/gateway/:apiId/*rest path', () => {
+      const path = buildGatewayPath('api_sms_99', '/v1/messages/send');
+      expect(path).toBe('/api/gateway/api_sms_99/v1/messages/send');
+    });
+
+    it('strips redundant leading slashes from endpoint path', () => {
+      const path = buildGatewayPath('100', '///users/query');
+      expect(path).toBe('/api/gateway/100/users/query');
+    });
+
+    it('handles empty endpoint path cleanly', () => {
+      expect(buildGatewayPath('api_finance', '')).toBe('/api/gateway/api_finance');
+      expect(buildGatewayPath('api_finance', '/')).toBe('/api/gateway/api_finance');
+    });
+
+    it('strips /v1 from default baseUrl when generating safe URL for gateway route', () => {
+      const gatewayRoute = buildGatewayPath('api_weather', '/forecast/daily');
+      const fullUrl = buildSafeUrl('https://api.apihub.vn/v1', gatewayRoute, { city: 'Hanoi' });
+      expect(fullUrl).toBe('https://api.apihub.vn/api/gateway/api_weather/forecast/daily?city=Hanoi');
     });
   });
 });

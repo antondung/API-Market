@@ -19,6 +19,18 @@ const DEFAULT_BASE_URL = 'https://api.apihub.vn/v1';
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'TRACE']);
 
 /**
+ * Constructs the canonical Gateway reverse-proxy path for an API endpoint:
+ * /api/gateway/:apiId/*rest
+ * Strips leading slashes from rest path to ensure single slash separation.
+ */
+export function buildGatewayPath(apiId: string | number, endpointPath: string): string {
+  const cleanApiId = String(apiId).trim();
+  const rawPath = (endpointPath || '').trim();
+  const normalizedRest = rawPath.replace(/^\/+/, '');
+  return normalizedRest ? `/api/gateway/${cleanApiId}/${normalizedRest}` : `/api/gateway/${cleanApiId}`;
+}
+
+/**
  * Escapes an arbitrary string for safe usage in POSIX shell (sh/bash).
  * Uses strict single-quote wrapping and replaces internal single quotes with '\''.
  */
@@ -58,11 +70,18 @@ export function buildSafeUrl(
   urlPath: string = '/',
   queryParams?: Record<string, string> | Array<[string, string]>
 ): string {
-  const cleanBase = (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
+  let effectiveBase = (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
   let rawPath = (urlPath || '/').trim().replace(/\0/g, '');
   if (!rawPath.startsWith('/')) {
     rawPath = `/${rawPath}`;
   }
+
+  // If path is a Gateway route /api/gateway/... and default baseUrl with /v1 was used, strip /v1 from base
+  if (rawPath.startsWith('/api/') && effectiveBase.endsWith('/v1')) {
+    effectiveBase = effectiveBase.replace(/\/v1$/, '');
+  }
+
+  const cleanBase = effectiveBase;
 
   const searchParams = new URLSearchParams();
 
