@@ -37,3 +37,9 @@ Không giảm Redis counter từ một lần đọc PostgreSQL cũ. Dashboard đ
 - Mỗi phút gọi `run_subscription_maintenance(now(), 500)` cho đến khi cả hai count bằng 0.
 - Chỉ drop partition sau khi backup và được Tech Lead duyệt. Retention mặc định 13 tháng; không sửa/xóa từng Usage Log.
 - Nếu batch writer lỗi, retry với backoff và dead-letter; không log payload/credential trong lỗi.
+
+## Staging
+
+Tiến trình backend đã gọi `run_subscription_maintenance` lúc khởi động và mỗi 60 giây, có khóa advisory `913005`, tạo partition usage trước 2 tháng, refresh aggregate và ghi `backend_job_runs`. Không cần cron riêng trên máy chủ.
+
+Workflow `.github/workflows/cd-staging.yml` dựng image một lần rồi deploy Compose staging. Ba secret GitHub Actions, không commit: `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`. Thiếu secret thì workflow bỏ qua. Máy chủ giữ `/opt/api-market/.env.staging` (sao từ `.env.staging.example`, đổi secret và origin HTTPS thật) và không bị workflow ghi đè. Chưa có máy chủ thì chưa coi là đã deploy.

@@ -1,9 +1,9 @@
-# Build each image once, push it to GHCR, then deploy with the staging Compose
-# override and the host copy of .env.staging (filled from .env.staging.example).
-# The job is skipped when STAGING_HOST, STAGING_USER or STAGING_SSH_KEY is absent.
+# Dựng mỗi image một lần, đẩy GHCR, rồi deploy bằng docker-compose.yml
+# và docker-compose.staging.yml. Bỏ qua khi thiếu STAGING_HOST, STAGING_USER
+# hoặc STAGING_SSH_KEY.
 #
-# On the server, /opt/api-market/.env.staging must already exist and must pass
-# scripts/staging-preflight.mjs. This workflow does not overwrite that file.
+# Máy chủ cần /opt/api-market/.env.staging, tạo từ .env.staging.example và
+# vượt qua scripts/staging-preflight.mjs. Workflow không ghi đè file này.
 
 name: Trien khai staging
 

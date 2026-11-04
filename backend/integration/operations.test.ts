@@ -370,6 +370,10 @@ test("Marketplace → Paid subscribe → sandbox settlement → key → signed H
       billing: f.billing,
       usage: new UsageAnalytics(f.store.pool),
       gateway,
+      operations: {
+        admin: f.admin,
+        health: new OperationsHealth(f.store.pool, f.redis),
+      },
     });
     const header = { Authorization: `Bearer ${f.consumerToken}` };
     await request(app).get("/api/marketplace/apis").expect(200);
@@ -433,14 +437,46 @@ test("Marketplace → Paid subscribe → sandbox settlement → key → signed H
       "UPDATE subscriptions SET rate_limit_per_minute=10 WHERE id=$1",
       [sub.id],
     );
+    const admin = { Authorization: `Bearer ${f.adminToken}` };
+    const call = () =>
+      request(app)
+        .get(`/api/gateway/${f.api}/v1/weather?city=Hanoi`)
+        .set("x-api-key", created.key);
     await request(app)
-      .get(`/api/gateway/${f.api}/v1/weather?city=Hanoi`)
-      .set("x-api-key", created.key)
+      .post(`/api/admin/subscriptions/${sub.id}/suspend`)
+      .set(admin)
+      .send({ reason: "E2E suspend" })
       .expect(200);
+    await call().expect(403);
+    const quotaWhileSuspended = (
+      await f.store.pool.query(
+        "SELECT quota_used FROM subscriptions WHERE id=$1",
+        [sub.id],
+      )
+    ).rows[0].quota_used;
+    const restored = await request(app)
+      .post(`/api/admin/subscriptions/${sub.id}/restore`)
+      .set(admin)
+      .send({ reason: "E2E restore" })
+      .expect(200);
+    assert.equal(restored.body.data.status, "Active");
+    assert.equal(restored.body.data.quotaUsed, String(quotaWhileSuspended));
+    await call().expect(200);
+    await call().expect(403);
     await request(app)
-      .get(`/api/gateway/${f.api}/v1/weather?city=Hanoi`)
-      .set("x-api-key", created.key)
-      .expect(403);
+      .post(`/api/admin/api-keys/${created.id}/revoke`)
+      .set(admin)
+      .send({ reason: "E2E revoke" })
+      .expect(200);
+    await call().expect(401);
+    assert.deepEqual(
+      (
+        await f.store.pool.query(
+          "SELECT action FROM audit_logs WHERE action IN ('SUBSCRIPTION_SUSPENDED','SUBSCRIPTION_RESTORED','API_KEY_REVOKED') ORDER BY id",
+        )
+      ).rows.map((row) => row.action),
+      ["SUBSCRIPTION_SUSPENDED", "SUBSCRIPTION_RESTORED", "API_KEY_REVOKED"],
+    );
     await f.usage.flush();
     assert.equal(
       (await f.store.pool.query("SELECT count(*) FROM usage_logs")).rows[0]
