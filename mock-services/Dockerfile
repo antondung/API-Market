@@ -9,6 +9,7 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Chỉ copy phần cần thiết: server và spec của 3 API demo.
+COPY mock-services/verify-upstream-hmac.mjs ./mock-services/verify-upstream-hmac.mjs
 COPY mock-services/server.mjs ./mock-services/server.mjs
 COPY mock-services/weather ./mock-services/weather
 COPY mock-services/currency ./mock-services/currency
@@ -19,4 +20,5 @@ USER node
 
 EXPOSE 4011 4012 4013
 
+ENTRYPOINT ["node", "mock-services/server.mjs"]
 CMD ["weather"]

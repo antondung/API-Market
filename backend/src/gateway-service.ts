@@ -1,9 +1,10 @@
 import type { Pool } from 'pg';
 import { ApiError } from './auth.js';
-import { RoutingRegistry } from './routing-registry.js';
 import { ApiKeyService } from './consumer-service.js';
 import { SafeProxy, type ProxyInput } from './safe-proxy.js';
 import type { GatewayAdmission } from './gateway-entitlement.js';
+import { signUpstreamRequest, serializedJsonBody, upstreamRequestTarget } from './upstream-hmac.js';
+import { RoutingRegistry } from './routing-registry.js';
 
 export interface GatewayRequest {
   method: string;
@@ -65,8 +66,8 @@ export class GatewayService {
   private readonly keys: ApiKeyService;
   private readonly proxy: UpstreamProxy;
 
-  constructor(readonly pool: Pool, keys = new ApiKeyService(pool), proxy: UpstreamProxy = new SafeProxy(), private readonly admission?: GatewayAdmission) {
-    this.registry = new RoutingRegistry(pool);
+  constructor(readonly pool: Pool, keys = new ApiKeyService(pool), proxy: UpstreamProxy = new SafeProxy(), private readonly admission?: GatewayAdmission, signingKey?: string, bootstrapSecret?: string) {
+    this.registry = new RoutingRegistry(pool, signingKey ?? defaultSigningKey(), normalizeBootstrap(bootstrapSecret));
     this.keys = keys;
     this.proxy = proxy;
   }
@@ -112,13 +113,22 @@ export class GatewayService {
     }
 
     const body = method === 'GET' || method === 'HEAD' ? undefined : request.body;
+    const jsonBody = body ? asJson(body) : undefined;
+    let rawBody: Buffer;
+    try { rawBody = jsonBody === undefined ? Buffer.alloc(0) : serializedJsonBody(jsonBody); }
+    catch { throw new ApiError(400, 'VALIDATION_ERROR', 'Request body must be JSON'); }
+    const targetPath = upstreamRequestTarget(route.upstreamBaseUrl, matched.registeredPath, matched.pathParams, request.query);
+    let signature;
+    try { signature = signUpstreamRequest(route.upstreamSecret, { method, path: targetPath, body: rawBody }); }
+    catch { throw new ApiError(503, 'UPSTREAM_SIGNING_UNAVAILABLE', 'Upstream signing is unavailable'); }
 
     const target = await this.proxy.prepare(route.upstreamBaseUrl, matched.registeredPath, {
       method,
       pathParams: matched.pathParams,
       query: request.query,
       headers,
-      body: body ? asJson(body) : undefined,
+      body: jsonBody,
+      upstreamSignature: signature.headers,
     }, route.timeoutMs);
 
     if(!this.admission)throw new ApiError(503,'QUOTA_UNAVAILABLE','Subscription metering is unavailable');
@@ -141,4 +151,20 @@ export class GatewayService {
 function asJson(body: Buffer): unknown {
   try { return JSON.parse(body.toString('utf8')); }
   catch { throw new ApiError(400, 'VALIDATION_ERROR', 'Request body must be JSON'); }
+}
+
+function defaultSigningKey() {
+  const configured = process.env.UPSTREAM_SIGNING_KEY?.trim();
+  if (process.env.NODE_ENV === 'production') {
+    if (!configured || Buffer.byteLength(configured) < 32) throw new Error('UPSTREAM_SIGNING_KEY is required in production');
+    return configured;
+  }
+  return configured || process.env.JWT_SECRET || 'development-upstream-signing-key-32b';
+}
+
+function normalizeBootstrap(secret?: string) {
+  const value = secret?.trim();
+  if (!value) return undefined;
+  if (Buffer.byteLength(value) < 32) throw new Error('UPSTREAM_HMAC_SECRET must have at least 32 bytes');
+  return value;
 }

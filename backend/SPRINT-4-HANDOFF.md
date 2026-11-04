@@ -38,10 +38,10 @@ Webhook máy chủ: POST `/api/consumer/subscriptions/sandbox-webhook`, Content-
 - Chạy `npm ci`, `npm run db:migrate`, rồi khởi động backend. `DATABASE_URL` phải là PostgreSQL đã migrate đến 012. Production cần `SANDBOX_WEBHOOK_SECRET` riêng tối thiểu 32 byte và JWT_SECRET hợp lệ; giá trị sandbox trống trong development được derive từ JWT_SECRET. Docker dùng `REDIS_URL=redis://redis:6379`.
 - Redis Lua dùng ID và số, không có key thô/JWT/header. Redis quota lấy mức tối thiểu từ PostgreSQL `quota_used`, nên eviction/restart không làm mới quota. Redis tăng trước PostgreSQL commit có thể dẫn tới đếm dư nếu transaction rollback hoặc kết nối mất phản hồi sau khi Lua đã chạy; xử lý bảo thủ, không forward miễn phí. Chưa có reconciliation tự động cho phần đếm dư này.
 - Kiến trúc hiện yêu cầu Redis standalone (hai key trong một Lua script), chưa hỗ trợ Redis Cluster. Compose dùng Redis 7. Local Windows kiểm thử bằng Redis 5.0.14.1 tương thích các lệnh đang dùng; CI cài redis-server và chạy integration thật.
-- `run_subscription_maintenance()` do schema Danh cung cấp cần được lịch hóa ở staging để materialize trạng thái Expired. Gateway luôn tự kiểm tra current_period_end/expires_at ngay cả khi job chưa chạy. Không tự động thu tiền/gia hạn Paid; kỳ mới cần subscription/checkout mới.
+- Worker trong tiến trình backend gọi `run_subscription_maintenance()` mỗi 5 phút (đổi bằng `MAINTENANCE_INTERVAL_MS`). Gateway vẫn tự kiểm tra current_period_end/expires_at ngay cả khi job chưa chạy. Không tự động thu tiền/gia hạn Paid; kỳ mới cần subscription/checkout mới. Chi tiết vận hành nằm ở mục Tech Lead bên dưới.
 - `/health` là liveness, không chứng minh Redis sẵn sàng. Khi Redis mất kết nối, Auth/CRUD vẫn phục vụ và Gateway fail closed. Cần monitor Redis, usage_outbox tồn đọng và tác vụ aggregate/retention trên staging.
 - Endpoint doanh thu mới luôn tách currency. Cột legacy `provider_daily_aggregates.sandbox_revenue` của schema 009 không có chiều tiền tệ; không dùng cột scalar này để hiển thị tổng nhiều currency.
-- Production SafeProxy giữ nguyên chống SSRF, giới hạn body, timeout và lọc header. Cấu hình upstream HMAC/hạ tầng của Dũng và kết nối FE của Hải Dương cần kiểm thử tích hợp riêng.
+- Production SafeProxy giữ nguyên chống SSRF, giới hạn body, timeout và lọc header. Gateway ký HMAC lên upstream theo mục Tech Lead bên dưới. Kết nối FE của Hải Dương cần kiểm thử tích hợp riêng.
 
 ## Bằng chứng kiểm thử
 
@@ -58,6 +58,9 @@ Lệnh tái hiện: `npm test`, `npm run lint`, `./scripts/kiem-tra-kho-ma-nguon
 | Nâng schema Sprint 3 qua 009–012, giữ nguyên users/API/version/endpoint/docs/key/session/plan và chạy migrate lại | `integration/sprint4-upgrade.test.ts` |
 | Blank Docker sandbox development / thiếu khóa production | `test/sandbox-config.test.ts` |
 | Ràng buộc DB, aggregate và maintenance | `integration/sprint4-database.test.ts` |
+| Chữ ký upstream, mock từ chối gọi thẳng, khóa advisory và reset Free 30 ngày | `test/upstream-hmac.test.ts`, `integration/maintenance-worker.test.ts` |
+| Admin subscription/sandbox payment, revoke, suspend, audit | `integration/admin-supervision.test.ts` |
+| E2E Free/Paid, Gateway, 429/403, usage, suspend, revoke, chữ ký | `integration/sprint4-e2e.test.ts` |
 
 Kết quả local ngày 2026-11-04: **160/160 test PASS, 0 fail, 0 skip** (97.98 giây); build, lint và kiểm tra kho mã nguồn PASS. Benchmark: application P50 **13.09 ms**, P95 **19.21 ms**, max **23.86 ms**; stored P50 13 ms/P95 19 ms; 110/110 usage được persist (gồm 10 warmup). Benchmark dùng PostgreSQL/Redis thật, 10 warmup + 100 mẫu tuần tự, upstream fixture 2 ms; không đo DNS/TLS/mạng upstream hoặc tải staging. `applicationP95Ms` bao gồm ghi completion; `storedP95Ms` trong usage log dừng trước instrumentation write. Không dùng kết quả local làm cam kết SLA.
 
@@ -66,3 +69,53 @@ Kết quả local ngày 2026-11-04: **160/160 test PASS, 0 fail, 0 skip** (97.98
 Rà soát riêng phát hiện hai lỗi High (reset quota qua immediate cancel/resubscribe và startup Docker với secret trống); đã sửa, thêm regression và được rà lại bằng đọc code, không còn Critical/High được nhận diện trong lượt đó. Kết luận vẫn cần CI và QA môi trường tích hợp.
 
 PR backend phải vào develop và ghi rõ phụ thuộc PR #91 còn mở. Chưa tuyên bố hoàn thành DoD toàn nhóm: cần maintainer review, CI xanh trên commit cuối, Hải Dương nối UI theo hợp đồng, Dũng/Danh cấu hình môi trường/job, Vân chạy QA tích hợp/staging. Không tự duyệt hoặc merge PR của mình, không tự đóng issue #17 trước các bước nghiệm thu này.
+
+## Tech Lead — HMAC, worker, admin, E2E và staging
+
+Phần này bổ sung việc còn lại của issue #16. Không đổi hợp đồng Consumer/Provider đã bàn giao ở trên.
+
+### Admin (US-28)
+
+Chỉ role Admin. Consumer/Provider nhận 403; thiếu JWT nhận 401. Mọi thao tác ghi bắt buộc `reason` và ghi Audit Log (`actor`, thời điểm, `action`, `target`, `reason`).
+
+| Method | URL | Kết quả |
+|---|---|---|
+| GET | `/api/admin/subscriptions` | Lọc `status` (Pending/Active/Cancelled hoặc Canceled/Expired/Suspended), `consumerId`, `apiId`, `from`, `to`. Mỗi dòng có consumer, API, plan, quotaUsed/quotaLimit, expiresAt, status. Giá trị lưu trong DB là `Canceled`. |
+| GET | `/api/admin/sandbox-payments` | Lọc Pending/Succeeded/Failed/Expired. Envelope và từng dòng có `sandbox: true`, `label: "sandbox"`. Expired là checkout quá hạn hoặc `failure_code=CHECKOUT_EXPIRED`. Không có thanh toán thật. |
+| POST | `/api/admin/api-keys/{id}/revoke` | Body `{reason}`. Thu hồi ngay, không hoàn tác. Lần gọi Gateway kế tiếp trả 401. |
+| POST | `/api/admin/subscriptions/{id}/suspend` | Body `{reason}`. Lần gọi kế tiếp trả 403. Không đổi quota. |
+| POST | `/api/admin/subscriptions/{id}/restore` | Body `{reason}`. Đưa Suspended về Active nếu kỳ chưa hết. Không reset quota. |
+
+Gateway đọc subscription và API key trên PostgreSQL mỗi request, rồi xóa counter Redis `quota`/`rl` của đúng key và subscription. Hiệu lực nằm trong lần gọi kế tiếp, không cần chờ worker.
+
+### HMAC cho Provider
+
+Gateway ký mọi request upstream bằng secret riêng của API. Secret lưu AES-256-GCM trong `gateway_routes.upstream_secret_enc` (cột migration 013). Khóa bọc là `UPSTREAM_SIGNING_KEY` (production bắt buộc, tối thiểu 32 byte). Development suy ra từ `JWT_SECRET`. Không ghi secret, chữ ký hay nonce ra log.
+
+Chuỗi ký UTF-8: `timestamp.nonce.METHOD.path.sha256Hex(body)`.
+
+Header: `x-api-market-timestamp` (Unix giây), `x-api-market-nonce` (32 hex), `x-api-market-content-sha256`, `x-api-market-signature` (HMAC-SHA256 hex). `path` gồm path và query. Body rỗng vẫn được băm. Cửa sổ lệch giờ 5 phút; nonce chỉ dùng một lần trong cửa sổ.
+
+Mẫu kiểm tra nằm ở `mock-services/verify-upstream-hmac.mjs`. Ba API demo từ chối gọi không chữ ký khi đặt `UPSTREAM_HMAC_SECRET` (tối thiểu 32 byte). `/health` không yêu cầu chữ ký. Để Gateway và upstream demo dùng cùng secret, đặt biến này trên backend lẫn mock; backend sẽ niêm secret đó vào route còn trống. Để trống ở production nếu muốn mỗi API một secret ngẫu nhiên.
+
+### Worker
+
+Biến `MAINTENANCE_INTERVAL_MS` mặc định `300000` (5 phút), cho phép từ 1 giây đến 24 giờ. `MAINTENANCE_ENABLED=false` tắt worker. Tiến trình backend tự gọi `run_subscription_maintenance` theo lô 500 và lặp đến khi cả hai count bằng 0. Nhiều instance dùng `pg_try_advisory_lock(913005)`; instance không giữ khóa bỏ qua lượt đó. SIGINT/SIGTERM dừng timer và chờ lượt đang chạy.
+
+Gói có `price_amount > 0` quá `expires_at` chuyển Expired, không gia hạn và không đổi `current_period_end`. Gói Free (`price_amount = 0`) đưa `quota_used` về 0 và đẩy mốc kỳ thêm đúng 30 ngày kể từ `quota_reset_at` cũ. Docker Compose development và `docker-compose.staging.yml` đều truyền biến này vào backend.
+
+### Chạy E2E
+
+`npm test` đã gồm `integration/sprint4-e2e.test.ts`. Job Node trên CI cài Redis rồi chạy nguyên suite với PostgreSQL tạm. Bài E2E kiểm tra: Free gọi được; mua gói trả phí qua sandbox rồi Active; tạo key và Gateway 200; vượt rate 429; hết quota 403; usage summary khớp số lần 200; admin suspend trả 403 và revoke trả 401 cùng dòng audit; gọi thẳng upstream không chữ ký bị từ chối.
+
+### Secret staging (EN-08)
+
+Workflow `.github/workflows/cd-staging.yml` chạy khi đẩy `develop` hoặc `workflow_dispatch`. Nếu thiếu một trong ba secret sau, job build và deploy được bỏ qua và workflow vẫn xanh:
+
+- `STAGING_HOST`
+- `STAGING_USER`
+- `STAGING_SSH_KEY`
+
+Khi đủ secret, CI build mỗi image một lần (backend, migrate, frontend, mock), đẩy lên GHCR theo SHA và tag `staging`, rồi SSH vào VPS, `docker compose pull` và `up`. VPS không build lại.
+
+Trên máy chủ, file `/opt/api-market/.env` (không commit) cần: `POSTGRES_PASSWORD`, `JWT_SECRET`, `SANDBOX_WEBHOOK_SECRET`, `UPSTREAM_SIGNING_KEY`, `UPSTREAM_HMAC_SECRET`. Máy chủ cần Docker Compose và thư mục `/opt/api-market`. File compose là `docker-compose.staging.yml`.

@@ -35,6 +35,9 @@ import {billingRouter,webhookRouter} from './billing-router.js';
 import type {UsageAnalytics} from './usage-analytics.js';
 import {usageConsumerRouter,usageProviderRouter} from './usage-router.js';
 import {sprint4Paths} from './sprint4-contract.js';
+import type { AdminSupervisionService } from './admin-supervision-service.js';
+import { adminSupervisionRouter } from './admin-supervision-router.js';
+import { adminSupervisionPaths } from './admin-supervision-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -62,7 +65,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics; supervision?: AdminSupervisionService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -113,7 +116,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   } : openapi;
   const document = { ...baseDocument,
     paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
-      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}) } };
+      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}),...(options.supervision?adminSupervisionPaths:{}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -187,6 +190,9 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     const requireAdmin: RequestHandler[] = [requireAuth, requireRole('Admin')];
     if (options.review && options.audit) {
       app.use('/api/admin', adminReviewRouter(options.review, options.audit, requireAuth, requireRole('Admin')));
+    }
+    if (options.supervision) {
+      app.use('/api/admin', adminSupervisionRouter(options.supervision, requireAuth, requireRole('Admin')));
     }
     app.get('/api/admin/users', ...requireAdmin, async (req, res) => {
       const query = listUsersSchema.parse(req.query);

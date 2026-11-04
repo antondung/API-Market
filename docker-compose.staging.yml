@@ -1,0 +1,129 @@
+# Staging (EN-08). Images are built once in GitHub Actions and pulled here.
+# Do not build on the VPS.
+#
+# Required on the server, in /opt/api-market/.env (never commit this file):
+#   POSTGRES_PASSWORD, JWT_SECRET, SANDBOX_WEBHOOK_SECRET, UPSTREAM_SIGNING_KEY
+#   UPSTREAM_HMAC_SECRET (same value as the demo upstream; minimum 32 bytes)
+#   GHCR_OWNER, IMAGE_TAG (the deploy job exports these)
+#
+# Required GitHub Actions secrets, otherwise the workflow skips deploy:
+#   STAGING_HOST, STAGING_USER, STAGING_SSH_KEY
+#
+#   docker compose --env-file .env -f docker-compose.staging.yml up -d
+
+name: api-market-staging
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-api_market_staging}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-api_market_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [staging]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [staging]
+
+  migrate:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/api-market-migrate:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-api_market_staging}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [staging]
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/api-market-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      AUTH_STORE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-api_market_staging}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      SANDBOX_WEBHOOK_SECRET: ${SANDBOX_WEBHOOK_SECRET:?SANDBOX_WEBHOOK_SECRET is required}
+      UPSTREAM_SIGNING_KEY: ${UPSTREAM_SIGNING_KEY:?UPSTREAM_SIGNING_KEY is required}
+      UPSTREAM_HMAC_SECRET: ${UPSTREAM_HMAC_SECRET:?UPSTREAM_HMAC_SECRET is required}
+      MAINTENANCE_INTERVAL_MS: ${MAINTENANCE_INTERVAL_MS:-300000}
+      PORT: 3000
+      HOST: 0.0.0.0
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [staging]
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/api-market-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - backend
+    networks: [staging]
+
+  weather:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/api-market-mock:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    command: ["weather"]
+    environment:
+      UPSTREAM_HMAC_SECRET: ${UPSTREAM_HMAC_SECRET:?UPSTREAM_HMAC_SECRET is required}
+    ports:
+      - "${WEATHER_PORT:-4011}:4011"
+    networks: [staging]
+
+  currency:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/api-market-mock:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    command: ["currency"]
+    environment:
+      UPSTREAM_HMAC_SECRET: ${UPSTREAM_HMAC_SECRET:?UPSTREAM_HMAC_SECRET is required}
+    ports:
+      - "${CURRENCY_PORT:-4012}:4012"
+    networks: [staging]
+
+  catalog:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/api-market-mock:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    command: ["catalog"]
+    environment:
+      UPSTREAM_HMAC_SECRET: ${UPSTREAM_HMAC_SECRET:?UPSTREAM_HMAC_SECRET is required}
+    ports:
+      - "${CATALOG_PORT:-4013}:4013"
+    networks: [staging]
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  staging:
+    driver: bridge

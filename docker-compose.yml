@@ -84,6 +84,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-api_market_dev}
       REDIS_URL: redis://redis:6379
       SANDBOX_WEBHOOK_SECRET: ${SANDBOX_WEBHOOK_SECRET:-}
+      # Backend process calls run_subscription_maintenance on this interval.
+      # Several replicas are safe: the worker takes advisory lock 913005.
+      MAINTENANCE_INTERVAL_MS: ${MAINTENANCE_INTERVAL_MS:-300000}
+      UPSTREAM_SIGNING_KEY: ${UPSTREAM_SIGNING_KEY:-}
+      UPSTREAM_HMAC_SECRET: ${UPSTREAM_HMAC_SECRET:-}
       PORT: 3000
       # Phải bind 0.0.0.0 để truy cập được từ ngoài container
       HOST: 0.0.0.0

@@ -16,6 +16,9 @@ import {UsageService} from './usage-service.js';
 import {UsageAnalytics} from './usage-analytics.js';
 import {RedisMeter} from './redis-meter.js';
 import {GatewayEntitlement} from './gateway-entitlement.js';
+import {upstreamSigningKey} from './upstream-hmac.js';
+import {MaintenanceWorker, maintenanceIntervalMs} from './maintenance-worker.js';
+import {AdminSupervisionService} from './admin-supervision-service.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
 if (!['postgres', 'memory'].includes(mode)) throw new Error('AUTH_STORE must be postgres or memory');
@@ -46,15 +49,22 @@ const usage=store instanceof PostgresAuthStore?new UsageService(store.pool):unde
 if(store instanceof PostgresAuthStore)await store.pool.query('SELECT s.quota_limit,o.request_id FROM subscriptions s LEFT JOIN usage_outbox o ON false LIMIT 0');
 usage?.start();
 const sandboxSecret=resolveSandboxSecret(secret,process.env.SANDBOX_WEBHOOK_SECRET,process.env.NODE_ENV==='production');
+const signingKey=upstreamSigningKey(secret,process.env.UPSTREAM_SIGNING_KEY,process.env.NODE_ENV==='production');
+const bootstrapSecret=process.env.UPSTREAM_HMAC_SECRET?.trim();
+if(bootstrapSecret && Buffer.byteLength(bootstrapSecret)<32) throw new Error('UPSTREAM_HMAC_SECRET must have at least 32 bytes');
 const billing=store instanceof PostgresAuthStore?new BillingService(store.pool,sandboxSecret):undefined;
 const analytics=store instanceof PostgresAuthStore?new UsageAnalytics(store.pool):undefined;
-const gateway = store instanceof PostgresAuthStore&&redis&&usage ? new GatewayService(store.pool,undefined,undefined,new GatewayEntitlement(store.pool,new RedisMeter(redis),usage)) : undefined;
+const meter=store instanceof PostgresAuthStore&&redis?new RedisMeter(redis):undefined;
+const gateway = store instanceof PostgresAuthStore&&meter&&usage ? new GatewayService(store.pool,undefined,undefined,new GatewayEntitlement(store.pool,meter,usage),signingKey,bootstrapSecret) : undefined;
+const supervision=store instanceof PostgresAuthStore&&audit?new AdminSupervisionService(store.pool,audit,meter):undefined;
+const maintenance=store instanceof PostgresAuthStore&&process.env.MAINTENANCE_ENABLED!=='false'?new MaintenanceWorker(store.pool,maintenanceIntervalMs()):undefined;
+maintenance?.start();
 const reports = store instanceof PostgresAuthStore ? new ReportService(store.pool) : undefined;
 if (reports) await reports.ready();
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace, gateway, reports,billing,usage:analytics });
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace, gateway, reports,billing,usage:analytics,supervision });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => { server.close(async () => { try{await usage?.close();}catch{console.error('Usage outbox retained for retry');}if(redis?.isOpen)redis.destroy();if (store instanceof PostgresAuthStore) await store.close(); process.exit(0); }); });
+  process.on(signal, () => { server.close(async () => { try{await maintenance?.stop();}catch{console.error('Subscription maintenance stop failed');} try{await usage?.close();}catch{console.error('Usage outbox retained for retry');}if(redis?.isOpen)redis.destroy();if (store instanceof PostgresAuthStore) await store.close(); process.exit(0); }); });
 }

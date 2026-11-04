@@ -34,6 +34,6 @@ Không giảm Redis counter từ một lần đọc PostgreSQL cũ. Dashboard đ
 ## Vận hành partition và job
 
 - Mỗi ngày gọi `ensure_usage_log_partition(date_trunc('month', now()) + interval '2 months')`; luôn tạo trước ít nhất 7 ngày.
-- Mỗi phút gọi `run_subscription_maintenance(now(), 500)` cho đến khi cả hai count bằng 0.
+- Worker trong tiến trình backend gọi `run_subscription_maintenance(now(), 500)` mỗi `MAINTENANCE_INTERVAL_MS` (mặc định 5 phút) và lặp đến khi cả hai count bằng 0. Khóa advisory `913005` cho phép nhiều instance; instance không lấy được khóa bỏ qua lượt đó. Gói trả phí hết `expires_at` chuyển Expired và không gia hạn. Gói Free (`price_amount = 0`) reset quota theo từng cửa sổ 30 ngày tính từ mốc `quota_reset_at` hiện có.
 - Chỉ drop partition sau khi backup và được Tech Lead duyệt. Retention mặc định 13 tháng; không sửa/xóa từng Usage Log.
 - Nếu batch writer lỗi, retry với backoff và dead-letter; không log payload/credential trong lỗi.

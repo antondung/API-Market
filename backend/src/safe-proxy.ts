@@ -3,10 +3,23 @@ import https, { type RequestOptions as HttpsRequestOptions } from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import { ApiError } from './auth.js';
+import { serializedJsonBody } from './upstream-hmac.js';
 
 type Address = { address: string; family: number };
 type RequestFactory = (options: HttpsRequestOptions & { autoSelectFamily: false }, callback: (response: IncomingMessage) => void) => ClientRequest;
-export type ProxyInput = { pathParams?: Record<string, string>; query?: Record<string, string>; headers?: Record<string, string>; body?: unknown; method?: string };
+export type ProxyInput = {
+  pathParams?: Record<string, string>;
+  query?: Record<string, string>;
+  headers?: Record<string, string>;
+  body?: unknown;
+  method?: string;
+  upstreamSignature?: {
+    'x-api-market-timestamp': string;
+    'x-api-market-nonce': string;
+    'x-api-market-content-sha256': string;
+    'x-api-market-signature': string;
+  };
+};
 type Prepared = { url: URL; address: Address; headers: Record<string, string>; method: string; body?: Buffer; started: number; deadline: number };
 const blocked4 = new BlockList();
 for (const [ip, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4]] as const) blocked4.addSubnet(ip, prefix, 'ipv4');
@@ -72,14 +85,25 @@ export class SafeProxy {
       try { http.validateHeaderValue(lower, value); } catch { throw new ApiError(400, 'HEADER_NOT_ALLOWED', 'Invalid HTTP header value'); }
       headers[lower] = value;
     }
+    if (input.upstreamSignature) {
+      for (const name of ['x-api-market-timestamp', 'x-api-market-nonce', 'x-api-market-content-sha256', 'x-api-market-signature'] as const) {
+        const value = input.upstreamSignature[name];
+        if (typeof value !== 'string' || !value || value.length > 200 || /[\x00-\x1f\x7f]/.test(value)) {
+          throw new ApiError(503, 'UPSTREAM_SIGNING_UNAVAILABLE', 'Upstream signing is unavailable');
+        }
+        try { http.validateHeaderValue(name, value); } catch { throw new ApiError(503, 'UPSTREAM_SIGNING_UNAVAILABLE', 'Upstream signing is unavailable'); }
+        headers[name] = value;
+      }
+    }
     const method = input.method ?? 'GET';
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)) throw invalidPath();
     let body: Buffer | undefined;
     if (input.body !== undefined) {
       if (['GET', 'HEAD'].includes(method)) throw new ApiError(400, 'VALIDATION_ERROR', 'GET/HEAD cannot contain a request body');
-      const serialized = JSON.stringify(input.body);
-      if (serialized === undefined) throw new ApiError(400, 'VALIDATION_ERROR', 'Body must be JSON');
-      body = Buffer.from(serialized);
+      let serialized: Buffer;
+      try { serialized = serializedJsonBody(input.body); }
+      catch { throw new ApiError(400, 'VALIDATION_ERROR', 'Body must be JSON'); }
+      body = serialized;
       if (body.length > 16 * 1024) throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'Maximum request body is 16 KiB');
       headers['content-type'] = 'application/json'; headers['content-length'] = String(body.length);
     }

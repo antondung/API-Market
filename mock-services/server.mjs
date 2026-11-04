@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * Mock service cho 3 API demo Sprint 2 (EN-07).
- *
- * Mục đích: cung cấp endpoint thật cho Provider đăng ký và cho Gateway chuyển tiếp,
- * thay vì chỉ có file OpenAPI mà không có server nào trả lời.
+ * Mock service cho 3 API demo (EN-07) và upstream mẫu có kiểm tra chữ ký Gateway.
  *
  * Chạy một API:   node mock-services/server.mjs weather
  * Chạy tất cả:    node mock-services/server.mjs all
  *
- * Cổng mặc định:  weather 4011, currency 4012, catalog 4013.
- * Ghi đè bằng biến môi trường MOCK_PORT.
+ * Khi UPSTREAM_HMAC_SECRET được đặt (tối thiểu 32 byte), mọi request trừ /health
+ * phải có chữ ký HMAC hợp lệ. Gọi thẳng không chữ ký bị từ chối.
  */
 import { createServer } from 'node:http';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { NonceCache, verifyUpstreamRequest } from './verify-upstream-hmac.mjs';
 
 const WEATHER = {
   Hanoi: { temperatureC: 31, condition: 'Cloudy', humidity: 78 },
@@ -45,7 +45,31 @@ function send(res, status, body) {
   res.end(payload);
 }
 
-function weatherHandler(req, res, url) {
+function readBody(req) {
+  return new Promise((resolveBody, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => resolveBody(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+function rejectUnsigned(req, res, body, secret, cache) {
+  if (!secret) return false;
+  const verdict = verifyUpstreamRequest({
+    method: req.method ?? 'GET',
+    path: req.url ?? '/',
+    headers: req.headers,
+    body,
+    secret,
+    cache,
+  });
+  if (verdict.ok) return false;
+  send(res, verdict.status, { error: verdict.code, message: 'Upstream signature rejected' });
+  return true;
+}
+
+function weatherHandler(_req, res, url) {
   const city = url.searchParams.get('city');
   if (!city) return send(res, 400, { error: 'MISSING_CITY', message: 'Tham số city là bắt buộc' });
   const data = WEATHER[city];
@@ -53,14 +77,14 @@ function weatherHandler(req, res, url) {
   send(res, 200, { city, ...data });
 }
 
-function currencyHandler(req, res, url) {
+function currencyHandler(_req, res, url) {
   const base = (url.searchParams.get('base') ?? 'VND').toUpperCase();
   const rates = RATES[base];
   if (!rates) return send(res, 400, { error: 'UNSUPPORTED_BASE', message: `Mã tiền tệ không hỗ trợ: ${base}` });
   send(res, 200, { base, asOf: new Date().toISOString(), rates });
 }
 
-function catalogHandler(req, res) {
+function catalogHandler(_req, res) {
   send(res, 200, { items: PRODUCTS });
 }
 
@@ -70,29 +94,65 @@ const SERVICES = {
   catalog: { port: 4013, path: '/v1/products', handler: catalogHandler },
 };
 
-export function startService(name, portOverride) {
-  const spec = SERVICES[name];
-  if (!spec) throw new Error(`API demo không hợp lệ: ${name}`);
-  const port = Number(portOverride ?? spec.port);
-  const server = createServer((req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
-    if (url.pathname === '/health') return send(res, 200, { status: 'ok', service: name });
-    if (url.pathname !== spec.path) return send(res, 404, { error: 'NOT_FOUND', message: 'Route not found' });
-    if (req.method !== 'GET') return send(res, 405, { error: 'METHOD_NOT_ALLOWED', message: 'Chỉ hỗ trợ GET' });
-    spec.handler(req, res, url);
+export function createSignedServer(secret) {
+  const cache = new NonceCache();
+  return createServer(async (req, res) => {
+    try {
+      const body = await readBody(req);
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (url.pathname === '/health') return send(res, 200, { status: 'ok', service: 'signed' });
+      if (rejectUnsigned(req, res, body, secret, cache)) return;
+      send(res, 200, { ok: true });
+    } catch {
+      if (!res.headersSent) send(res, 500, { error: 'UPSTREAM_ERROR', message: 'Upstream failed' });
+    }
   });
-  server.listen(port, '0.0.0.0', () => {
-    console.log(`[mock:${name}] http://0.0.0.0:${port}${spec.path}`);
-  });
-  return server;
 }
 
-const target = process.argv[2];
-if (target === 'all') {
-  for (const name of Object.keys(SERVICES)) startService(name);
-} else if (SERVICES[target]) {
-  startService(target, process.env.MOCK_PORT);
-} else {
-  console.error('Dùng: node mock-services/server.mjs <weather|currency|catalog|all>');
-  process.exit(1);
+export function startService(name, portOverride, options = {}) {
+  const spec = SERVICES[name];
+  if (!spec) throw new Error(`API demo không hợp lệ: ${name}`);
+  const secret = options.secret ?? process.env.UPSTREAM_HMAC_SECRET?.trim() ?? '';
+  if (secret && Buffer.byteLength(secret) < 32) throw new Error('UPSTREAM_HMAC_SECRET must have at least 32 bytes');
+  const cache = new NonceCache();
+  const port = Number(portOverride ?? process.env.MOCK_PORT ?? spec.port);
+  const host = options.host ?? '0.0.0.0';
+  const server = createServer(async (req, res) => {
+    try {
+      const body = await readBody(req);
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (url.pathname === '/health') return send(res, 200, { status: 'ok', service: name });
+      if (rejectUnsigned(req, res, body, secret, cache)) return;
+      if (url.pathname !== spec.path) return send(res, 404, { error: 'NOT_FOUND', message: 'Route not found' });
+      if (req.method !== 'GET') return send(res, 405, { error: 'METHOD_NOT_ALLOWED', message: 'Chỉ hỗ trợ GET' });
+      spec.handler(req, res, url);
+    } catch {
+      if (!res.headersSent) send(res, 500, { error: 'UPSTREAM_ERROR', message: 'Upstream failed' });
+    }
+  });
+  return new Promise((resolveListen, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      const bound = server.address();
+      console.log(`[mock:${name}] http://${host}:${typeof bound === 'object' && bound ? bound.port : port}${spec.path}`);
+      resolveListen(server);
+    });
+  });
+}
+
+function invokedDirectly() {
+  if (!process.argv[1]) return false;
+  return import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+}
+
+if (invokedDirectly()) {
+  const target = process.argv[2];
+  if (target === 'all') {
+    for (const name of Object.keys(SERVICES)) await startService(name);
+  } else if (SERVICES[target]) {
+    await startService(target);
+  } else {
+    console.error('Dùng: node mock-services/server.mjs <weather|currency|catalog|all>');
+    process.exit(1);
+  }
 }

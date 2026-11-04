@@ -67,16 +67,17 @@ test("Sprint 3 database upgrades through 009-012 without losing accounts, APIs o
     assert.equal(
       (
         await store.pool.query(
-          "SELECT count(*) FROM backend_schema_migrations WHERE name IN ('009_create_sprint4_billing_usage.sql','010_billing_snapshot.sql','011_usage_outbox.sql','012_usage_aggregate_fix.sql')",
+          "SELECT count(*) FROM backend_schema_migrations WHERE name IN ('009_create_sprint4_billing_usage.sql','010_billing_snapshot.sql','011_usage_outbox.sql','012_usage_aggregate_fix.sql','013_subscription_maintenance_upstream_secret.sql')",
         )
       ).rows[0].count,
-      "4",
+      "5",
     );
     await store.pool.query(
       "SELECT refresh_usage_aggregates(current_date,current_date)",
     );
     await store.pool.query("SELECT quota_limit FROM subscriptions LIMIT 0");
     await store.pool.query("SELECT request_id FROM usage_outbox LIMIT 0");
+    await store.pool.query("SELECT upstream_secret_enc FROM gateway_routes LIMIT 0");
   } finally {
     await store.close();
     await control.query(`DROP SCHEMA ${schema} CASCADE`);

@@ -101,4 +101,26 @@ export class RedisMeter {
       );
     return { used: value, remaining: Math.max(0, i.quota - value) };
   }
+  quotaKey(subscriptionId: string, periodStart: string) {
+    return `${this.prefix}:quota:${subscriptionId}:${periodStart}`;
+  }
+  rateKey(apiKeyId: string, endpointId: string, minute = Math.floor(Date.now() / 60000)) {
+    return `${this.prefix}:rl:${apiKeyId}:${endpointId}:${minute}`;
+  }
+  /** Drop hot counters so a revoke or suspension is visible on the next Gateway call. */
+  async invalidate(input: { apiKeyIds?: string[]; endpointIds?: string[]; subscriptionId?: string; periodStart?: string }) {
+    const keys: string[] = [];
+    if (input.subscriptionId && input.periodStart) keys.push(this.quotaKey(input.subscriptionId, input.periodStart));
+    const minute = Math.floor(Date.now() / 60000);
+    for (const apiKeyId of input.apiKeyIds ?? []) {
+      for (const endpointId of input.endpointIds ?? []) {
+        keys.push(this.rateKey(apiKeyId, endpointId, minute));
+        keys.push(this.rateKey(apiKeyId, endpointId, minute - 1));
+      }
+    }
+    if (!keys.length) return;
+    const del = (this.client as RedisEval & { del?: (...args: string[]) => Promise<unknown> }).del;
+    if (typeof del !== "function") return;
+    await del.call(this.client, ...keys);
+  }
 }
