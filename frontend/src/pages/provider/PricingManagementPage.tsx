@@ -183,7 +183,7 @@ export const PricingManagementPage: React.FC = () => {
 
     const rateLimitNum = parseInt(rateLimit, 10);
     if (isNaN(rateLimitNum) || rateLimitNum < 1) {
-      setFormError('Giới hạn Rate Limit (RPS) phải là số nguyên dương (>= 1).');
+      setFormError('Giới hạn Rate Limit (req/phút) phải là số nguyên dương (>= 1).');
       return;
     }
 
@@ -374,7 +374,7 @@ export const PricingManagementPage: React.FC = () => {
                         Giới hạn tốc độ:
                       </span>
                       <span className="font-mono font-bold text-on-surface">
-                        {p.rateLimit} RPS
+                        {p.rateLimit} req/phút
                       </span>
                     </div>
 
@@ -422,7 +422,7 @@ export const PricingManagementPage: React.FC = () => {
         isOpen={isModalOpen}
         onClose={() => !submitting && setIsModalOpen(false)}
         title={editingPlan ? `Chỉnh sửa Gói ${editingPlan.name}` : 'Thêm Gói Cước Mới'}
-        description="Định cấu hình gói giá, hạn mức quota hàng tháng và rate limit RPS cho API."
+        description="Định cấu hình gói giá, hạn mức quota hàng tháng và rate limit (req/phút) cho API."
         maxWidth="md"
       >
         <form onSubmit={handleSavePlan} className="space-y-4">
@@ -505,7 +505,7 @@ export const PricingManagementPage: React.FC = () => {
 
             <div>
               <label className="text-body-sm font-semibold text-on-surface block mb-1">
-                Rate Limit (RPS) <span className="text-error">*</span>
+                Rate Limit (req/phút) <span className="text-error">*</span>
               </label>
               <input
                 type="number"

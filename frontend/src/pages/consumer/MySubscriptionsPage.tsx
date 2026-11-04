@@ -4,7 +4,15 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { useLanguage } from '../../i18n';
-import { listSubscriptions, cancelSubscription } from '../../services/billingApi';
+import {
+  listSubscriptions,
+  cancelSubscription,
+  changeSubscriptionPlan,
+  confirmPayment,
+  generateEventId,
+} from '../../services/billingApi';
+import { getMarketplaceApiDetail, formatPrice } from '../../services/marketplaceApi';
+import type { MarketplacePricingPlan } from '../../services/marketplaceTypes';
 import {
   type SubscriptionView,
   type SubscriptionStatus,
@@ -84,6 +92,13 @@ export const MySubscriptionsPage: React.FC = () => {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
+  const [changePlanSub, setChangePlanSub] = useState<SubscriptionView | null>(null);
+  const [availablePlans, setAvailablePlans] = useState<MarketplacePricingPlan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [isLoadingPlans, setIsLoadingPlans] = useState(false);
+  const [isChangingPlan, setIsChangingPlan] = useState(false);
+  const [changePlanError, setChangePlanError] = useState<string | null>(null);
+
   const fetchSubscriptions = useCallback(async (targetPage: number, signal?: AbortSignal) => {
     setIsLoading(true);
     setFetchError(null);
@@ -127,6 +142,49 @@ export const MySubscriptionsPage: React.FC = () => {
       setCancelError(mapSubscriptionError(err, t('Lỗi khi hủy gói đăng ký.')));
     } finally {
       setIsCanceling(false);
+    }
+  };
+
+  const handleOpenChangePlan = async (sub: SubscriptionView) => {
+    setChangePlanSub(sub);
+    setSelectedPlanId('');
+    setChangePlanError(null);
+    setIsLoadingPlans(true);
+    try {
+      const apiDetail = await getMarketplaceApiDetail(sub.apiId);
+      const filtered = (apiDetail.plans || []).filter(
+        (p) => String(p.id) !== String(sub.planId)
+      );
+      setAvailablePlans(filtered);
+    } catch (err) {
+      setChangePlanError(mapSubscriptionError(err, t('Không thể tải danh sách gói của API.')));
+    } finally {
+      setIsLoadingPlans(false);
+    }
+  };
+
+  const handleConfirmChangePlan = async () => {
+    if (!changePlanSub || !selectedPlanId) return;
+    setIsChangingPlan(true);
+    setChangePlanError(null);
+
+    try {
+      const payment = await changeSubscriptionPlan(changePlanSub.id, selectedPlanId);
+      const eventId = generateEventId('chg');
+      await confirmPayment({
+        paymentId: payment.paymentId,
+        token: payment.token,
+        outcome: 'success',
+        eventId,
+      });
+
+      setFeedbackNotice(t('Đổi gói dịch vụ thành công!'));
+      setChangePlanSub(null);
+      await fetchSubscriptions(page);
+    } catch (err) {
+      setChangePlanError(mapSubscriptionError(err, t('Lỗi khi đổi gói dịch vụ.')));
+    } finally {
+      setIsChangingPlan(false);
     }
   };
 
@@ -330,7 +388,11 @@ export const MySubscriptionsPage: React.FC = () => {
                         variant="primary"
                         size="sm"
                         icon="shopping_cart_checkout"
-                        onClick={() => navigate(`/checkout/${sub.apiId}/${sub.planId}`)}
+                        onClick={() =>
+                          navigate(`/checkout/${sub.apiId}/${sub.planId}`, {
+                            state: { resumeSubscriptionId: sub.id },
+                          })
+                        }
                       >
                         {t('Thanh toán ngay')}
                       </Button>
@@ -340,7 +402,7 @@ export const MySubscriptionsPage: React.FC = () => {
                         variant="outline"
                         size="sm"
                         icon="swap_horiz"
-                        onClick={() => navigate(`/api/${sub.apiId}`)}
+                        onClick={() => handleOpenChangePlan(sub)}
                       >
                         {t('Đổi gói')}
                       </Button>
@@ -550,6 +612,164 @@ export const MySubscriptionsPage: React.FC = () => {
                 onClick={handleConfirmCancel}
               >
                 {t('Xác nhận hủy')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Plan Dialog */}
+      {changePlanSub && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="change-plan-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        >
+          <div className="bg-surface-container-low border border-outline-variant/40 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/20">
+              <h3 id="change-plan-dialog-title" className="text-title-lg font-bold text-on-surface">
+                {t('Đổi gói dịch vụ')}
+              </h3>
+              <button
+                type="button"
+                aria-label={t('Đóng hộp thoại')}
+                onClick={() => {
+                  if (!isChangingPlan) {
+                    setChangePlanSub(null);
+                    setChangePlanError(null);
+                  }
+                }}
+                className="text-on-surface-variant hover:text-on-surface rounded-lg p-1 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="text-body-sm text-on-surface-variant space-y-1">
+              <p>
+                {t('Đang đổi gói cho API')} <strong className="text-on-surface">#{changePlanSub.apiId}</strong> (ID: #{changePlanSub.id}).
+              </p>
+              <p>
+                {t('Gói hiện tại:')} <strong className="text-on-surface">{changePlanSub.planId}</strong>
+              </p>
+            </div>
+
+            {/* Explicit Quota Preservation Advisory */}
+            <div
+              data-testid="quota-preservation-advisory"
+              className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-body-sm text-amber-900 dark:text-amber-200 flex items-start gap-2.5"
+            >
+              <span className="material-symbols-outlined text-amber-600 text-[18px] mt-0.5 flex-shrink-0">
+                info
+              </span>
+              <span>
+                {t('Hạn ngạch đã sử dụng trong kỳ hiện tại được bảo toàn (không reset).')}
+              </span>
+            </div>
+
+            {/* Plans List */}
+            {isLoadingPlans && (
+              <div
+                data-testid="loading-change-plans"
+                className="py-8 text-center text-body-sm text-on-surface-variant space-y-2"
+              >
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                <p>{t('Đang tải danh sách gói khả dụng...')}</p>
+              </div>
+            )}
+
+            {!isLoadingPlans && availablePlans.length === 0 && (
+              <p className="text-body-sm text-on-surface-variant text-center py-4">
+                {t('Không có gói dịch vụ nào khác khả dụng cho API này.')}
+              </p>
+            )}
+
+            {!isLoadingPlans && availablePlans.length > 0 && (
+              <div className="space-y-3" data-testid="available-plans-list">
+                <span className="text-body-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  {t('Chọn gói mới:')}
+                </span>
+                {availablePlans.map((p) => {
+                  const isSelected = selectedPlanId === p.id;
+                  return (
+                    <label
+                      key={p.id}
+                      data-testid={`change-plan-option-${p.id}`}
+                      className={`block p-4 rounded-xl border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-outline-variant/40 bg-surface-container hover:border-outline-variant'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="radio"
+                            name="changePlanSelected"
+                            value={p.id}
+                            checked={isSelected}
+                            onChange={() => setSelectedPlanId(p.id)}
+                            className="mt-1 accent-primary"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-on-surface text-body-md">
+                                {p.name}
+                              </span>
+                              <Badge variant="primary">
+                                {formatPrice(p.priceMonthly, p.currency)}
+                              </Badge>
+                            </div>
+                            <div className="text-body-xs text-on-surface-variant mt-1 space-x-3">
+                              <span>
+                                {t('Quota:')} <strong className="font-mono">{formatBigIntCount(p.quota)}</strong> {t('yêu cầu/tháng')}
+                              </span>
+                              <span>•</span>
+                              <span>
+                                {t('Rate Limit:')} <strong className="font-mono">{p.rateLimit} req/phút</strong>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {changePlanError && (
+              <div
+                role="alert"
+                data-testid="change-plan-error"
+                className="p-3.5 rounded-xl bg-error-container/20 border border-error/30 text-body-sm text-error flex items-start gap-2"
+              >
+                <span className="material-symbols-outlined text-[18px] flex-shrink-0 mt-0.5">error</span>
+                <span>{changePlanError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/20">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isChangingPlan}
+                onClick={() => {
+                  setChangePlanSub(null);
+                  setChangePlanError(null);
+                }}
+              >
+                {t('Đóng')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={isChangingPlan}
+                disabled={!selectedPlanId || isChangingPlan}
+                onClick={handleConfirmChangePlan}
+              >
+                {t('Xác nhận đổi gói')}
               </Button>
             </div>
           </div>

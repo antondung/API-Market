@@ -22,6 +22,7 @@ vi.mock('../../services/billingApi', async (importOriginal) => {
     checkoutSubscription: vi.fn(),
     confirmPayment: vi.fn(),
     getSubscription: vi.fn(),
+    listSubscriptions: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 }),
   };
 });
 
@@ -94,9 +95,13 @@ const mockPaymentView: PaymentView = {
   token: 'super-secret-token-xyz-12345',
 };
 
-const renderCheckout = (initialRoute = '/checkout/api-checkout-test/plan-chk-1') => {
+const renderCheckout = (
+  initialRoute = '/checkout/api-checkout-test/plan-chk-1',
+  locationState?: Record<string, unknown>
+) => {
+  const entry = locationState ? { pathname: initialRoute, state: locationState } : initialRoute;
   return render(
-    <MemoryRouter initialEntries={[initialRoute]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/checkout/:apiId/:planId" element={<CheckoutPage />} />
       </Routes>
@@ -462,5 +467,241 @@ describe('CheckoutPage', () => {
       expect(call[0]).not.toContain('token');
       expect(call[1]).not.toContain('super-secret-token-xyz-12345');
     }
+  });
+
+  describe('Sprint 4 FE-04.2 Lifecycle & Rate Limit enhancements', () => {
+    it('displays rate limit label as req/phút to match RPM contract', async () => {
+      renderCheckout('/checkout/api-checkout-test/plan-chk-1');
+
+      await waitFor(() => {
+        expect(screen.getByText('Growth Tier')).toBeDefined();
+      });
+
+      expect(screen.getByText(/Rate Limit: 100 req\/phút/)).toBeDefined();
+    });
+
+    it('resumes checkout directly without subscribePlan when valid Pending subscription passed in location.state', async () => {
+      const pendingSub: SubscriptionView = {
+        ...mockActiveSubscription,
+        id: 'sub-resumed-777',
+        status: 'Pending',
+        consumerId: 'usr-1',
+        apiId: 'api-checkout-test',
+        planId: 'plan-chk-1',
+      };
+
+      vi.mocked(billingApi.getSubscription).mockImplementation(async (id) => {
+        if (id === 'sub-resumed-777') {
+          return pendingSub;
+        }
+        return mockActiveSubscription;
+      });
+      vi.mocked(billingApi.checkoutSubscription).mockResolvedValue(mockPaymentView);
+      vi.mocked(billingApi.confirmPayment).mockResolvedValue({
+        paymentId: 'pay-12345',
+        status: 'Succeeded',
+        duplicate: false,
+      });
+
+      renderCheckout('/checkout/api-checkout-test/plan-chk-1', {
+        resumeSubscriptionId: 'sub-resumed-777',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('resuming-pending-banner')).toBeDefined();
+      });
+
+      const checkbox = screen.getByTestId('terms-checkbox');
+      fireEvent.click(checkbox);
+
+      const submitBtn = screen.getByRole('button', { name: /Xác nhận đăng ký/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Đăng ký gói thành công!')).toBeDefined();
+      });
+
+      // Crucial: subscribePlan was skipped!
+      expect(billingApi.subscribePlan).not.toHaveBeenCalled();
+      // Directly checked out with the pending subscription id
+      expect(billingApi.checkoutSubscription).toHaveBeenCalledWith(
+        'sub-resumed-777',
+        expect.any(String),
+        expect.any(AbortSignal)
+      );
+      expect(billingApi.confirmPayment).toHaveBeenCalled();
+    });
+
+    it('does not trust mismatched resumeSubscriptionId and falls back to subscribePlan', async () => {
+      const wrongOwnerSub: SubscriptionView = {
+        ...mockActiveSubscription,
+        id: 'sub-wrong-owner',
+        status: 'Pending',
+        consumerId: 'someone-else', // Not usr-1!
+        apiId: 'api-checkout-test',
+        planId: 'plan-chk-1',
+      };
+
+      vi.mocked(billingApi.getSubscription).mockResolvedValue(wrongOwnerSub);
+      vi.mocked(billingApi.subscribePlan).mockResolvedValue({
+        ...mockActiveSubscription,
+        id: 'sub-new-valid',
+        status: 'Pending',
+      });
+      vi.mocked(billingApi.checkoutSubscription).mockResolvedValue(mockPaymentView);
+      vi.mocked(billingApi.confirmPayment).mockResolvedValue({
+        paymentId: 'pay-12345',
+        status: 'Succeeded',
+        duplicate: false,
+      });
+
+      renderCheckout('/checkout/api-checkout-test/plan-chk-1', {
+        resumeSubscriptionId: 'sub-wrong-owner',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Growth Tier')).toBeDefined();
+      });
+
+      const checkbox = screen.getByTestId('terms-checkbox');
+      fireEvent.click(checkbox);
+
+      const submitBtn = screen.getByRole('button', { name: /Xác nhận đăng ký/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Đăng ký gói thành công!')).toBeDefined();
+      });
+
+      // subscribePlan was invoked because sub-wrong-owner was rejected
+      expect(billingApi.subscribePlan).toHaveBeenCalledWith('plan-chk-1', expect.any(AbortSignal));
+    });
+
+    it('seamlessly resumes checkout when subscribePlan throws 409 and existing Pending subscription is found', async () => {
+      const existingPendingSub: SubscriptionView = {
+        ...mockActiveSubscription,
+        id: 'sub-auto-recovered-999',
+        status: 'Pending',
+        consumerId: 'usr-1',
+        apiId: 'api-checkout-test',
+        planId: 'plan-chk-1',
+      };
+
+      vi.mocked(billingApi.subscribePlan).mockRejectedValueOnce(
+        new ApiError(409, 'SUBSCRIPTION_ALREADY_EXISTS', 'Subscription exists')
+      );
+      vi.mocked(billingApi.listSubscriptions)
+        .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 })
+        .mockResolvedValueOnce({
+          items: [existingPendingSub],
+          total: 1,
+          page: 1,
+          pageSize: 100,
+        });
+      vi.mocked(billingApi.checkoutSubscription).mockResolvedValue(mockPaymentView);
+      vi.mocked(billingApi.confirmPayment).mockResolvedValue({
+        paymentId: 'pay-12345',
+        status: 'Succeeded',
+        duplicate: false,
+      });
+      vi.mocked(billingApi.getSubscription).mockResolvedValue({
+        ...existingPendingSub,
+        status: 'Active',
+      });
+
+      renderCheckout('/checkout/api-checkout-test/plan-chk-1');
+
+      await waitFor(() => {
+        expect(screen.getByText('Growth Tier')).toBeDefined();
+      });
+
+      const checkbox = screen.getByTestId('terms-checkbox');
+      fireEvent.click(checkbox);
+
+      const submitBtn = screen.getByRole('button', { name: /Xác nhận đăng ký/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Đăng ký gói thành công!')).toBeDefined();
+      });
+
+      expect(billingApi.subscribePlan).toHaveBeenCalled();
+      expect(billingApi.checkoutSubscription).toHaveBeenCalledWith(
+        'sub-auto-recovered-999',
+        expect.any(String),
+        expect.any(AbortSignal)
+      );
+    });
+
+    it('shows active subscription banner when 409 occurs and user has an Active subscription', async () => {
+      const existingActiveSub: SubscriptionView = {
+        ...mockActiveSubscription,
+        id: 'sub-active-existing',
+        status: 'Active',
+        consumerId: 'usr-1',
+        apiId: 'api-checkout-test',
+        planId: 'plan-chk-1',
+      };
+
+      vi.mocked(billingApi.subscribePlan).mockRejectedValueOnce(
+        new ApiError(409, 'SUBSCRIPTION_ALREADY_EXISTS', 'Subscription already exists')
+      );
+      vi.mocked(billingApi.listSubscriptions)
+        .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 20 })
+        .mockResolvedValueOnce({
+          items: [existingActiveSub],
+          total: 1,
+          page: 1,
+          pageSize: 100,
+        });
+
+      renderCheckout('/checkout/api-checkout-test/plan-chk-1');
+
+      await waitFor(() => {
+        expect(screen.getByText('Growth Tier')).toBeDefined();
+      });
+
+      const checkbox = screen.getByTestId('terms-checkbox');
+      fireEvent.click(checkbox);
+
+      const submitBtn = screen.getByRole('button', { name: /Xác nhận đăng ký/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('active-subscription-banner')).toBeDefined();
+      });
+
+      expect(
+        screen.getAllByText('Bạn đã có gói đăng ký đang hoạt động cho API này.').length
+      ).toBeGreaterThan(0);
+    });
+
+    it('displays clear Vietnamese explanation when SUBSCRIPTION_PERIOD_LOCKED error occurs', async () => {
+      vi.mocked(billingApi.subscribePlan).mockRejectedValueOnce(
+        new ApiError(409, 'SUBSCRIPTION_PERIOD_LOCKED', 'Period locked')
+      );
+
+      renderCheckout('/checkout/api-checkout-test/plan-chk-1');
+
+      await waitFor(() => {
+        expect(screen.getByText('Growth Tier')).toBeDefined();
+      });
+
+      const checkbox = screen.getByTestId('terms-checkbox');
+      fireEvent.click(checkbox);
+
+      const submitBtn = screen.getByRole('button', { name: /Xác nhận đăng ký/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('checkout-error-banner')).toBeDefined();
+      });
+
+      expect(
+        screen.getByText(
+          'Gói đăng ký đã hủy trong kỳ hiện tại đã sử dụng quota, không thể đăng ký lại cho đến khi chu kỳ kết thúc.'
+        )
+      ).toBeDefined();
+    });
   });
 });

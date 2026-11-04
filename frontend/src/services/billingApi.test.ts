@@ -395,20 +395,43 @@ describe('billingApi service', () => {
       expect(set.size).toBe(50);
     });
 
-    it('falls back gracefully when crypto.randomUUID is not available', () => {
+    it('falls back to crypto.getRandomValues hex string when randomUUID is not available', () => {
       const originalCrypto = globalThis.crypto;
       try {
-        // @ts-expect-error simulate environment without randomUUID
-        delete globalThis.crypto;
-        const key = generateIdempotencyKey('fallback');
-        expect(key).toMatch(/^[A-Za-z0-9_.:-]{1,100}$/);
-        expect(key.startsWith('fallback-')).toBe(true);
+        const mockCrypto = {
+          getRandomValues: vi.fn((buffer: Uint8Array) => {
+            for (let i = 0; i < buffer.length; i++) {
+              buffer[i] = i * 16;
+            }
+            return buffer;
+          }),
+        };
+        vi.stubGlobal('crypto', mockCrypto);
 
-        const evt = generateEventId('fallback');
+        const key = generateIdempotencyKey('hex_test');
+        expect(key).toMatch(/^[A-Za-z0-9_.:-]{1,100}$/);
+        expect(key.startsWith('hex_test-')).toBe(true);
+        expect(mockCrypto.getRandomValues).toHaveBeenCalled();
+
+        const evt = generateEventId('hex_evt');
         expect(evt).toMatch(/^[A-Za-z0-9_.:-]{1,100}$/);
-        expect(evt.startsWith('fallback-')).toBe(true);
+        expect(evt.startsWith('hex_evt-')).toBe(true);
       } finally {
-        globalThis.crypto = originalCrypto;
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('fails closed and throws error when no cryptographic random source is available', () => {
+      try {
+        vi.stubGlobal('crypto', undefined);
+        expect(() => generateIdempotencyKey('chk')).toThrow(
+          'Secure cryptographic random source unavailable'
+        );
+        expect(() => generateEventId('evt')).toThrow(
+          'Secure cryptographic random source unavailable'
+        );
+      } finally {
+        vi.unstubAllGlobals();
       }
     });
   });
@@ -467,14 +490,31 @@ describe('billingApi service', () => {
         expect(formatted).toBe('1,234.5 USD');
       });
 
+      it('correctly formats according to vi-VN standards with dot for thousands and comma for decimal', () => {
+        expect(formatCurrencyAmount('500000', 'VND', 'vi-VN')).toBe('500.000 VND');
+        expect(formatCurrencyAmount('1234567.89', 'VND', 'vi-VN')).toBe('1.234.567,89 VND');
+        expect(formatCurrencyAmount('49.99', 'USD', 'vi-VN')).toBe('49,99 USD');
+        expect(formatCurrencyAmount('-10000', 'VND', 'vi-VN')).toBe('-10.000 VND');
+      });
+
       it('handles 0 and empty inputs safely', () => {
         expect(formatCurrencyAmount('0', 'VND', 'en-US')).toBe('0 VND');
+        expect(formatCurrencyAmount('0.00', 'VND', 'vi-VN')).toBe('0 VND');
+        expect(formatCurrencyAmount('-0.00', 'VND', 'vi-VN')).toBe('0 VND');
         expect(formatCurrencyAmount(null, 'VND')).toBe('0 VND');
+        expect(formatCurrencyAmount('', 'VND')).toBe('0 VND');
       });
 
       it('handles negative amounts safely', () => {
         expect(formatCurrencyAmount('-10000', 'VND', 'en-US')).toBe('-10,000 VND');
       });
+
+      it('preserves ultra-large BigInt amounts without IEEE 754 precision loss', () => {
+        const bigAmount = '9007199254740993000';
+        const formatted = formatCurrencyAmount(bigAmount, 'VND', 'vi-VN');
+        expect(formatted).toContain('9.007.199.254.740.993.000 VND');
+      });
     });
   });
 });
+

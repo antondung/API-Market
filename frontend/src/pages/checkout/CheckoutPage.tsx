@@ -21,6 +21,7 @@ import {
   checkoutSubscription,
   confirmPayment,
   getSubscription,
+  listSubscriptions,
   generateIdempotencyKey,
   generateEventId,
 } from '../../services/billingApi';
@@ -32,6 +33,9 @@ import {
 
 function mapCheckoutError(err: unknown): string {
   if (err instanceof ApiError) {
+    if (err.code === 'SUBSCRIPTION_PERIOD_LOCKED' || err.message?.includes('SUBSCRIPTION_PERIOD_LOCKED')) {
+      return 'Gói đăng ký đã hủy trong kỳ hiện tại đã sử dụng quota, không thể đăng ký lại cho đến khi chu kỳ kết thúc.';
+    }
     if (err.status === 400) {
       return 'Dữ liệu yêu cầu không hợp lệ. Vui lòng kiểm tra lại.';
     }
@@ -47,9 +51,6 @@ function mapCheckoutError(err: unknown): string {
     if (err.status === 409) {
       if (err.code === 'SUBSCRIPTION_ALREADY_EXISTS') {
         return 'Bạn đã có gói đăng ký đang hoạt động hoặc đang chờ xử lý cho API này.';
-      }
-      if (err.code === 'SUBSCRIPTION_PERIOD_LOCKED') {
-        return 'Chu kỳ đăng ký hiện tại đang được khóa xử lý. Vui lòng thử lại sau.';
       }
       if (err.code === 'IDEMPOTENCY_CONFLICT') {
         return 'Yêu cầu thanh toán trùng lặp. Vui lòng thử lại với mã mới.';
@@ -71,6 +72,9 @@ function mapCheckoutError(err: unknown): string {
     return err.message || 'Có lỗi xảy ra khi xử lý đăng ký.';
   }
   if (err instanceof Error) {
+    if (err.message.includes('SUBSCRIPTION_PERIOD_LOCKED')) {
+      return 'Gói đăng ký đã hủy trong kỳ hiện tại đã sử dụng quota, không thể đăng ký lại cho đến khi chu kỳ kết thúc.';
+    }
     return err.message;
   }
   return 'Lỗi kết nối máy chủ. Vui lòng thử lại.';
@@ -93,7 +97,10 @@ export const CheckoutPage: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [paymentFailure, setPaymentFailure] = useState(false);
   const [successSubscription, setSuccessSubscription] = useState<SubscriptionView | null>(null);
+  const [existingPendingSub, setExistingPendingSub] = useState<SubscriptionView | null>(null);
+  const [hasActiveSub, setHasActiveSub] = useState(false);
 
+  const resumeSubscriptionId = (location.state as { resumeSubscriptionId?: string } | null)?.resumeSubscriptionId;
   const submitControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -136,6 +143,71 @@ export const CheckoutPage: React.FC = () => {
       controller.abort();
     };
   }, [apiId, planId]);
+
+  useEffect(() => {
+    if (!apiId || !planId || !currentUser) return;
+    const isUserConsumer =
+      currentUser.role === 'USER' ||
+      (typeof currentUser.role === 'string' &&
+        currentUser.role.toLowerCase() === 'consumer');
+    if (!isUserConsumer) return;
+
+    const controller = new AbortController();
+
+    const validateOrDetectPending = async () => {
+      try {
+        if (resumeSubscriptionId) {
+          const sub = await getSubscription(resumeSubscriptionId, controller.signal);
+          if (controller.signal.aborted) return;
+          const isOwner =
+            !sub.consumerId ||
+            !currentUser.id ||
+            String(sub.consumerId) === String(currentUser.id);
+          const isPending = sub.status === 'Pending';
+          const isApiMatch = String(sub.apiId) === String(apiId);
+          const isPlanMatch = String(sub.planId) === String(planId);
+          if (isOwner && isPending && isApiMatch && isPlanMatch) {
+            setExistingPendingSub(sub);
+            return;
+          }
+        }
+
+        const list = await listSubscriptions(1, 100, controller.signal);
+        if (controller.signal.aborted) return;
+
+        const matchingActive = list.items?.find(
+          (s) => String(s.apiId) === String(apiId) && s.status === 'Active'
+        );
+        if (matchingActive) {
+          setHasActiveSub(true);
+        }
+
+        const matchingPending = list.items?.find(
+          (s) =>
+            String(s.apiId) === String(apiId) &&
+            String(s.planId) === String(planId) &&
+            s.status === 'Pending'
+        );
+        if (matchingPending) {
+          const isOwner =
+            !matchingPending.consumerId ||
+            !currentUser.id ||
+            String(matchingPending.consumerId) === String(currentUser.id);
+          if (isOwner) {
+            setExistingPendingSub(matchingPending);
+          }
+        }
+      } catch {
+        // Non-blocking background check
+      }
+    };
+
+    validateOrDetectPending();
+
+    return () => {
+      controller.abort();
+    };
+  }, [apiId, planId, currentUser, resumeSubscriptionId]);
 
   if (isLoading) {
     return (
@@ -197,23 +269,108 @@ export const CheckoutPage: React.FC = () => {
 
     try {
       if (isFreePlan) {
-        const sub = await subscribePlan(plan.id, controller.signal);
-        if (controller.signal.aborted) return;
-        setSuccessSubscription(sub);
-        return;
+        try {
+          const sub = await subscribePlan(plan.id, controller.signal);
+          if (controller.signal.aborted) return;
+          setSuccessSubscription(sub);
+          return;
+        } catch (err: unknown) {
+          if (
+            err instanceof ApiError &&
+            err.status === 409 &&
+            (err.code === 'SUBSCRIPTION_ALREADY_EXISTS' || err.message?.includes('SUBSCRIPTION_ALREADY_EXISTS'))
+          ) {
+            const list = await listSubscriptions(1, 100, controller.signal);
+            const activeSub = list.items?.find(
+              (s) => String(s.apiId) === String(api.id) && s.status === 'Active'
+            );
+            if (activeSub) {
+              setHasActiveSub(true);
+              setSubmitError('Bạn đã có gói đăng ký đang hoạt động cho API này.');
+              return;
+            }
+          }
+          throw err;
+        }
       }
 
       // Paid plan flow
-      // Step 1: subscribePlan
-      const sub = await subscribePlan(plan.id, controller.signal);
-      if (controller.signal.aborted) return;
+      let targetSubId: string | null = null;
+
+      // 1. Check if we already validated an existing pending subscription
+      if (existingPendingSub) {
+        targetSubId = existingPendingSub.id;
+      } else if (resumeSubscriptionId) {
+        // Safe server validation of resumeSubscriptionId
+        try {
+          const sub = await getSubscription(resumeSubscriptionId, controller.signal);
+          const isOwner =
+            !sub.consumerId ||
+            !currentUser.id ||
+            String(sub.consumerId) === String(currentUser.id);
+          const isPending = sub.status === 'Pending';
+          const isApiMatch = String(sub.apiId) === String(api.id);
+          const isPlanMatch = String(sub.planId) === String(plan.id);
+
+          if (isOwner && isPending && isApiMatch && isPlanMatch) {
+            targetSubId = sub.id;
+            setExistingPendingSub(sub);
+          }
+        } catch {
+          // Never trust unvalidated id without server verification
+        }
+      }
+
+      // 2. If no valid pending subscription found, call subscribePlan
+      if (!targetSubId) {
+        try {
+          const sub = await subscribePlan(plan.id, controller.signal);
+          if (controller.signal.aborted) return;
+          targetSubId = sub.id;
+        } catch (err: unknown) {
+          if (
+            err instanceof ApiError &&
+            err.status === 409 &&
+            (err.code === 'SUBSCRIPTION_ALREADY_EXISTS' || err.message?.includes('SUBSCRIPTION_ALREADY_EXISTS'))
+          ) {
+            // Catch 409 SUBSCRIPTION_ALREADY_EXISTS: inspect existing subscriptions
+            const subList = await listSubscriptions(1, 100, controller.signal);
+            if (controller.signal.aborted) return;
+
+            const matchingPending = subList.items?.find(
+              (s) =>
+                String(s.apiId) === String(api.id) &&
+                String(s.planId) === String(plan.id) &&
+                s.status === 'Pending'
+            );
+
+            if (matchingPending) {
+              // Seamlessly resume checkout
+              targetSubId = matchingPending.id;
+              setExistingPendingSub(matchingPending);
+            } else {
+              const matchingActive = subList.items?.find(
+                (s) => String(s.apiId) === String(api.id) && s.status === 'Active'
+              );
+              if (matchingActive) {
+                setHasActiveSub(true);
+                setSubmitError('Bạn đã có gói đăng ký đang hoạt động cho API này.');
+                return;
+              }
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
 
       // Step 2: checkoutSubscription
       const idempotencyKey = generateIdempotencyKey('chk');
-      const payment = await checkoutSubscription(sub.id, idempotencyKey, controller.signal);
+      const payment = await checkoutSubscription(targetSubId, idempotencyKey, controller.signal);
       if (controller.signal.aborted) return;
 
-      // Step 3: confirmPayment (token passed in memory, never stored)
+      // Step 3: confirmPayment (token passed strictly in React function memory)
       const eventId = generateEventId('evt');
       const confirmResult = await confirmPayment(
         {
@@ -228,7 +385,7 @@ export const CheckoutPage: React.FC = () => {
 
       // Step 4: Outcome evaluation
       if (sandboxOutcome === 'success' && confirmResult.status === 'Succeeded') {
-        const activeSub = await getSubscription(sub.id, controller.signal);
+        const activeSub = await getSubscription(targetSubId, controller.signal);
         if (controller.signal.aborted) return;
         setSuccessSubscription(activeSub);
       } else {
@@ -357,7 +514,7 @@ export const CheckoutPage: React.FC = () => {
                   <Badge variant="primary">{plan.name}</Badge>
                 </div>
                 <p className="text-body-sm text-on-surface-variant mt-0.5">
-                  Quota: {plan.quota.toLocaleString()} yêu cầu/tháng • Rate Limit: {plan.rateLimit} req/giây
+                  Quota: {formatBigIntCount(plan.quota)} yêu cầu/tháng • Rate Limit: {plan.rateLimit} req/phút
                 </p>
               </div>
             </div>
@@ -402,6 +559,56 @@ export const CheckoutPage: React.FC = () => {
                 ? t('Gói Sandbox Miễn phí không yêu cầu thông tin thanh toán. Hạn mức sẽ được kích hoạt ngay lập tức.')
                 : t('Môi trường Sandbox phục vụ thử nghiệm tính năng thanh toán. Vui lòng chọn kịch bản kết quả để kiểm tra luồng xử lý.')}
             </p>
+
+            {/* Resume pending checkout banner */}
+            {existingPendingSub && (
+              <div
+                data-testid="resuming-pending-banner"
+                className="p-4 bg-primary/10 border border-primary/30 rounded-xl text-body-sm text-on-surface mb-6 flex items-start gap-3"
+              >
+                <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">
+                  info
+                </span>
+                <div>
+                  <strong className="font-semibold text-primary block">
+                    {t('Tiếp tục thanh toán cho gói đăng ký chờ xử lý')}
+                  </strong>
+                  <p className="text-on-surface-variant">
+                    {t(
+                      'Hệ thống ghi nhận bạn đã có yêu cầu đăng ký cho gói này (Mã: #{subId}). Quá trình xác nhận sẽ tiếp tục phiên thanh toán hiện tại mà không tạo đăng ký trùng lặp.'
+                    ).replace('{subId}', existingPendingSub.id)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Active subscription banner */}
+            {hasActiveSub && (
+              <div
+                data-testid="active-subscription-banner"
+                className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-body-sm text-emerald-900 dark:text-emerald-200 mb-6 flex items-start justify-between gap-3"
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-emerald-600 text-[20px] mt-0.5 flex-shrink-0">
+                    check_circle
+                  </span>
+                  <div>
+                    <p className="font-semibold">
+                      {t('Bạn đã có gói đăng ký đang hoạt động cho API này.')}
+                    </p>
+                    <p className="text-body-xs opacity-90">
+                      {t('Bạn không cần đăng ký thêm. Hãy vào trang quản lý để xem hoặc đổi gói dịch vụ.')}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  to="/consumer/subscriptions"
+                  className="inline-flex items-center px-3 py-1.5 rounded-lg text-body-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors flex-shrink-0"
+                >
+                  {t('Quản lý gói')}
+                </Link>
+              </div>
+            )}
 
             {/* Role warning */}
             {!isConsumer && (

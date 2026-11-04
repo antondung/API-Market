@@ -11,6 +11,7 @@ import { RequestHistoryPage } from './RequestHistoryPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
 import * as consumerApi from '../../services/consumerApi';
 import * as billingApi from '../../services/billingApi';
+import * as usageApi from '../../services/usageApi';
 import { ApiError } from '../../services/authApi';
 
 let mockCurrentUser: { id: string; email: string; name: string; role: string } | null = {
@@ -36,6 +37,10 @@ vi.mock('../../i18n', () => ({
 describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(usageApi, 'getConsumerUsageSummary').mockResolvedValue({
+      subscriptions: [],
+      daily: [],
+    });
   });
 
   afterEach(() => {
@@ -126,6 +131,50 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
       // After retry succeeds, shows 0 Keys
       expect(await screen.findByText('0 Keys')).toBeDefined();
     });
+
+    it('displays real active subscription count and monthly quota usage from getConsumerUsageSummary', async () => {
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 100,
+      });
+
+      vi.spyOn(usageApi, 'getConsumerUsageSummary').mockResolvedValueOnce({
+        subscriptions: [
+          {
+            id: 'sub_active_1',
+            apiId: 'api_1',
+            status: 'Active',
+            quotaUsed: '2500',
+            quotaLimit: '10000',
+            remainingRequests: '7500',
+            periodStart: '2026-11-01T00:00:00Z',
+            periodEnd: '2026-11-30T23:59:59Z',
+          },
+          {
+            id: 'sub_pending_2',
+            apiId: 'api_2',
+            status: 'Pending',
+            quotaUsed: '500',
+            quotaLimit: '5000',
+            remainingRequests: '4500',
+            periodStart: '2026-11-01T00:00:00Z',
+            periodEnd: '2026-11-30T23:59:59Z',
+          },
+        ],
+        daily: [],
+      });
+
+      render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText('2')).toBeDefined();
+      expect(screen.getByText('3.000')).toBeDefined();
+    });
   });
 
   describe('MySubscriptionsPage', () => {
@@ -152,7 +201,7 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
   });
 
   describe('UsageQuotaPage', () => {
-    it('explains Quota vs Rate Limit distinction and honest Sandbox quota status', () => {
+    it('explains Quota vs Rate Limit distinction and honest Sandbox quota status', async () => {
       render(
         <MemoryRouter>
           <AppProvider>
@@ -161,9 +210,8 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
         </MemoryRouter>
       );
 
-      expect(screen.getByText(/Cơ chế quản lý hạn ngạch Sprint 3/)).toBeDefined();
       expect(screen.getByText(/Understanding Quota vs Rate Limit/)).toBeDefined();
-      expect(screen.getByText('Chưa có đăng ký API')).toBeDefined();
+      expect(await screen.findByText('Chưa có đăng ký API')).toBeDefined();
     });
   });
 

@@ -8,19 +8,35 @@ import type {
 } from './sprint4Types';
 
 /**
+ * Generates a cryptographically secure random string (UUID or hex bytes).
+ * Fails closed if no secure cryptographic random source is available.
+ */
+function generateSecureRandomHex(byteCount = 16): string {
+  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (!cryptoObj) {
+    throw new Error('Secure cryptographic random source unavailable');
+  }
+
+  if (typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID();
+  }
+
+  if (typeof cryptoObj.getRandomValues === 'function') {
+    const bytes = new Uint8Array(byteCount);
+    cryptoObj.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  throw new Error('Secure cryptographic random source unavailable');
+}
+
+/**
  * Generates a safe idempotency key matching regex ^[A-Za-z0-9_.:-]{1,100}$
  */
 export function generateIdempotencyKey(prefix = 'chk'): string {
   const safePrefix = prefix.replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 20) || 'chk';
-  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
-
-  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
-    return `${safePrefix}-${cryptoObj.randomUUID()}`.slice(0, 100);
-  }
-
-  const timestamp = Date.now().toString(36);
-  const randomPart = Math.random().toString(36).substring(2, 12);
-  return `${safePrefix}-${timestamp}-${randomPart}`.slice(0, 100);
+  const randomPart = generateSecureRandomHex(16);
+  return `${safePrefix}-${randomPart}`.slice(0, 100);
 }
 
 /**
@@ -28,15 +44,8 @@ export function generateIdempotencyKey(prefix = 'chk'): string {
  */
 export function generateEventId(prefix = 'evt'): string {
   const safePrefix = prefix.replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 20) || 'evt';
-  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
-
-  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
-    return `${safePrefix}-${cryptoObj.randomUUID()}`.slice(0, 100);
-  }
-
-  const timestamp = Date.now().toString(36);
-  const randomPart = Math.random().toString(36).substring(2, 12);
-  return `${safePrefix}-${timestamp}-${randomPart}`.slice(0, 100);
+  const randomPart = generateSecureRandomHex(16);
+  return `${safePrefix}-${randomPart}`.slice(0, 100);
 }
 
 /**

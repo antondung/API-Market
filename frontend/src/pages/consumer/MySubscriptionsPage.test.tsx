@@ -9,6 +9,7 @@ import {
   formatDate,
 } from './MySubscriptionsPage';
 import * as billingApi from '../../services/billingApi';
+import * as marketplaceApi from '../../services/marketplaceApi';
 import type { SubscriptionView } from '../../services/sprint4Types';
 import { ApiError } from '../../services/authApi';
 
@@ -273,13 +274,16 @@ describe('MySubscriptionsPage Component & Helpers', () => {
       const checkoutBtn = screen.getByRole('button', { name: /Thanh toán ngay/i });
       fireEvent.click(checkoutBtn);
 
-      expect(mockedNavigate).toHaveBeenCalledWith('/checkout/api_geo/plan_starter');
+      expect(mockedNavigate).toHaveBeenCalledWith('/checkout/api_geo/plan_starter', {
+        state: { resumeSubscriptionId: 'sub_pending_1' },
+      });
     });
 
-    it('displays change plan button for Active subscriptions and navigates to api detail', async () => {
+    it('displays change plan button for Active subscriptions and opens modal', async () => {
       const activeSub = createMockSubscription({
         id: 'sub_active_1',
         apiId: 'api_ai_search',
+        planId: 'plan_starter',
         status: 'Active',
       });
 
@@ -289,6 +293,38 @@ describe('MySubscriptionsPage Component & Helpers', () => {
         page: 1,
         pageSize: 10,
       });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValueOnce({
+        id: 'api_ai_search',
+        name: 'AI Search API',
+        description: 'Test API',
+        category: 'AI',
+        providerId: 'prov_1',
+        providerName: 'AI Corp',
+        providerStatus: 'Verified',
+        totalEndpoints: 5,
+        rating: 4.8,
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+        plans: [
+          {
+            id: 'plan_starter',
+            name: 'Starter Plan',
+            priceMonthly: 100000,
+            currency: 'VND',
+            quota: 1000,
+            rateLimit: 30,
+          },
+          {
+            id: 'plan_pro',
+            name: 'Pro Plan',
+            priceMonthly: 500000,
+            currency: 'VND',
+            quota: 10000,
+            rateLimit: 120,
+          },
+        ],
+      } as any);
 
       render(
         <MemoryRouter>
@@ -300,7 +336,8 @@ describe('MySubscriptionsPage Component & Helpers', () => {
       const changePlanBtn = screen.getByRole('button', { name: /Đổi gói/i });
       fireEvent.click(changePlanBtn);
 
-      expect(mockedNavigate).toHaveBeenCalledWith('/api/api_ai_search');
+      expect(await screen.findByRole('dialog')).toBeDefined();
+      expect(screen.getByText('Đổi gói dịch vụ')).toBeDefined();
     });
 
     it('renders warning badge when cancelAtPeriodEnd is true and hides cancel button', async () => {
@@ -505,7 +542,211 @@ describe('MySubscriptionsPage Component & Helpers', () => {
       expect(await screen.findByTestId('subscription-item-sub_huge_1')).toBeDefined();
       expect(screen.getByText(/9\.007\.199\.254\.740\.993/)).toBeDefined();
       expect(screen.getByText(/18\.014\.398\.509\.481\.986/)).toBeDefined();
-      expect(screen.getByText(/49\.99 USD \/ tháng/)).toBeDefined();
+      expect(screen.getByText(/49,99 USD \/ tháng/)).toBeDefined();
+    });
+  });
+
+  describe('Change Plan Flow', () => {
+    const mockPlansApiDetail: any = {
+      id: 'api_ai_search',
+      name: 'AI Search API',
+      description: 'Test API',
+      category: 'AI',
+      providerId: 'prov_1',
+      providerName: 'AI Corp',
+      providerStatus: 'Verified' as const,
+      status: 'Active' as const,
+      totalEndpoints: 5,
+      rating: 4.8,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      plans: [
+        {
+          id: 'plan_starter',
+          name: 'Starter Plan',
+          priceMonthly: 100000,
+          currency: 'VND',
+          quota: 1000,
+          rateLimit: 30,
+        },
+        {
+          id: 'plan_enterprise',
+          name: 'Enterprise Plan',
+          priceMonthly: 1500000,
+          currency: 'VND',
+          quota: 50000,
+          rateLimit: 300,
+        },
+      ],
+    };
+
+    it('filters out current plan and displays explicit quota preservation advisory', async () => {
+      const activeSub = createMockSubscription({
+        id: 'sub_active_change',
+        apiId: 'api_ai_search',
+        planId: 'plan_starter',
+        status: 'Active',
+      });
+
+      vi.spyOn(billingApi, 'listSubscriptions').mockResolvedValueOnce({
+        items: [activeSub],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValueOnce(
+        mockPlansApiDetail
+      );
+
+      render(
+        <MemoryRouter>
+          <MySubscriptionsPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByTestId('subscription-item-sub_active_change')).toBeDefined();
+      fireEvent.click(screen.getByRole('button', { name: /Đổi gói/i }));
+
+      expect(await screen.findByRole('dialog')).toBeDefined();
+      expect(
+        screen.getByText('Hạn ngạch đã sử dụng trong kỳ hiện tại được bảo toàn (không reset).')
+      ).toBeDefined();
+
+      // Current plan (plan_starter) must be filtered out
+      expect(screen.queryByTestId('change-plan-option-plan_starter')).toBeNull();
+      // Available alternative plan (plan_enterprise) must be displayed
+      expect(screen.getByTestId('change-plan-option-plan_enterprise')).toBeDefined();
+      expect(screen.getByText('Enterprise Plan')).toBeDefined();
+      expect(screen.getByText(/300 req\/phút/)).toBeDefined();
+    });
+
+    it('selects new plan, calls changeSubscriptionPlan and confirmPayment, then refreshes list on success', async () => {
+      const activeSub = createMockSubscription({
+        id: 'sub_active_change',
+        apiId: 'api_ai_search',
+        planId: 'plan_starter',
+        status: 'Active',
+      });
+
+      const listSpy = vi.spyOn(billingApi, 'listSubscriptions')
+        .mockResolvedValueOnce({
+          items: [activeSub],
+          total: 1,
+          page: 1,
+          pageSize: 10,
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              ...activeSub,
+              planId: 'plan_enterprise',
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 10,
+        });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValueOnce(
+        mockPlansApiDetail
+      );
+
+      const changeSpy = vi.spyOn(billingApi, 'changeSubscriptionPlan').mockResolvedValueOnce({
+        paymentId: 'pay_chg_123',
+        subscriptionId: 'sub_active_change',
+        amount: '1500000',
+        currency: 'VND',
+        status: 'Pending',
+        expiresAt: '2026-03-31T01:00:00Z',
+        token: 'ephemeral-chg-token-999',
+      });
+
+      const confirmSpy = vi.spyOn(billingApi, 'confirmPayment').mockResolvedValueOnce({
+        paymentId: 'pay_chg_123',
+        status: 'Succeeded',
+        duplicate: false,
+      });
+
+      render(
+        <MemoryRouter>
+          <MySubscriptionsPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByTestId('subscription-item-sub_active_change')).toBeDefined();
+      fireEvent.click(screen.getByRole('button', { name: /Đổi gói/i }));
+
+      expect(await screen.findByTestId('change-plan-option-plan_enterprise')).toBeDefined();
+      // Select option
+      fireEvent.click(screen.getByTestId('change-plan-option-plan_enterprise'));
+
+      // Confirm change
+      fireEvent.click(screen.getByRole('button', { name: /Xác nhận đổi gói/i }));
+
+      await waitFor(() => {
+        expect(changeSpy).toHaveBeenCalledWith('sub_active_change', 'plan_enterprise');
+        expect(confirmSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            paymentId: 'pay_chg_123',
+            token: 'ephemeral-chg-token-999',
+            outcome: 'success',
+          })
+        );
+      });
+
+      // Dialog should close and feedback message shown
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).toBeNull();
+      });
+      expect(screen.getByText('Đổi gói dịch vụ thành công!')).toBeDefined();
+      expect(listSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('displays error in modal without breaking subscription status when changePlan fails', async () => {
+      const activeSub = createMockSubscription({
+        id: 'sub_active_change_err',
+        apiId: 'api_ai_search',
+        planId: 'plan_starter',
+        status: 'Active',
+      });
+
+      vi.spyOn(billingApi, 'listSubscriptions').mockResolvedValueOnce({
+        items: [activeSub],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      });
+
+      vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValueOnce(
+        mockPlansApiDetail
+      );
+
+      vi.spyOn(billingApi, 'changeSubscriptionPlan').mockRejectedValueOnce(
+        new ApiError(400, 'INVALID_PLAN', 'Gói không hợp lệ hoặc đã ngừng cung cấp')
+      );
+
+      render(
+        <MemoryRouter>
+          <MySubscriptionsPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByTestId('subscription-item-sub_active_change_err')).toBeDefined();
+      fireEvent.click(screen.getByRole('button', { name: /Đổi gói/i }));
+
+      expect(await screen.findByTestId('change-plan-option-plan_enterprise')).toBeDefined();
+      fireEvent.click(screen.getByTestId('change-plan-option-plan_enterprise'));
+      fireEvent.click(screen.getByRole('button', { name: /Xác nhận đổi gói/i }));
+
+      // Error shown inside modal
+      expect(await screen.findByTestId('change-plan-error')).toBeDefined();
+      expect(screen.getByText('Gói không hợp lệ hoặc đã ngừng cung cấp')).toBeDefined();
+
+      // Modal stays open
+      expect(screen.getByRole('dialog')).toBeDefined();
+      // Original subscription is still active and visible
+      expect(screen.getByTestId('subscription-item-sub_active_change_err')).toBeDefined();
     });
   });
 });

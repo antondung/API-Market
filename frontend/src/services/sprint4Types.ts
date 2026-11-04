@@ -238,8 +238,12 @@ export function formatCurrencyAmount(
   }
 
   const raw = String(amount).trim();
+  if (raw === '' || isZeroAmount(raw)) {
+    return `0 ${currency}`;
+  }
+
   const isNegative = raw.startsWith('-');
-  const unsigned = isNegative ? raw.slice(1) : raw;
+  const unsigned = isNegative ? raw.slice(1).trim() : raw;
   const [wholePart = '0', fractionPart] = unsigned.split('.');
 
   let wholeBigInt = 0n;
@@ -251,12 +255,28 @@ export function formatCurrencyAmount(
 
   const formattedWhole = wholeBigInt.toLocaleString(locale);
 
+  let decimalSeparator = locale.startsWith('vi') ? ',' : '.';
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(1.1);
+    const decimalPart = parts.find((p) => p.type === 'decimal');
+    if (decimalPart?.value) {
+      decimalSeparator = decimalPart.value;
+    }
+  } catch {
+    // fallback to locale default
+  }
+
   let formattedNumber = formattedWhole;
   if (fractionPart !== undefined && fractionPart.length > 0) {
-    const trimmedFraction = fractionPart.replace(/0+$/, '');
+    const cleanedFraction = fractionPart.replace(/\D/g, '');
+    const trimmedFraction = cleanedFraction.replace(/0+$/, '');
     if (trimmedFraction.length > 0) {
-      formattedNumber = `${formattedWhole}.${trimmedFraction}`;
+      formattedNumber = `${formattedWhole}${decimalSeparator}${trimmedFraction}`;
     }
+  }
+
+  if (formattedNumber === '0') {
+    return `0 ${currency}`;
   }
 
   const result = isNegative ? `-${formattedNumber}` : formattedNumber;
