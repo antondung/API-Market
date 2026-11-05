@@ -127,22 +127,24 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     res.locals.identity = await auth.authenticate(match[1]);
     next();
   };
-  const requireRole = (role: Role): RequestHandler => (_req, res, next) => {
-    if (res.locals.identity.user.role !== role) throw new ApiError(403, 'FORBIDDEN', 'Insufficient permissions');
+  const requireRole = (...roles: Role[]): RequestHandler => (_req, res, next) => {
+    if (!roles.includes(res.locals.identity.user.role)) throw new ApiError(403, 'FORBIDDEN', 'Insufficient permissions');
     next();
   };
+  // Role Matrix A.2: Provider retains Consumer capabilities; Admin is not a buyer.
+  const requireBuyer = requireRole('Consumer', 'Provider');
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
-  if(options.billing)app.use('/api/consumer/subscriptions',billingRouter(options.billing,requireAuth,requireRole('Consumer')));
-  if(options.usage){app.use('/api/consumer/usage',usageConsumerRouter(options.usage,requireAuth,requireRole('Consumer')));app.use('/api/provider/analytics',usageProviderRouter(options.usage,requireAuth,requireRole('Provider')));}
+  if(options.billing)app.use('/api/consumer/subscriptions',billingRouter(options.billing,requireAuth,requireBuyer));
+  if(options.usage){app.use('/api/consumer/usage',usageConsumerRouter(options.usage,requireAuth,requireBuyer));app.use('/api/provider/analytics',usageProviderRouter(options.usage,requireAuth,requireRole('Provider')));}
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
-  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
+  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireBuyer));
   // US-15: Consumers file reports; Admins decide them.
   if (options.reports) {
-    app.use('/api/consumer/reports', reportConsumerRouter(options.reports, requireAuth, requireRole('Consumer')));
+    app.use('/api/consumer/reports', reportConsumerRouter(options.reports, requireAuth, requireBuyer));
     app.use('/api/admin/reports', reportAdminRouter(options.reports, requireAuth, requireRole('Admin')));
   }
   const playground = options.playground ?? (options.marketplace ? new PlaygroundService(options.marketplace.pool) : undefined);
-  if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireRole('Consumer'),
+  if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireBuyer,
     rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (_req, res) => res.locals.identity.user.id,
       standardHeaders: 'draft-8', legacyHeaders: false,
       handler: (_req, _res, next) => next(new ApiError(429, 'RATE_LIMITED', 'Too many Playground requests')) }),

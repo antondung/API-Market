@@ -45,7 +45,7 @@ export class BillingService {
     if (
       !(
         await c.query(
-          "SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=$1 AND u.is_active AND r.name='USER' FOR UPDATE OF u",
+          "SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=$1 AND u.is_active AND r.name IN ('USER','API_PROVIDER') FOR UPDATE OF u",
           [user],
         )
       ).rowCount

@@ -4,7 +4,7 @@ const date = { type: 'string', format: 'date-time' };
 const object = (properties: Record<string, object>, required = Object.keys(properties)) => ({ type: 'object', properties, ...(required.length ? { required } : {}), additionalProperties: false });
 const envelope = (schema: object, description = 'Success') => ({ description, content: { 'application/json': { schema: object({ data: schema }) } } });
 const error = (description: string) => ({ description, content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } });
-const errors = { '400': error('Invalid input; unknown fields rejected'), '401': error('Consumer JWT required'), '403': error('Consumer role required, SSRF blocked or sandbox unavailable'), '404': error('Resource not found or API/route not available'), '429': error('Rate limited') };
+const errors = { '400': error('Invalid input; unknown fields rejected'), '401': error('Consumer or Provider JWT required'), '403': error('Consumer/Provider buyer role required, SSRF blocked or sandbox unavailable'), '404': error('Resource not found or API/route not available'), '429': error('Rate limited') };
 const security = [{ bearerAuth: [] }];
 const id = (name: string) => ({ name, in: 'path', required: true, schema: { ...text, pattern: '^[1-9][0-9]*$' } });
 const jsonBody = (schema: object, required = true) => ({ required, content: { 'application/json': { schema } } });
