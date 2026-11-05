@@ -315,3 +315,4 @@ Thực thi qua `qa-scripts/sprint4-ui-e2e-runner.cjs` tuân thủ 100% quy đị
 **Trần Hà Thảo Vân**<br/>
 *QA Automation Lead & Documentation Lead*<br/>
 *MSSV: BCS250039 (`@vuonghathaovan-gif` — Issue #15 & Issue #70)*
+
