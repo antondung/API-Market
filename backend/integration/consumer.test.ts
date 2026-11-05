@@ -63,12 +63,12 @@ test('sandbox grant is one per Consumer/API, persists on repeat POST and expires
   } finally { await f.close(); }
 });
 
-test('consumer endpoints require JWT and Consumer role and hide unavailable APIs', async () => {
+test('buyer endpoints require JWT, include Providers and hide unavailable APIs', async () => {
   const f = await fixture();
   try {
     const route = `/api/consumer/apis/${f.api}/sandbox`;
     await request(f.app).post(route).send({}).expect(401);
-    await request(f.app).post(route).set('Authorization', `Bearer ${f.identities[2]!.accessToken}`).send({}).expect(403);
+    await request(f.app).post(route).set('Authorization', `Bearer ${f.identities[2]!.accessToken}`).send({}).expect(201);
     await f.store.pool.query('UPDATE users SET is_active=false WHERE id=$1', [f.identities[2]!.user.id]);
     await request(f.app).post(route).set('Authorization', `Bearer ${f.identities[0]!.accessToken}`).send({}).expect(404);
     await request(f.app).post('/api/consumer/api-keys').set('Authorization', `Bearer ${f.identities[0]!.accessToken}`).send({ apiId: f.api }).expect(404);

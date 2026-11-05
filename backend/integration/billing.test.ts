@@ -36,13 +36,13 @@ async function fixture() {
         readFileSync("migrations/010_billing_snapshot.sql", "utf8"),
       );
     const users: string[] = [];
-    for (let i = 0; i < 3; i++)
+    for (let i = 0; i < 4; i++)
       users.push(
         String(
           (
             await store.pool.query(
               "INSERT INTO users(name,email,password_hash,role_id) VALUES('User',$1,'fixture',(SELECT id FROM roles WHERE name=$2)) RETURNING id",
-              [`${i}@billing.test`, i === 2 ? "API_PROVIDER" : "USER"],
+              [`${i}@billing.test`, i === 3 ? "ADMIN" : i === 2 ? "API_PROVIDER" : "USER"],
             )
           ).rows[0].id,
         ),
@@ -104,7 +104,7 @@ async function fixture() {
           next();
         },
         (_req, res, next) => {
-          if (res.locals.identity.user.id === users[2]) {
+          if (res.locals.identity.user.id === users[3]) {
             res.sendStatus(403);
             return;
           }
@@ -229,7 +229,7 @@ test("HTTP billing rejects unauthorized, forged/expired raw webhooks and client 
     await request(f.app).post(path).send({ planId: f.plans[1] }).expect(401);
     await request(f.app)
       .post(path)
-      .set("x-user", f.users[2]!)
+      .set("x-user", f.users[3]!)
       .send({ planId: f.plans[1] })
       .expect(403);
     await request(f.app)
