@@ -52,3 +52,13 @@ Không có bằng chứng deploy thực tế trong lượt này. Không gọi lo
 Bằng chứng cụ thể: `backend/integration/operations.test.ts`, `backend/test/upstream-signing.test.ts`, `frontend/src/pages/admin/Sprint4Operations.test.tsx`, regression monitoring offline ở `IntegrationConnections.test.tsx`. Có audit failure rollback, worker maintenance rollback/error heartbeat, replica lock, expired current_period_end khi expires_atNULL, reset không lặp, unauthorized/role/validation, forged/replayed/tampered signatures và gọi upstream trực tiếp401.
 
 Kết quả local 2026-11-04: **167/167 backend PASS** (65.50giây,0fail/skip); **360/360 frontend PASS**,33file (Node24); backend lint/build, frontend build và repo checker PASS. Frontend lint exit0 có warning (gồm set-state-in-effect tại màn hình monitoring); không nhận là không có warning. Sau đó bổ sung regression malformed INTEGER ID (trước sửa abc gây lỗi BigInt/500); unit RED→GREEN và8/8 focused operations/HMAC/validation PASS. Full suite CI sẽ được xác nhận trong PR trên commit cuối. Review maintainer và QA staging vẫn cần; chưa đóng issue #16. Feature freeze ngày09/11 là quyết định phát hành của Tech Lead, không tuyên bố trước khi có biên bản nghiệm thu.
+
+## Sửa cấu hình CD ngày 2026-11-05
+
+Workflow build frontend lấy URL từ **repository variable `STAGING_API_BASE_URL`** (GitHub Settings → Secrets and variables → Actions → Variables), rồi gọi `scripts/staging-api-origin.mjs` trước khi build/push image. Giá trị phải là HTTPS origin thật của backend, trùng `VITE_API_BASE_URL` trong `.env.staging` trên máy chủ. File `.env.staging.example` chỉ là mẫu, không được dùng làm cấu hình bundle. Khi URL thay đổi phải build lại image frontend; chỉ sửa env trên VPS không thay được URL đã nhúng trong JavaScript.
+
+Validator chuẩn hóa origin và từ chối giá trị rỗng, domain mẫu, localhost/IP hoặc origin có credential/path/query/fragment. Khi đã cấu hình secret deploy nhưng thiếu/sai biến URL, job image thất bại trước khi publish; không tự thay bằng domain mẫu. Nếu thiếu secret SSH thì workflow vẫn skip deploy theo thiết kế hiện có. Không khai báo biến URL giả chỉ để làm xanh workflow.
+
+Regression `backend/test/staging-api-origin.test.ts`: valid origin/normalization; missing/invalid/template input; CLI không fallback hoặc log credentials; workflow truyền đúng repository variable qua validator vào frontend Docker build. Trước sửa test wiring thất bại, sau sửa4/4đạt.
+
+Bản phân quyền của #92 được đưa vào chuỗi #93/#97: Provider có quyền Consumer theo Role Matrix, gồm billing/key/Gateway/usage/sandbox/report; Admin vẫn bị chặn và ownership vẫn áp dụng. Chưa có bằng chứng deploy thật trong lượt sửa này; vẫn cần host/domain/secret SSH và QA staging.

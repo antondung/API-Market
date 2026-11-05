@@ -4,6 +4,8 @@
 #
 # Máy chủ cần /opt/api-market/.env.staging, tạo từ .env.staging.example và
 # vượt qua scripts/staging-preflight.mjs. Workflow không ghi đè file này.
+# Repository variable STAGING_API_BASE_URL is the real public HTTPS backend origin.
+# It must match VITE_API_BASE_URL on the staging host; the example file is never build configuration.
 
 name: Trien khai staging
 
@@ -57,11 +59,13 @@ jobs:
           set -euo pipefail
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build moi image mot lan roi day len GHCR
+        env:
+          STAGING_API_BASE_URL: ${{ vars.STAGING_API_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
           owner="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          vite_url="$(awk -F= '$1=="VITE_API_BASE_URL"{print $2}' .env.staging.example)"
+          vite_url="$(node scripts/staging-api-origin.mjs)"
           build_one() {
             local name="$1" file="$2"
             shift 2
