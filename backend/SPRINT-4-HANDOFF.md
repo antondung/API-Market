@@ -66,3 +66,9 @@ Kết quả local ngày 2026-11-04: **160/160 test PASS, 0 fail, 0 skip** (97.98
 Rà soát riêng phát hiện hai lỗi High (reset quota qua immediate cancel/resubscribe và startup Docker với secret trống); đã sửa, thêm regression và được rà lại bằng đọc code, không còn Critical/High được nhận diện trong lượt đó. Kết luận vẫn cần CI và QA môi trường tích hợp.
 
 PR backend phải vào develop và ghi rõ phụ thuộc PR #91 còn mở. Chưa tuyên bố hoàn thành DoD toàn nhóm: cần maintainer review, CI xanh trên commit cuối, Hải Dương nối UI theo hợp đồng, Dũng/Danh cấu hình môi trường/job, Vân chạy QA tích hợp/staging. Không tự duyệt hoặc merge PR của mình, không tự đóng issue #17 trước các bước nghiệm thu này.
+
+## Bổ sung phân quyền ngày 2026-11-05
+
+Role Matrix `docs/02-role-va-phan-quyen.md` A.2/A.3 xác định Provider có quyền Consumer và quyền bán. Backend hiện cho `Consumer` và `Provider` dùng subscription/payment, key, sandbox/playground, usage/history và báo cáo API; Admin vẫn bị403 ở các API nghiệp vụ mua/dùng. Kiểm tra tài khoản trong transaction và xác thực API Key tại Gateway cũng chấp nhận USER/API_PROVIDER, không chỉ thay guard HTTP. `consumer_id` vẫn là `users.id` của người mua, không phải `api_providers.id`. Ownership, trạng thái user, quyền Admin và workspace Provider riêng được giữ nguyên.
+
+Regression thực PostgreSQL/Redis: Provider mua Free/Paid của API khác, checkout/replay/đổi gói, quản lý/rotate/revoke key và gọi Gateway; sandbox/playground/report; đọc usage của mình; tài khoản khác bị chặn truy cập tài nguyên, Admin và tài khoản bị khóa không được dùng luồng mua. Test: `backend/integration/provider-consumer-access.test.ts`. Trước sửa cả3test mới thất bại403; sau sửa cần đạt cùng full regression/CI. Không cần migration database hoặc thay role/tài khoản của người dùng.
