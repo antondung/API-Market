@@ -2,7 +2,7 @@
 
 on:
   pull_request:
-    branches: [main, develop, codex/sprint4-dung]
+    branches: [main, develop]
   push:
     branches: [main, develop]
   workflow_dispatch:
