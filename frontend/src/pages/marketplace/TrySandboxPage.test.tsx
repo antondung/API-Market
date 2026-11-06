@@ -29,6 +29,10 @@ vi.mock('../../context/AuthContext', () => ({
     currentUser: mockCurrentUser,
     isAuthenticated: Boolean(mockCurrentUser),
   }),
+  useOptionalAuth: () => ({
+    currentUser: mockCurrentUser,
+    isAuthenticated: Boolean(mockCurrentUser),
+  }),
 }));
 
 const mockT = (key: string) => key;

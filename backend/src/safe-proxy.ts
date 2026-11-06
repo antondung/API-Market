@@ -3,6 +3,7 @@ import https, { type RequestOptions as HttpsRequestOptions } from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import { ApiError } from './auth.js';
+import { signedUpstreamHeaders, originSigningKey } from './upstream-signing.js';
 
 type Address = { address: string; family: number };
 type RequestFactory = (options: HttpsRequestOptions & { autoSelectFamily: false }, callback: (response: IncomingMessage) => void) => ClientRequest;
@@ -47,7 +48,9 @@ export class SafeProxy {
   private readonly lookup: (hostname: string) => Promise<Address[]>;
   private readonly request: RequestFactory;
   private readonly prepared = new WeakSet<Prepared>();
-  constructor(dependencies: { lookup?: (hostname: string) => Promise<Address[]>; request?: RequestFactory } = {}) {
+  private readonly signingSecret?: string;
+  constructor(dependencies: { lookup?: (hostname: string) => Promise<Address[]>; request?: RequestFactory; signingSecret?: string } = {}) {
+    this.signingSecret = dependencies.signingSecret;
     this.lookup = dependencies.lookup ?? (hostname => lookup(hostname, { all: true, verbatim: true }));
     this.request = dependencies.request ?? ((options, callback) => (options.protocol === 'https:' ? https : http).request(options, callback));
   }
@@ -95,6 +98,7 @@ export class SafeProxy {
     if (!this.prepared.delete(target)) throw ssrf();
     const remaining = target.deadline - performance.now();
     if (remaining <= 0) throw timeout();
+    if (this.signingSecret) Object.assign(target.headers, signedUpstreamHeaders(originSigningKey(this.signingSecret,target.url.origin), target.method, target.url, target.body));
     return new Promise<{ status: number; headers: Record<string, string>; body: string; bodyEncoding: 'utf8' | 'base64'; latencyMs: number }>((resolve, reject) => {
       let settled = false, req: ClientRequest | undefined, response: IncomingMessage | undefined;
       const fail = (error: ApiError) => { if (!settled) { settled = true; clearTimeout(timer); response?.destroy(); req?.destroy(); reject(error); } };

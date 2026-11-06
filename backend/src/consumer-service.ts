@@ -14,7 +14,7 @@ async function consumerTransaction<T>(pool: Pool, userId: string, work: (client:
     await client.query('BEGIN');
     // Serialize this Consumer's key/grant mutations; never hold this lock across network I/O.
     const user = (await client.query(`SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id
-      WHERE u.id=$1 AND u.is_active AND r.name='USER' FOR UPDATE OF u`, [userId])).rows[0];
+      WHERE u.id=$1 AND u.is_active AND r.name IN ('USER','API_PROVIDER') FOR UPDATE OF u`, [userId])).rows[0];
     if (!user) throw new ApiError(403, 'FORBIDDEN', 'Active Consumer account required');
     const result = await work(client);
     await client.query('COMMIT');
@@ -111,7 +111,7 @@ export class ApiKeyService {
     const result = await this.pool.query(`UPDATE api_keys k SET last_used_at=NOW()
       FROM users u, roles r, apis a, api_providers p, users pu
       WHERE k.key_hash=$1 AND k.api_id=$2 AND k.is_active AND k.revoked_at IS NULL
-        AND u.id=k.user_id AND u.is_active AND r.id=u.role_id AND r.name='USER'
+        AND u.id=k.user_id AND u.is_active AND r.id=u.role_id AND r.name IN ('USER','API_PROVIDER')
         AND a.id=k.api_id AND a.status='Published' AND p.id=a.provider_id AND pu.id=p.user_id AND pu.is_active
       RETURNING k.id::text, k.user_id::text AS "userId", k.api_id::text AS "apiId"`, [secretHash(key), apiId]);
     if (!result.rows[0]) throw denied();

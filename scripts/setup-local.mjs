@@ -6,7 +6,7 @@ if (!existsSync('.env')) {
   const secret = () => randomBytes(32).toString('base64url');
   writeFileSync('.env', [
     'AUTH_STORE=postgres', 'DATABASE_URL=postgresql://postgres@127.0.0.1:5432/api_market_dev', 'PORT=3000', 'HOST=127.0.0.1',
-    `JWT_SECRET=${secret()}`, '',
+    `JWT_SECRET=${secret()}`, `GATEWAY_UPSTREAM_SECRET=${secret()}`, '',
   ].join('\n'), { flag: 'wx', mode: 0o600 });
   console.log('Created ignored .env with random local secrets.');
 }

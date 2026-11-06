@@ -25,6 +25,9 @@ import {
   generateCurlSnippet,
   generateFetchSnippet,
   generatePythonSnippet,
+  buildGatewayPath,
+  buildEndpointSnippetOptions,
+  isValidPositiveIntegerApiId,
 } from '../../utils/apiSnippetGenerator';
 
 export const ApiDetailPage: React.FC = () => {
@@ -114,6 +117,48 @@ export const ApiDetailPage: React.FC = () => {
     if (!selectedVersionId) return api.endpoints;
     return api.endpoints.filter(ep => ep.versionId === selectedVersionId);
   }, [api, selectedVersionId]);
+
+  const [selectedSnippetEndpointId, setSelectedSnippetEndpointId] = useState<string>('');
+
+  const activeSnippetEndpoint = useMemo(() => {
+    if (!currentEndpoints || currentEndpoints.length === 0) return null;
+    return (
+      currentEndpoints.find(ep => ep.id === selectedSnippetEndpointId) ||
+      currentEndpoints[0]
+    );
+  }, [currentEndpoints, selectedSnippetEndpointId]);
+
+  const snippetBaseUrl = useMemo(() => {
+    try {
+      if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) {
+        return String((import.meta as any).env.VITE_API_BASE_URL).replace(/\/+$/, '');
+      }
+    } catch {
+      // ignore
+    }
+    return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://api.apihub.vn';
+  }, []);
+
+  const gatewaySnippetPath = useMemo(() => {
+    if (!api) return '/';
+    return buildGatewayPath(api.id, activeSnippetEndpoint?.path || '/');
+  }, [api, activeSnippetEndpoint]);
+
+  const snippetOptions = useMemo(() => {
+    if (!api || !activeSnippetEndpoint) {
+      return {
+        method: 'GET',
+        urlPath: gatewaySnippetPath,
+        baseUrl: snippetBaseUrl,
+        apiKey: 'YOUR_API_KEY',
+        includeTemplateNotice: !isValidPositiveIntegerApiId(api?.id),
+      };
+    }
+    return buildEndpointSnippetOptions(api.id, activeSnippetEndpoint, {
+      baseUrl: snippetBaseUrl,
+      apiKey: 'YOUR_API_KEY',
+    });
+  }, [api, activeSnippetEndpoint, gatewaySnippetPath, snippetBaseUrl]);
 
   // Filter documentation for selected version strictly without cross-version fallback
   const currentDoc = useMemo<ProviderDocumentation | null>(() => {
@@ -668,7 +713,7 @@ export const ApiDetailPage: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2 text-body-sm font-medium text-on-surface">
                           <span className="material-symbols-outlined text-primary text-[18px]">speed</span>
-                          <span>{plan.rateLimit} {t('req/sec rate limit')}</span>
+                          <span>{plan.rateLimit} req/phút</span>
                         </div>
                       </div>
                     </div>
@@ -779,16 +824,57 @@ export const ApiDetailPage: React.FC = () => {
             </p>
           </div>
 
+          {/* Endpoint Selector */}
+          {currentEndpoints.length > 0 ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-surface-container border border-outline-variant/30">
+              <div>
+                <label htmlFor="endpoint-snippet-select" className="text-label-md font-semibold text-on-surface block mb-1">
+                  {t('Chọn Endpoint cần gọi')}
+                </label>
+                <p className="text-body-xs text-on-surface-variant">
+                  {t('Mã nguồn mẫu tự động điều chỉnh theo phương thức HTTP và đường dẫn Gateway.')}
+                </p>
+              </div>
+              <select
+                id="endpoint-snippet-select"
+                aria-label={t('Chọn Endpoint cần gọi')}
+                value={activeSnippetEndpoint?.id || ''}
+                onChange={(e) => setSelectedSnippetEndpointId(e.target.value)}
+                className="px-3 py-2 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm font-code-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {currentEndpoints.map((ep) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.method.toUpperCase()} {ep.path}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 text-body-sm text-on-surface-variant">
+              {t('Chưa có endpoint nào được cấu hình cho phiên bản này.')}
+            </div>
+          )}
+
+          {/* Gateway Routing Contract Notice */}
+          <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-body-xs text-on-surface">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[20px]">alt_route</span>
+              <div>
+                <span className="font-semibold text-on-surface">{t('Gateway Reverse Proxy Route:')} </span>
+                <code className="font-code-sm font-bold text-primary">{snippetOptions.urlPath}</code>
+              </div>
+            </div>
+            <span className="font-code-sm text-on-surface-variant bg-surface-container-high px-2.5 py-1 rounded">
+              Header: <strong className="text-on-surface">X-API-Key: {snippetOptions.apiKey}</strong>
+            </span>
+          </div>
+
           <div>
             <h4 className="text-body-md font-bold text-on-surface mb-2">cURL</h4>
             <CodeBlock
               language="bash"
-              code={generateCurlSnippet({
-                method: currentEndpoints[0]?.method || 'GET',
-                urlPath: currentEndpoints[0]?.path || '/endpoint',
-                apiKey: 'YOUR_API_KEY_HERE',
-                includeTemplateNotice: true,
-              })}
+              title="cURL (Gateway Proxy)"
+              code={generateCurlSnippet(snippetOptions)}
             />
           </div>
 
@@ -796,12 +882,8 @@ export const ApiDetailPage: React.FC = () => {
             <h4 className="text-body-md font-bold text-on-surface mb-2">JavaScript (fetch)</h4>
             <CodeBlock
               language="javascript"
-              code={generateFetchSnippet({
-                method: currentEndpoints[0]?.method || 'GET',
-                urlPath: currentEndpoints[0]?.path || '/endpoint',
-                apiKey: 'YOUR_API_KEY_HERE',
-                includeTemplateNotice: true,
-              })}
+              title="Fetch API (Node.js / Browser)"
+              code={generateFetchSnippet(snippetOptions)}
             />
           </div>
 
@@ -809,12 +891,8 @@ export const ApiDetailPage: React.FC = () => {
             <h4 className="text-body-md font-bold text-on-surface mb-2">Python (requests)</h4>
             <CodeBlock
               language="python"
-              code={generatePythonSnippet({
-                method: currentEndpoints[0]?.method || 'GET',
-                urlPath: currentEndpoints[0]?.path || '/endpoint',
-                apiKey: 'YOUR_API_KEY_HERE',
-                includeTemplateNotice: true,
-              })}
+              title="Python Requests"
+              code={generatePythonSnippet(snippetOptions)}
             />
           </div>
         </div>

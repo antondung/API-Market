@@ -78,12 +78,12 @@ describe('PricingManagementPage component tests', () => {
     expect(screen.getByText(/Gói Free/i)).toBeDefined();
     expect(screen.getByText(/Miễn phí/i)).toBeDefined();
     expect(screen.getByText(/1[.,]000 lượt\/tháng/i)).toBeDefined();
-    expect(screen.getByText(/^5 RPS$/)).toBeDefined();
+    expect(screen.getByText(/^5 req\/phút$/)).toBeDefined();
 
     expect(screen.getByText(/Gói Basic/i)).toBeDefined();
     expect(screen.getByText(/USD 49/i)).toBeDefined();
     expect(screen.getByText(/50[.,]000 lượt\/tháng/i)).toBeDefined();
-    expect(screen.getByText(/^25 RPS$/)).toBeDefined();
+    expect(screen.getByText(/^25 req\/phút$/)).toBeDefined();
   });
 
   it('enforces Free plan must have price 0 and creates Pro plan', async () => {

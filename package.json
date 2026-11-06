@@ -7,6 +7,7 @@
     "node": ">=22.14.0"
   },
   "scripts": {
+    "benchmark:gateway": "node scripts/run-tests.mjs --benchmark",
     "dev": "node --env-file-if-exists=.env --import tsx backend/src/server.ts",
     "provider:import": "node --import tsx backend/src/provider-import-cli.ts",
     "build": "tsc -p tsconfig.json",
@@ -16,10 +17,10 @@
     "setup": "node scripts/setup-local.mjs",
     "db:migrate": "node --env-file-if-exists=.env --import tsx backend/src/database-cli.ts",
     "db:seed": "node --env-file-if-exists=.env --import tsx backend/src/database-cli.ts --seed",
-    "demo:apis": "node mock-services/server.mjs all",
-    "demo:weather": "node mock-services/server.mjs weather",
-    "demo:currency": "node mock-services/server.mjs currency",
-    "demo:catalog": "node mock-services/server.mjs catalog"
+    "demo:apis": "node --env-file-if-exists=.env mock-services/server.mjs all",
+    "demo:weather": "node --env-file-if-exists=.env mock-services/server.mjs weather",
+    "demo:currency": "node --env-file-if-exists=.env mock-services/server.mjs currency",
+    "demo:catalog": "node --env-file-if-exists=.env mock-services/server.mjs catalog"
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^13.0.0",
@@ -31,6 +32,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.4.0",
     "pg": "^8.23.1",
+    "redis": "^5.12.1",
     "swagger-ui-express": "^5.0.1",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"

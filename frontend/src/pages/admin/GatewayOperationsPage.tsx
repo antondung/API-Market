@@ -1,22 +1,89 @@
-import React from 'react';
-import { useLanguage } from '../../i18n';
-
+import React, { useEffect, useState } from "react";
+import { useLanguage } from "../../i18n";
+import {
+  operations,
+  type OperationsSnapshot,
+} from "../../services/operationsApi";
+import { formatBackendErrorMessage } from "../../services/authApi";
 export const GatewayOperationsPage: React.FC = () => {
   const { t } = useLanguage();
-  return <div className="space-y-8">
-    <div className="pb-6 border-b border-outline-variant/30">
-      <h1 className="text-headline-lg font-bold">{t('System Monitoring & API Gateway Operations')}</h1>
-      <p className="text-body-md text-on-surface-variant">{t('Chưa có kết nối giám sát cho các dịch vụ bên dưới.')}</p>
+  const [data, setData] = useState<OperationsSnapshot>(),
+    [error, setError] = useState(""),
+    [version, setVersion] = useState(0),
+    [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const abort = new AbortController();
+    let running = false;
+    const load = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const result = await operations(abort.signal);
+        if (!abort.signal.aborted) {
+          setData(result);
+          setError("");
+        }
+      } catch (e) {
+        if (!abort.signal.aborted) {
+          setData(undefined);
+          setError(formatBackendErrorMessage(e));
+        }
+      } finally {
+        running = false;
+        if (!abort.signal.aborted) setLoading(false);
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 30000);
+    return () => {
+      abort.abort();
+      clearInterval(timer);
+    };
+  }, [version]);
+  return (
+    <div className="space-y-6">
+      <h1 className="text-headline-lg font-bold">
+        {t("System Monitoring & API Gateway Operations")}
+      </h1>
+      <button
+        onClick={() => {
+          setLoading(true);
+          setVersion((v) => v + 1);
+        }}
+        disabled={loading}
+      >
+        {t("Refresh")}
+      </button>
+      {loading && <p role="status">{t("Loading...")}</p>}
+      {error && <p role="alert">{error}</p>}
+      {!data && !loading && <p>{t("Chưa có dữ liệu giám sát")}</p>}
+      {data && (
+        <>
+          <p>
+            {t("Last checked")}: {new Date(data.checkedAt).toLocaleString()}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[
+              ["Control Plane", data.controlPlane],
+              ["PostgreSQL", data.postgres],
+              ["Redis", data.redis],
+              ["Data Plane Gateway", data.gateway],
+              ["Background Workers", data.worker.status],
+            ].map(([name, status]) => (
+              <section key={name} className="p-6 rounded-xl border">
+                <h2 className="font-bold">{name}</h2>
+                <p>{t(status ?? "unknown")}</p>
+              </section>
+            ))}
+          </div>
+          <p>
+            {t("Worker last success")}:{" "}
+            {data.worker.last_succeeded_at
+              ? new Date(data.worker.last_succeeded_at).toLocaleString()
+              : t("Chưa có dữ liệu giám sát")}
+          </p>
+        </>
+      )}
     </div>
-    <div role="status" className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10">
-      {t('Trạng thái chưa được xác minh. Trang này chưa có dữ liệu health, latency hoặc lịch chạy worker từ backend.')}
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {['Control Plane', 'PostgreSQL', 'Data Plane Gateway', 'Redis', 'Background Workers'].map(name => <section key={name}
-        className="p-6 rounded-2xl bg-surface-container-low border border-outline-variant/30">
-        <h2 className="text-title-md font-bold">{name}</h2>
-        <p className="mt-3 text-on-surface-variant">{t('Chưa có dữ liệu giám sát')}</p>
-      </section>)}
-    </div>
-  </div>;
+  );
 };

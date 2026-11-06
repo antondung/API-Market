@@ -30,6 +30,14 @@ import type { ReportService } from './report-service.js';
 import { reportConsumerRouter, reportAdminRouter } from './report-router.js';
 import { marketplaceId } from './marketplace-service.js';
 import { consumerPaths } from './consumer-contract.js';
+import type {BillingService} from './billing-service.js';
+import {billingRouter,webhookRouter} from './billing-router.js';
+import type {UsageAnalytics} from './usage-analytics.js';
+import {usageConsumerRouter,usageProviderRouter} from './usage-router.js';
+import {sprint4Paths} from './sprint4-contract.js';
+import {operationsRouter, type OperationsHealth} from './operations-router.js';
+import type {SubscriptionAdminService} from './subscription-admin-service.js';
+import {operationsPaths} from './operations-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -57,7 +65,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics; operations?:{admin:SubscriptionAdminService;health:OperationsHealth} }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -98,6 +106,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before
   // the JSON parser — otherwise express.json() consumes the stream and the upstream receives
   // an empty payload.
+  if(options.billing)app.use('/api/consumer/subscriptions/sandbox-webhook',webhookRouter(options.billing));
   app.use(express.json({ limit: '16kb' }));
   app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
   const baseDocument = options.provider ? {
@@ -107,7 +116,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   } : openapi;
   const document = { ...baseDocument,
     paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
-      ...(options.reports ? reportPaths : {}) } };
+      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}),...(options.operations?operationsPaths:{}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -121,20 +130,25 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     res.locals.identity = await auth.authenticate(match[1]);
     next();
   };
-  const requireRole = (role: Role): RequestHandler => (_req, res, next) => {
-    if (res.locals.identity.user.role !== role) throw new ApiError(403, 'FORBIDDEN', 'Insufficient permissions');
+  const requireRole = (...roles: Role[]): RequestHandler => (_req, res, next) => {
+    if (!roles.includes(res.locals.identity.user.role)) throw new ApiError(403, 'FORBIDDEN', 'Insufficient permissions');
     next();
   };
+  // Role Matrix A.2: Provider retains Consumer capabilities; Admin is not a buyer.
+  const requireBuyer = requireRole('Consumer', 'Provider');
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
+  if(options.billing)app.use('/api/consumer/subscriptions',billingRouter(options.billing,requireAuth,requireBuyer));
+  if(options.usage){app.use('/api/consumer/usage',usageConsumerRouter(options.usage,requireAuth,requireBuyer));app.use('/api/provider/analytics',usageProviderRouter(options.usage,requireAuth,requireRole('Provider')));}
+  if(options.operations)app.use('/api/admin',operationsRouter(options.operations.admin,options.operations.health,requireAuth,requireRole('Admin')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
-  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireRole('Consumer')));
+  if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireBuyer));
   // US-15: Consumers file reports; Admins decide them.
   if (options.reports) {
-    app.use('/api/consumer/reports', reportConsumerRouter(options.reports, requireAuth, requireRole('Consumer')));
+    app.use('/api/consumer/reports', reportConsumerRouter(options.reports, requireAuth, requireBuyer));
     app.use('/api/admin/reports', reportAdminRouter(options.reports, requireAuth, requireRole('Admin')));
   }
   const playground = options.playground ?? (options.marketplace ? new PlaygroundService(options.marketplace.pool) : undefined);
-  if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireRole('Consumer'),
+  if (playground) app.post('/api/marketplace/apis/:id/playground', requireAuth, requireBuyer,
     rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (_req, res) => res.locals.identity.user.id,
       standardHeaders: 'draft-8', legacyHeaders: false,
       handler: (_req, _res, next) => next(new ApiError(429, 'RATE_LIMITED', 'Too many Playground requests')) }),

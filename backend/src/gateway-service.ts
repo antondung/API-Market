@@ -3,6 +3,7 @@ import { ApiError } from './auth.js';
 import { RoutingRegistry } from './routing-registry.js';
 import { ApiKeyService } from './consumer-service.js';
 import { SafeProxy, type ProxyInput } from './safe-proxy.js';
+import type { GatewayAdmission } from './gateway-entitlement.js';
 
 export interface GatewayRequest {
   method: string;
@@ -64,7 +65,7 @@ export class GatewayService {
   private readonly keys: ApiKeyService;
   private readonly proxy: UpstreamProxy;
 
-  constructor(readonly pool: Pool, keys = new ApiKeyService(pool), proxy: UpstreamProxy = new SafeProxy()) {
+  constructor(readonly pool: Pool, keys = new ApiKeyService(pool), proxy: UpstreamProxy = new SafeProxy(), private readonly admission?: GatewayAdmission) {
     this.registry = new RoutingRegistry(pool);
     this.keys = keys;
     this.proxy = proxy;
@@ -76,18 +77,19 @@ export class GatewayService {
    */
   private async registeredEndpoint(apiId: string, method: string, path: string) {
     const result = await this.pool.query(
-      `SELECT e.path FROM api_endpoints e JOIN api_versions v ON v.id=e.version_id
+      `SELECT e.id::text,e.path FROM api_endpoints e JOIN api_versions v ON v.id=e.version_id
        WHERE e.api_id=$1 AND e.method=$2 AND v.api_id=$1`,
       [apiId, method]
     );
-    for (const row of result.rows as { path: string }[]) {
+    for (const row of result.rows as { id:string; path: string }[]) {
       const params = matchTemplate(row.path, path);
-      if (params) return { registeredPath: row.path, pathParams: params };
+      if (params) return { id:row.id,registeredPath: row.path, pathParams: params };
     }
     throw new ApiError(404, 'ENDPOINT_NOT_FOUND', 'Endpoint is not registered for this API');
   }
 
   async forward(apiKey: string, apiId: string, request: GatewayRequest): Promise<GatewayResponse> {
+    const started=performance.now();
     const method = request.method.toUpperCase();
     if (!METHODS.has(method)) throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Unsupported method');
 
@@ -98,7 +100,7 @@ export class GatewayService {
 
     // Authenticate before resolving the route so an unauthenticated caller cannot probe which
     // APIs exist.
-    await this.keys.authenticate(apiKey, apiId);
+    const identity=await this.keys.authenticate(apiKey, apiId);
     const matched = await this.registeredEndpoint(apiId, method, path);
     const route = await this.registry.resolve(apiId);
 
@@ -119,8 +121,19 @@ export class GatewayService {
       body: body ? asJson(body) : undefined,
     }, route.timeoutMs);
 
-    const result = await this.proxy.execute(target);
-    return { status: result.status, headers: result.headers, body: Buffer.from(result.body, result.bodyEncoding) };
+    if(!this.admission)throw new ApiError(503,'QUOTA_UNAVAILABLE','Subscription metering is unavailable');
+    const reservation=await this.admission.reserve(identity,matched.id);
+    const upstreamStarted=performance.now();let statusCode=502,errorCode:string|undefined,responseBytes=0;
+    try {
+      const result = await this.proxy.execute(target);statusCode=result.status;
+      const body=Buffer.from(result.body,result.bodyEncoding);responseBytes=body.length;
+      return { status:result.status,headers:result.headers,body };
+    }catch(error){if(error instanceof ApiError){statusCode=error.status;errorCode=error.code;}throw error;}
+    finally {
+      const end=performance.now(),latencyMs=Math.ceil(end-started),upstreamLatencyMs=Math.floor(end-upstreamStarted);
+      try{await reservation.complete({statusCode,errorCode,responseBytes,latencyMs,upstreamLatencyMs,gatewayOverheadMs:Math.max(0,latencyMs-upstreamLatencyMs)});}
+      catch{console.error('Usage completion pending recovery');}
+    }
   }
 }
 

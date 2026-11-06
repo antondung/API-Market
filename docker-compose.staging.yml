@@ -1,0 +1,28 @@
+# Requires Docker Compose >=2.24.4 for !override / !reset.
+# Supply TLS/reverse proxy outside this stack. Only loopback ports are published.
+services:
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-antondung/api-market}/api-market-backend:${IMAGE_TAG:-staging}
+    environment:
+      NODE_ENV: production
+    ports: !override
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+  migrate:
+    image: ghcr.io/${GHCR_OWNER:-antondung/api-market}/api-market-migrate:${IMAGE_TAG:-staging}
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:-antondung/api-market}/api-market-frontend:${IMAGE_TAG:-staging}
+    ports: !override
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+  weather:
+    image: ghcr.io/${GHCR_OWNER:-antondung/api-market}/api-market-mock:${IMAGE_TAG:-staging}
+    ports: !reset []
+  currency:
+    image: ghcr.io/${GHCR_OWNER:-antondung/api-market}/api-market-mock:${IMAGE_TAG:-staging}
+    ports: !reset []
+  catalog:
+    image: ghcr.io/${GHCR_OWNER:-antondung/api-market}/api-market-mock:${IMAGE_TAG:-staging}
+    ports: !reset []

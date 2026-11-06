@@ -68,6 +68,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Install Redis for real metering integration tests
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+      - name: Validate staging Compose template
+        run: docker compose --env-file .env.staging.example -f docker-compose.yml -f docker-compose.staging.yml --profile frontend config --quiet
       - run: npm run lint --if-present
       - run: npm test --if-present
       - run: npm run build --if-present

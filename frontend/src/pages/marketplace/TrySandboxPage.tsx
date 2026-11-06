@@ -833,7 +833,7 @@ export const TrySandboxPage: React.FC = () => {
               </h3>
             </div>
             <p className="text-body-sm text-on-surface-variant">
-              {t('Mở rộng hạn mức lên')} <strong>{firstPaidPlan.quota.toLocaleString()} {t('requests / month')}</strong> {t('với tốc độ')} {firstPaidPlan.rateLimit} req/giây.
+              {t('Mở rộng hạn mức lên')} <strong>{firstPaidPlan.quota.toLocaleString()} {t('requests / month')}</strong> {t('với tốc độ')} {firstPaidPlan.rateLimit} req/phút.
             </p>
           </div>
           <Button

@@ -11,9 +11,9 @@ export const AnalyticsHealthPage: React.FC = () => {
   const client4xx = requestLogs.filter(l => l.statusCode >= 400 && l.statusCode < 500).length;
   const server5xx = requestLogs.filter(l => l.statusCode >= 500).length;
 
-  const successRate = totalLogs > 0 ? ((success2xx / totalLogs) * 100).toFixed(2) + '%' : '100.0%';
-  const clientErrorRate = totalLogs > 0 ? ((client4xx / totalLogs) * 100).toFixed(2) + '%' : '0.00%';
-  const serverErrorRate = totalLogs > 0 ? ((server5xx / totalLogs) * 100).toFixed(2) + '%' : '0.00%';
+  const successRate = totalLogs > 0 ? ((success2xx / totalLogs) * 100).toFixed(2) + '%' : '—';
+  const clientErrorRate = totalLogs > 0 ? ((client4xx / totalLogs) * 100).toFixed(2) + '%' : '—';
+  const serverErrorRate = totalLogs > 0 ? ((server5xx / totalLogs) * 100).toFixed(2) + '%' : '—';
 
   return (
     <div className="space-y-8">
@@ -25,10 +25,10 @@ export const AnalyticsHealthPage: React.FC = () => {
       </div>
 
       <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-start gap-3">
-        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">query_stats</span>
+        <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">info</span>
         <div className="text-body-sm text-on-surface-variant leading-relaxed">
-          <strong className="text-on-surface">{t('Telemetry Preview (Mô phỏng đo kiểm): ')}</strong>
-          {t('Các chỉ số độ trễ và phân phối mã phản hồi hiển thị từ phiên mô phỏng cục bộ. Hệ thống sẽ tích hợp dữ liệu chuỗi thời gian thực từ Gateway OpenTelemetry/Prometheus.')}
+          <strong className="text-on-surface">{t('Trạng thái giám sát (Honest Observability): ')}</strong>
+          {t('Gateway hiện chỉ cung cấp số liệu tổng hợp (tổng request, tỷ lệ lỗi, độ trễ trung bình). Các chỉ số phân vị (P50/P90/P95/P99) và phân tán theo vùng chưa có pipeline telemetry đo kiểm thực tế, hiển thị theo mục tiêu SLA thiết kế.')}
         </div>
       </div>
 
@@ -36,38 +36,38 @@ export const AnalyticsHealthPage: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-surface-container-low border border-outline-variant/30 p-5 rounded-2xl shadow-sm">
           <span className="text-label-md font-semibold text-on-surface-variant uppercase block mb-1">{t('P50 Median Latency')}</span>
-          <div className="text-3xl font-extrabold text-emerald-600 font-code-md">
-            {totalLogs > 0 ? '18 ms' : '< 20 ms'}
+          <div className="text-lg font-bold text-on-surface-variant/80 font-code-md my-1">
+            {t('Chưa có dữ liệu thực')}
           </div>
-          <span className="text-body-sm text-on-surface-variant mt-1 block">
-            {totalLogs > 0 ? t('Measured latency') : t('Target SLA')}
+          <span className="text-body-sm text-primary font-medium mt-1 block">
+            {t('Target SLA: < 20 ms')}
           </span>
         </div>
         <div className="bg-surface-container-low border border-outline-variant/30 p-5 rounded-2xl shadow-sm">
           <span className="text-label-md font-semibold text-on-surface-variant uppercase block mb-1">{t('P90 Tail Latency')}</span>
-          <div className="text-3xl font-extrabold text-emerald-600 font-code-md">
-            {totalLogs > 0 ? '28 ms' : '< 30 ms'}
+          <div className="text-lg font-bold text-on-surface-variant/80 font-code-md my-1">
+            {t('Chưa có dữ liệu thực')}
           </div>
-          <span className="text-body-sm text-on-surface-variant mt-1 block">
-            {totalLogs > 0 ? t('Tail latency') : t('Target SLA')}
+          <span className="text-body-sm text-primary font-medium mt-1 block">
+            {t('Target SLA: < 30 ms')}
           </span>
         </div>
         <div className="bg-surface-container-low border border-outline-variant/30 p-5 rounded-2xl shadow-sm">
           <span className="text-label-md font-semibold text-on-surface-variant uppercase block mb-1">{t('P95 SLA Boundary')}</span>
-          <div className="text-3xl font-extrabold text-emerald-600 font-code-md">
-            {totalLogs > 0 ? '42 ms' : '< 50 ms'}
+          <div className="text-lg font-bold text-on-surface-variant/80 font-code-md my-1">
+            {t('Chưa có dữ liệu thực')}
           </div>
-          <span className="text-body-sm text-on-surface-variant mt-1 block">
-            {t('Guaranteed SLA: 100ms')}
+          <span className="text-body-sm text-primary font-medium mt-1 block">
+            {t('Target SLA: < 50 ms')}
           </span>
         </div>
         <div className="bg-surface-container-low border border-outline-variant/30 p-5 rounded-2xl shadow-sm">
           <span className="text-label-md font-semibold text-on-surface-variant uppercase block mb-1">{t('P99 Worst Case')}</span>
-          <div className="text-3xl font-extrabold text-primary font-code-md">
-            {totalLogs > 0 ? '64 ms' : '< 100 ms'}
+          <div className="text-lg font-bold text-on-surface-variant/80 font-code-md my-1">
+            {t('Chưa có dữ liệu thực')}
           </div>
-          <span className="text-body-sm text-on-surface-variant mt-1 block">
-            {totalLogs > 0 ? t('Measured ceiling') : t('Ceiling SLA')}
+          <span className="text-body-sm text-primary font-medium mt-1 block">
+            {t('Target SLA: < 100 ms')}
           </span>
         </div>
       </div>
@@ -80,7 +80,9 @@ export const AnalyticsHealthPage: React.FC = () => {
             <span className="material-symbols-outlined text-emerald-600">check_circle</span>
           </div>
           <div className="text-4xl font-extrabold text-emerald-600 font-code-md mb-2">{successRate}</div>
-          <p className="text-body-sm text-on-surface-variant">{t('Valid requests delivered with zero upstream dropped packets.')}</p>
+          <p className="text-body-sm text-on-surface-variant">
+            {totalLogs > 0 ? t('Tỷ lệ thành công dựa trên phiên làm việc hiện tại.') : t('Chưa ghi nhận request trong phiên làm việc.')}
+          </p>
         </div>
 
         <div className="bg-surface-container-low border border-outline-variant/30 p-6 rounded-2xl shadow-sm">
@@ -89,7 +91,9 @@ export const AnalyticsHealthPage: React.FC = () => {
             <span className="material-symbols-outlined text-amber-600">warning</span>
           </div>
           <div className="text-4xl font-extrabold text-amber-600 font-code-md mb-2">{clientErrorRate}</div>
-          <p className="text-body-sm text-on-surface-variant">{t('Primarily rate-limited throttles (429) and invalid JSON syntax (400).')}</p>
+          <p className="text-body-sm text-on-surface-variant">
+            {totalLogs > 0 ? t('Tỷ lệ lỗi client (4xx) trong phiên làm việc.') : t('Chưa ghi nhận request trong phiên làm việc.')}
+          </p>
         </div>
 
         <div className="bg-surface-container-low border border-outline-variant/30 p-6 rounded-2xl shadow-sm">
@@ -98,36 +102,51 @@ export const AnalyticsHealthPage: React.FC = () => {
             <span className="material-symbols-outlined text-error">error</span>
           </div>
           <div className="text-4xl font-extrabold text-error font-code-md mb-2">{serverErrorRate}</div>
-          <p className="text-body-sm text-on-surface-variant">{t('Exceptional reliability with instantaneous failover routing.')}</p>
+          <p className="text-body-sm text-on-surface-variant">
+            {totalLogs > 0 ? t('Tỷ lệ sự cố upstream (5xx) trong phiên làm việc.') : t('Chưa ghi nhận request trong phiên làm việc.')}
+          </p>
         </div>
       </div>
 
       {/* Regional Edge Performance */}
       <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
-        <h3 className="text-headline-sm font-bold text-on-surface mb-4">{t('Regional Edge Latencies (Gateway Overhead: 1.8ms)')}</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-headline-sm font-bold text-on-surface">
+            {t('Regional Edge Latencies (Mục tiêu SLA — Chưa có dữ liệu thực)')}
+          </h3>
+          <span className="text-xs px-2.5 py-1 rounded-full bg-outline-variant/20 text-on-surface-variant font-medium">
+            {t('Roadmap / Đang phát triển')}
+          </span>
+        </div>
+        <p className="text-body-sm text-on-surface-variant mb-4">
+          {t('Hệ thống Gateway hiện chưa kích hoạt phân tán đa vùng. Các vùng bên dưới thể hiện mục tiêu SLA thiết kế khi triển khai multi-region.')}
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-surface-container rounded-xl border border-outline-variant/20">
             <div className="flex justify-between items-center mb-1">
               <span className="font-semibold text-on-surface">AP-Southeast (Singapore / Hanoi)</span>
-              <span className="font-code-md font-bold text-emerald-600">12 ms</span>
+              <span className="font-code-md text-sm font-medium text-on-surface-variant">{t('Chưa có dữ liệu')}</span>
             </div>
-            <span className="text-[12px] text-on-surface-variant">{t('Direct fiber connection to edge node')}</span>
+            <span className="text-[12px] text-primary font-medium block mb-1">{t('Mục tiêu SLA: < 15 ms')}</span>
+            <span className="text-[12px] text-on-surface-variant">{t('Direct fiber connection to edge node (dự kiến)')}</span>
           </div>
 
           <div className="p-4 bg-surface-container rounded-xl border border-outline-variant/20">
             <div className="flex justify-between items-center mb-1">
               <span className="font-semibold text-on-surface">US-East (N. Virginia)</span>
-              <span className="font-code-md font-bold text-emerald-600">18 ms</span>
+              <span className="font-code-md text-sm font-medium text-on-surface-variant">{t('Chưa có dữ liệu')}</span>
             </div>
-            <span className="text-[12px] text-on-surface-variant">{t('Multi-zone cluster redundancy')}</span>
+            <span className="text-[12px] text-primary font-medium block mb-1">{t('Mục tiêu SLA: < 20 ms')}</span>
+            <span className="text-[12px] text-on-surface-variant">{t('Multi-zone cluster redundancy (dự kiến)')}</span>
           </div>
 
           <div className="p-4 bg-surface-container rounded-xl border border-outline-variant/20">
             <div className="flex justify-between items-center mb-1">
               <span className="font-semibold text-on-surface">EU-Central (Frankfurt)</span>
-              <span className="font-code-md font-bold text-emerald-600">24 ms</span>
+              <span className="font-code-md text-sm font-medium text-on-surface-variant">{t('Chưa có dữ liệu')}</span>
             </div>
-            <span className="text-[12px] text-on-surface-variant">{t('GDPR isolated ingress gateway')}</span>
+            <span className="text-[12px] text-primary font-medium block mb-1">{t('Mục tiêu SLA: < 25 ms')}</span>
+            <span className="text-[12px] text-on-surface-variant">{t('GDPR isolated ingress gateway (dự kiến)')}</span>
           </div>
         </div>
       </div>

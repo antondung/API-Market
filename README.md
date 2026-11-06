@@ -115,3 +115,22 @@ Mỗi thành viên có một GitHub Issue cho từng sprint, tổng cộng 25 is
 - [Milestones](https://github.com/antondung/API-Market/milestones)
 - [Pull Requests](https://github.com/antondung/API-Market/pulls)
 - [GitHub Projects](https://github.com/users/antondung/projects)
+
+## Cấu hình Biến môi trường Kiểm thử & Kết nối
+
+Hệ thống yêu cầu các biến môi trường sau cho quá trình chạy backend và kiểm thử tích hợp (xem thêm tại `.env.example`):
+
+- `DATABASE_URL`: Chuỗi kết nối PostgreSQL chính cho backend và các runner kiểm thử:
+  ```env
+  DATABASE_URL=postgresql://postgres:<MAT_KHAU>@127.0.0.1:5432/api_market_dev
+  ```
+- `PG_TEST_URL`: Chuỗi kết nối PostgreSQL dùng cho `scripts/run-tests.mjs` (nếu không cung cấp, script sẽ cố gắng khởi tạo cụm DB tạm thời qua `initdb`):
+  ```env
+  PG_TEST_URL=postgresql://postgres:<MAT_KHAU>@127.0.0.1:5432/api_market_dev
+  ```
+- `REDIS_TEST_URL`: Địa chỉ kết nối Redis instance cho test tự động:
+  ```env
+  REDIS_TEST_URL=redis://127.0.0.1:6379
+  ```
+
+> Lưu ý: Tuyệt đối không commit file `.env` thật lên git. Thay thế `<MAT_KHAU>` bằng mật khẩu cơ sở dữ liệu thực tế trên môi trường của bạn.

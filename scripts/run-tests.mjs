@@ -4,8 +4,10 @@ import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { Pool } from 'pg';
+import { testRedis } from './test-redis.mjs';
 
 let directory, bin, started = false;
+let redis;
 const run = (file, args, options = {}) => execFileSync(file, args, { windowsHide: true, stdio: 'pipe', ...options });
 try {
   let databaseUrl = process.env.PG_TEST_URL;
@@ -26,7 +28,10 @@ try {
   try { await bootstrap.query('CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public'); }
   finally { await bootstrap.end(); }
   const tests = ['test', 'integration'].flatMap(folder => readdirSync(`backend/${folder}`).filter(name => name.endsWith('.test.ts')).map(name => `dist/${folder}/${name.replace(/\.ts$/, '.js')}`));
-  const result = spawnSync(process.execPath, ['--test', ...tests], { stdio: 'inherit', windowsHide: true, env: { ...process.env, PG_TEST_URL: databaseUrl } });
+  redis = await testRedis();
+  const selected = process.env.TARGET_TEST ? tests.filter(name => new RegExp(process.env.TARGET_TEST).test(name)) : tests;
+  const args=process.argv.includes('--benchmark')?['--import','tsx','backend/src/gateway-benchmark.ts']:['--test','--test-concurrency=4',...selected];
+  const result = spawnSync(process.execPath, args, { stdio: 'inherit', windowsHide: true, env: { ...process.env, PG_TEST_URL: databaseUrl, REDIS_TEST_URL: redis.url } });
   process.exitCode = result.status ?? 1;
 } catch (error) {
   // Avoid printing connection strings/passwords from child-process errors.
@@ -34,6 +39,7 @@ try {
   if (directory && existsSync(join(directory, 'server.log'))) console.error(readFileSync(join(directory, 'server.log'), 'utf8'));
   process.exitCode = 1;
 } finally {
+  if (redis) await redis.close();
   if (started) run(join(bin, 'pg_ctl'), ['-D', directory, '-m', 'fast', '-w', 'stop'], { stdio: 'ignore' });
   if (directory) {
     const target = realpathSync(directory);
