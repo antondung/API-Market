@@ -10,6 +10,14 @@ import {
   generateCurlSnippet,
   generateFetchSnippet,
   generatePythonSnippet,
+  buildGatewayPath,
+  substitutePathParams,
+  extractSampleQueryParams,
+  generateSampleJsonBody,
+  buildEndpointSnippetOptions,
+  getDefaultBaseUrl,
+  isValidPositiveIntegerApiId,
+  isPlaceholderGatewayRoute,
 } from './apiSnippetGenerator';
 
 describe('apiSnippetGenerator Security & Shell Escaping', () => {
@@ -339,6 +347,224 @@ describe('apiSnippetGenerator Security & Shell Escaping', () => {
       expect(py).toContain('# Warning: Request body is not valid JSON. Passing as raw text data.');
       expect(py).toContain('payload = "invalid json { not_a_json"');
       expect(py).toContain('data=payload');
+    });
+  });
+
+  describe('buildGatewayPath - Gateway Reverse Proxy Route Contract & Integer ID', () => {
+    it('constructs canonical /api/gateway/:apiId/*rest path for positive integer API IDs', () => {
+      const path1 = buildGatewayPath(42, '/v1/messages/send');
+      expect(path1).toBe('/api/gateway/42/v1/messages/send');
+
+      const path2 = buildGatewayPath('100', '///users/query');
+      expect(path2).toBe('/api/gateway/100/users/query');
+    });
+
+    it('handles empty endpoint path cleanly with positive integer ID', () => {
+      expect(buildGatewayPath(7, '')).toBe('/api/gateway/7');
+      expect(buildGatewayPath('7', '/')).toBe('/api/gateway/7');
+    });
+
+    it('strips /v1 from default baseUrl when generating safe URL for gateway route', () => {
+      const gatewayRoute = buildGatewayPath(15, '/forecast/daily');
+      const fullUrl = buildSafeUrl('https://api.apihub.vn/v1', gatewayRoute, { city: 'Hanoi' });
+      expect(fullUrl).toBe('https://api.apihub.vn/api/gateway/15/forecast/daily?city=Hanoi');
+    });
+
+    it('enforces backend integer contract and maps invalid or non-integer IDs to template placeholder :apiId', () => {
+      // Backend strictly accepts integer ID (1 to 2147483647).
+      // Never silently mutate invalid IDs into arbitrary strings like etcpasswd or api_id.
+      expect(buildGatewayPath('../../etc/passwd', '/users')).toBe('/api/gateway/:apiId/users');
+      expect(buildGatewayPath('api_sms_99', '/test')).toBe('/api/gateway/:apiId/test');
+      expect(buildGatewayPath('  api 123 !@#  ', '/test')).toBe('/api/gateway/:apiId/test');
+      expect(buildGatewayPath('', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath('0', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath('-5', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath('2147483648', '/status')).toBe('/api/gateway/:apiId/status');
+      expect(buildGatewayPath(':apiId', '/users')).toBe('/api/gateway/:apiId/users');
+      expect(buildGatewayPath('<API_ID>', '/users')).toBe('/api/gateway/:apiId/users');
+    });
+
+    it('validates positive 32-bit integer API IDs with isValidPositiveIntegerApiId', () => {
+      expect(isValidPositiveIntegerApiId(1)).toBe(true);
+      expect(isValidPositiveIntegerApiId('42')).toBe(true);
+      expect(isValidPositiveIntegerApiId('2147483647')).toBe(true);
+
+      expect(isValidPositiveIntegerApiId(0)).toBe(false);
+      expect(isValidPositiveIntegerApiId(-1)).toBe(false);
+      expect(isValidPositiveIntegerApiId('2147483648')).toBe(false); // 32-bit overflow
+      expect(isValidPositiveIntegerApiId('1.5')).toBe(false);
+      expect(isValidPositiveIntegerApiId('api_10')).toBe(false);
+      expect(isValidPositiveIntegerApiId(null)).toBe(false);
+      expect(isValidPositiveIntegerApiId(undefined)).toBe(false);
+      expect(isValidPositiveIntegerApiId('')).toBe(false);
+    });
+
+    it('differentiates valid gateway URLs from placeholder URLs with isPlaceholderGatewayRoute', () => {
+      expect(isPlaceholderGatewayRoute('/api/gateway/42/v1/messages')).toBe(false);
+      expect(isPlaceholderGatewayRoute('https://api.apihub.vn/api/gateway/1/users')).toBe(false);
+
+      expect(isPlaceholderGatewayRoute('/api/gateway/:apiId/v1/messages')).toBe(true);
+      expect(isPlaceholderGatewayRoute('/api/gateway/<API_ID>/v1/messages')).toBe(true);
+      expect(isPlaceholderGatewayRoute('/api/gateway/api_id/status')).toBe(true);
+      expect(isPlaceholderGatewayRoute('https://api.apihub.vn/api/gateway/:apiId/users')).toBe(true);
+    });
+  });
+
+  describe('Contract Completeness: Parameter Substitution, Queries & JSON Body', () => {
+    it('substitutes path parameters in both OpenAPI {param} and Express :param syntax', () => {
+      expect(substitutePathParams('/users/{userId}/posts/{postId}', { userId: 'usr_42', postId: 'post_99' }))
+        .toBe('/users/usr_42/posts/post_99');
+
+      expect(substitutePathParams('/v1/orders/:orderId/items/:itemId', { orderId: 1001, itemId: 2002 }))
+        .toBe('/v1/orders/1001/items/2002');
+
+      // Uses safe default when parameter not explicitly provided
+      expect(substitutePathParams('/organizations/{orgId}/members/{memberId}'))
+        .toBe('/organizations/1/members/1');
+
+      expect(substitutePathParams('/catalog/:categorySlug'))
+        .toBe('/catalog/sample_categorySlug');
+    });
+
+    it('extracts sample query parameters from endpoint definitions', () => {
+      const params = [
+        { name: 'page', in: 'query', type: 'integer' },
+        { name: 'pageSize', in: 'query', type: 'integer' },
+        { name: 'activeOnly', in: 'query', type: 'boolean' },
+        { name: 'filter', in: 'query', type: 'string' },
+        { name: 'X-Header', in: 'header', type: 'string' },
+      ];
+
+      const qs = extractSampleQueryParams(params);
+      expect(qs).toEqual({
+        page: '1',
+        pageSize: '20',
+        activeOnly: 'true',
+        filter: 'sample_filter',
+      });
+    });
+
+    it('generates sample JSON body for POST/PUT/PATCH schemas and returns null for GET/DELETE', () => {
+      expect(generateSampleJsonBody({}, 'GET')).toBeNull();
+      expect(generateSampleJsonBody({}, 'DELETE')).toBeNull();
+
+      const schema = {
+        properties: {
+          title: { type: 'string' },
+          count: { type: 'integer' },
+          isActive: { type: 'boolean' },
+        },
+      };
+
+      const body = generateSampleJsonBody(schema, 'POST');
+      expect(body).not.toBeNull();
+      const parsed = JSON.parse(body!);
+      expect(parsed).toEqual({
+        title: 'sample_title',
+        count: 100,
+        isActive: true,
+      });
+
+      // Uses schema example if available
+      const exampleSchema = {
+        example: { status: 'verified', score: 98 },
+      };
+      expect(JSON.parse(generateSampleJsonBody(exampleSchema, 'PATCH')!)).toEqual({
+        status: 'verified',
+        score: 98,
+      });
+    });
+
+    it('assembles complete SnippetOptions for GET, POST, PATCH, DELETE endpoints with credentials', () => {
+      // 1. GET with path and query params (API ID 101)
+      const getEndpoint = {
+        method: 'GET',
+        path: '/users/{id}',
+        parameters: [{ name: 'fields', in: 'query', type: 'string' }],
+      };
+      const getOpts = buildEndpointSnippetOptions(101, getEndpoint, {
+        apiKey: 'ak_test_get',
+        pathParams: { id: 'usr_abc' },
+      });
+      expect(getOpts.method).toBe('GET');
+      expect(getOpts.urlPath).toBe('/api/gateway/101/users/usr_abc');
+      expect(getOpts.apiKey).toBe('ak_test_get');
+      expect(getOpts.queryParams).toEqual({ fields: 'sample_fields' });
+      expect(getOpts.body).toBeNull();
+      expect(getOpts.includeTemplateNotice).toBe(false);
+
+      const getCurl = generateCurlSnippet(getOpts);
+      expect(getCurl).toContain('curl -X GET');
+      expect(getCurl).toContain('/api/gateway/101/users/usr_abc?fields=sample_fields');
+      expect(getCurl).toContain("-H 'X-API-Key: ak_test_get'");
+
+      // 2. POST with JSON body (API ID 202)
+      const postEndpoint = {
+        method: 'POST',
+        path: '/v1/items',
+        requestSchema: {
+          properties: { name: { type: 'string' } },
+        },
+      };
+      const postOpts = buildEndpointSnippetOptions('202', postEndpoint, {
+        apiKey: '', // Empty apiKey must fallback to YOUR_API_KEY
+      });
+      expect(postOpts.method).toBe('POST');
+      expect(postOpts.urlPath).toBe('/api/gateway/202/v1/items');
+      expect(postOpts.apiKey).toBe('YOUR_API_KEY');
+      expect(postOpts.body).toContain('"name": "sample_name"');
+      expect(postOpts.includeTemplateNotice).toBe(false);
+
+      const postFetch = generateFetchSnippet(postOpts);
+      expect(postFetch).toContain('method: "POST"');
+      expect(postFetch).toContain('"X-API-Key": "YOUR_API_KEY"');
+      expect(postFetch).toContain('JSON.stringify(');
+
+      // 3. PATCH with partial body (API ID 303)
+      const patchEndpoint = {
+        method: 'PATCH',
+        path: '/v1/items/{itemId}',
+        requestSchema: {
+          properties: { status: { type: 'string' } },
+        },
+      };
+      const patchOpts = buildEndpointSnippetOptions(303, patchEndpoint, {
+        apiKey: 'ak_patch_123',
+        pathParams: { itemId: 'item_77' },
+      });
+      expect(patchOpts.method).toBe('PATCH');
+      expect(patchOpts.urlPath).toBe('/api/gateway/303/v1/items/item_77');
+      const patchPy = generatePythonSnippet(patchOpts);
+      expect(patchPy).toContain('requests.patch(');
+      expect(patchPy).toContain('"X-API-Key": "ak_patch_123"');
+
+      // 4. DELETE without body (API ID 404)
+      const deleteEndpoint = {
+        method: 'DELETE',
+        path: '/v1/items/{itemId}',
+      };
+      const deleteOpts = buildEndpointSnippetOptions(404, deleteEndpoint, {
+        apiKey: 'ak_del_456',
+        pathParams: { itemId: 'item_88' },
+      });
+      expect(deleteOpts.method).toBe('DELETE');
+      expect(deleteOpts.body).toBeNull();
+      const delCurl = generateCurlSnippet(deleteOpts);
+      expect(delCurl).toContain('curl -X DELETE');
+      expect(delCurl).not.toContain(' -d ');
+
+      // 5. Template fallback when API ID is invalid or placeholder
+      const placeholderOpts = buildEndpointSnippetOptions('invalid_non_int', getEndpoint);
+      expect(placeholderOpts.urlPath).toBe('/api/gateway/:apiId/users/1');
+      expect(placeholderOpts.includeTemplateNotice).toBe(true);
+      const placeholderCurl = generateCurlSnippet(placeholderOpts);
+      expect(placeholderCurl).toContain('# Template — Gateway route');
+    });
+
+    it('resolves default base URL without trailing slash', () => {
+      const base = getDefaultBaseUrl();
+      expect(base.endsWith('/')).toBe(false);
+      expect(base.length).toBeGreaterThan(0);
     });
   });
 });

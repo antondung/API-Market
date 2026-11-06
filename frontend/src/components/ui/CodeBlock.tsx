@@ -14,11 +14,23 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   className = ''
 }) => {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(code);
+        setCopied(true);
+        setCopyError(false);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+    } catch {
+      setCopyError(true);
+      setCopied(false);
+      setTimeout(() => setCopyError(false), 3000);
+    }
   };
 
   return (
@@ -35,14 +47,22 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
           )}
         </div>
         <button
+          type="button"
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-code-sm rounded-lg hover:bg-white/10 text-slate-300 transition-colors"
-          title="Copy code"
+          aria-label={copied ? 'Copied code' : copyError ? 'Copy failed' : 'Copy code'}
+          className={`flex items-center gap-1.5 px-2.5 py-1 text-code-sm rounded-lg transition-colors ${
+            copied
+              ? 'bg-emerald-500/20 text-emerald-400 font-semibold'
+              : copyError
+              ? 'bg-rose-500/20 text-rose-400 font-semibold'
+              : 'hover:bg-white/10 text-slate-300'
+          }`}
+          title={copied ? 'Copied to clipboard' : copyError ? 'Failed to copy' : 'Copy code'}
         >
           <span className="material-symbols-outlined text-[16px]">
-            {copied ? 'check' : 'content_copy'}
+            {copied ? 'check' : copyError ? 'error' : 'content_copy'}
           </span>
-          <span>{copied ? 'Copied' : 'Copy'}</span>
+          <span>{copied ? 'Copied' : copyError ? 'Failed' : 'Copy'}</span>
         </button>
       </div>
       <div

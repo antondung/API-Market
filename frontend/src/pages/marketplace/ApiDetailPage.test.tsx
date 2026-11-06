@@ -13,7 +13,7 @@ vi.mock('../../i18n', () => ({
 }));
 
 const mockApiDetail: MarketplaceApiDetail = {
-  id: 'api-detail-1',
+  id: '1',
   name: 'Global Climate Metrics API',
   description: 'Enterprise grade climate observations and atmospheric data streams.',
   providerId: 'prov-88',
@@ -102,7 +102,7 @@ const mockApiDetail: MarketplaceApiDetail = {
   },
 };
 
-const renderPage = (apiId = 'api-detail-1') => {
+const renderPage = (apiId = '1') => {
   return render(
     <MemoryRouter initialEntries={[`/api/${apiId}`]}>
       <Routes>
@@ -274,5 +274,29 @@ describe('ApiDetailPage', () => {
     // Must show honest empty state for v3.0.0-beta, NOT fall back to v2 documentation
     expect(await screen.findByText(/chưa có OpenAPI spec công bố/)).toBeDefined();
     expect(screen.queryByText(/1\. Tổng quan \(Overview\)/)).toBeNull();
+  });
+
+  it('renders Gateway route and allows endpoint selection in SDKs & Code Snippets tab', async () => {
+    vi.spyOn(marketplaceApi, 'getMarketplaceApiDetail').mockResolvedValue(mockApiDetail);
+
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Global Climate Metrics API' });
+
+    // Switch to SDKs tab
+    const sdksTab = screen.getByRole('button', { name: /Quickstart/ });
+    fireEvent.click(sdksTab);
+
+    // Should display canonical Gateway route callout
+    expect(screen.getByText(/Gateway Reverse Proxy Route:/)).toBeDefined();
+    expect(screen.getByText('/api/gateway/1/v2/observations/current')).toBeDefined();
+
+    // Verify code block contains Gateway path
+    expect(screen.getAllByText(/\/api\/gateway\/1\/v2\/observations\/current/)[0]).toBeDefined();
+
+    // Verify rate limit unit is req/phút in pricing plans
+    const pricingTab = screen.getByRole('button', { name: /Pricing Plans/ });
+    fireEvent.click(pricingTab);
+    expect(screen.getByText(/5 req\/phút/)).toBeDefined();
+    expect(screen.getByText(/50 req\/phút/)).toBeDefined();
   });
 });

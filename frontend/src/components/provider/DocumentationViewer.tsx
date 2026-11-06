@@ -437,7 +437,7 @@ export const DocumentationViewer: React.FC<DocumentationViewerProps> = ({ doc, a
 
               <div className="p-4 rounded-xl border border-error/30 bg-error-container/10 space-y-2">
                 <span className="font-mono font-bold text-error text-body-sm">429 Too Many Requests</span>
-                <p className="text-body-xs text-on-surface">Vượt quá giới hạn Rate Limit (RPS) hoặc Quota hàng tháng của gói định giá.</p>
+                <p className="text-body-xs text-on-surface">Vượt quá giới hạn Rate Limit (RPM) hoặc Quota hàng tháng của gói định giá.</p>
               </div>
 
               <div className="p-4 rounded-xl border border-error/30 bg-error-container/10 space-y-2">

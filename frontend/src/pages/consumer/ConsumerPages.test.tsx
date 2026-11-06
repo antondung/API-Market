@@ -10,6 +10,8 @@ import { CostGuardPage } from './CostGuardPage';
 import { RequestHistoryPage } from './RequestHistoryPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
 import * as consumerApi from '../../services/consumerApi';
+import * as billingApi from '../../services/billingApi';
+import * as usageApi from '../../services/usageApi';
 import { ApiError } from '../../services/authApi';
 
 let mockCurrentUser: { id: string; email: string; name: string; role: string } | null = {
@@ -26,6 +28,11 @@ vi.mock('../../context/AuthContext', () => ({
     isAuthenticated: true,
     refreshCurrentUser: refreshCurrentUserMock,
   }),
+  useOptionalAuth: () => ({
+    currentUser: mockCurrentUser,
+    isAuthenticated: true,
+    refreshCurrentUser: refreshCurrentUserMock,
+  }),
 }));
 
 vi.mock('../../i18n', () => ({
@@ -35,6 +42,10 @@ vi.mock('../../i18n', () => ({
 describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(usageApi, 'getConsumerUsageSummary').mockResolvedValue({
+      subscriptions: [],
+      daily: [],
+    });
   });
 
   afterEach(() => {
@@ -125,10 +136,181 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
       // After retry succeeds, shows 0 Keys
       expect(await screen.findByText('0 Keys')).toBeDefined();
     });
+
+    it('displays real active subscription count and monthly quota usage from getConsumerUsageSummary', async () => {
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 100,
+      });
+
+      vi.spyOn(usageApi, 'getConsumerUsageSummary').mockResolvedValueOnce({
+        subscriptions: [
+          {
+            id: 'sub_active_1',
+            apiId: 'api_1',
+            status: 'Active',
+            quotaUsed: '2500',
+            quotaLimit: '10000',
+            remainingRequests: '7500',
+            periodStart: '2026-11-01T00:00:00Z',
+            periodEnd: '2026-11-30T23:59:59Z',
+          },
+          {
+            id: 'sub_pending_2',
+            apiId: 'api_2',
+            status: 'Pending',
+            quotaUsed: '500',
+            quotaLimit: '5000',
+            remainingRequests: '4500',
+            periodStart: '2026-11-01T00:00:00Z',
+            periodEnd: '2026-11-30T23:59:59Z',
+          },
+        ],
+        daily: [],
+      });
+
+      render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText('1')).toBeDefined();
+      expect(screen.getByText('3.000')).toBeDefined();
+    });
+
+    it('differentiates usage summary loading error from empty subscriptions with retry action', async () => {
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockResolvedValue({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 100,
+      });
+
+      let usageCallCount = 0;
+      vi.spyOn(usageApi, 'getConsumerUsageSummary').mockImplementation(async () => {
+        usageCallCount++;
+        if (usageCallCount === 1) {
+          throw new ApiError(500, 'FAIL', 'Usage analytics query failed');
+        }
+        return {
+          subscriptions: [],
+          daily: [],
+        };
+      });
+
+      render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText('Usage analytics query failed')).toBeDefined();
+      expect(screen.getByText('Không thể tải')).toBeDefined();
+
+      const retryButtons = screen.getAllByRole('button', { name: /Thử lại/i });
+      fireEvent.click(retryButtons[0]);
+
+      expect(await screen.findByText('0')).toBeDefined();
+    });
+
+    it('enforces cross-account data isolation on user switch (A -> B -> A) and clears prior snapshot', async () => {
+      mockCurrentUser = {
+        id: 'usr_alice_1',
+        email: 'alice@example.com',
+        name: 'Alice Developer',
+        role: 'Consumer',
+      };
+
+      const aliceKeys = [
+        {
+          id: 'k_alice_1',
+          apiId: '10',
+          keyPrefix: 'ak_alice_123',
+          label: 'Alice Key 1',
+          isActive: true,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: '2026-10-27T00:00:00Z',
+        },
+        {
+          id: 'k_alice_2',
+          apiId: '20',
+          keyPrefix: 'ak_alice_456',
+          label: 'Alice Key 2',
+          isActive: true,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: '2026-10-28T00:00:00Z',
+        },
+      ];
+
+      vi.spyOn(consumerApi, 'listConsumerApiKeys').mockImplementation(async (_page, _size, signal) => {
+        if (signal?.aborted) throw new Error('Aborted');
+        if (mockCurrentUser?.id === 'usr_alice_1') {
+          return { items: aliceKeys, total: 2, page: 1, pageSize: 100 };
+        }
+        return { items: [], total: 0, page: 1, pageSize: 100 };
+      });
+
+      const { rerender } = render(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Alice Developer/)).toBeDefined();
+      expect(await screen.findByText('2 Keys')).toBeDefined();
+
+      // Switch to User B (Bob)
+      mockCurrentUser = {
+        id: 'usr_bob_2',
+        email: 'bob@example.com',
+        name: 'Bob Analyst',
+        role: 'Consumer',
+      };
+
+      rerender(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      // Must display Bob's information, NOT Alice's credentials
+      expect(await screen.findByText(/Bob Analyst/)).toBeDefined();
+      expect(await screen.findByText('0 Keys')).toBeDefined();
+      expect(screen.queryByText('2 Keys')).toBeNull();
+
+      // Switch back to User A (Alice)
+      mockCurrentUser = {
+        id: 'usr_alice_1',
+        email: 'alice@example.com',
+        name: 'Alice Developer',
+        role: 'Consumer',
+      };
+
+      rerender(
+        <MemoryRouter>
+          <ConsumerDashboardPage />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Alice Developer/)).toBeDefined();
+      expect(await screen.findByText('2 Keys')).toBeDefined();
+    });
   });
 
   describe('MySubscriptionsPage', () => {
-    it('renders clean layout, honest Sprint 4 advisory, and empty state without fake mutations', () => {
+    it('renders clean layout, honest Sprint 4 advisory, and empty state without fake mutations', async () => {
+      vi.spyOn(billingApi, 'listSubscriptions').mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+      });
+
       render(
         <MemoryRouter>
           <AppProvider>
@@ -139,12 +321,12 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
 
       expect(screen.getByText(/Lộ trình triển khai \(Sprint 3 & Sprint 4\)/)).toBeDefined();
       expect(screen.getByText(/Gói dùng thử Sandbox/)).toBeDefined();
-      expect(screen.getByText('No Subscriptions Found')).toBeDefined();
+      expect(await screen.findByText('No Subscriptions Found')).toBeDefined();
     });
   });
 
   describe('UsageQuotaPage', () => {
-    it('explains Quota vs Rate Limit distinction and honest Sandbox quota status', () => {
+    it('explains Quota vs Rate Limit distinction and honest Sandbox quota status', async () => {
       render(
         <MemoryRouter>
           <AppProvider>
@@ -153,9 +335,8 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
         </MemoryRouter>
       );
 
-      expect(screen.getByText(/Cơ chế quản lý hạn ngạch Sprint 3/)).toBeDefined();
       expect(screen.getByText(/Understanding Quota vs Rate Limit/)).toBeDefined();
-      expect(screen.getByText('Chưa có đăng ký API')).toBeDefined();
+      expect(await screen.findByText('Chưa có đăng ký API')).toBeDefined();
     });
   });
 

@@ -5,6 +5,12 @@ import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
 import { ApiError } from '../../services/authApi';
 import { listConsumerApiKeys, type ConsumerApiKey } from '../../services/consumerApi';
+import { getConsumerUsageSummary } from '../../services/usageApi';
+import {
+  type UsageSummaryResponse,
+  formatBigIntCount,
+  parseSafeBigInt,
+} from '../../services/sprint4Types';
 
 export const ConsumerDashboardPage: React.FC = () => {
   const { currentUser } = useAuth();
@@ -13,38 +19,117 @@ export const ConsumerDashboardPage: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  const [keys, setKeys] = useState<ConsumerApiKey[]>([]);
-  const [totalKeys, setTotalKeys] = useState<number | null>(null);
+  const [keysState, setKeysState] = useState<{
+    ownerId: string | number;
+    items: ConsumerApiKey[];
+    total: number | null;
+    error: string | null;
+  }>({
+    ownerId: user.id,
+    items: [],
+    total: null,
+    error: null,
+  });
   const [isKeysLoading, setIsKeysLoading] = useState(true);
-  const [keysError, setKeysError] = useState<string | null>(null);
   const [retryKeys, setRetryKeys] = useState(0);
+
+  const [usageState, setUsageState] = useState<{
+    ownerId: string | number;
+    summary: UsageSummaryResponse | null;
+    error: string | null;
+  }>({
+    ownerId: user.id,
+    summary: null,
+    error: null,
+  });
+  const [isUsageLoading, setIsUsageLoading] = useState(true);
+  const [retryUsage, setRetryUsage] = useState(0);
+
+  // Render guard: zero stale render on account switch
+  const isKeysOwner = keysState.ownerId === user.id;
+  const keys = isKeysOwner ? keysState.items : [];
+  const totalKeys = isKeysOwner ? keysState.total : null;
+  const keysError = isKeysOwner ? keysState.error : null;
+
+  const isUsageOwner = usageState.ownerId === user.id;
+  const usageSummary = isUsageOwner ? usageState.summary : null;
+  const usageError = isUsageOwner ? usageState.error : null;
 
   useEffect(() => {
     let isMounted = true;
-    setIsKeysLoading(true);
-    setKeysError(null);
-    listConsumerApiKeys(1, 100)
+    const controller = new AbortController();
+    setIsUsageLoading(true);
+    setUsageState({ ownerId: user.id, summary: null, error: null });
+
+    getConsumerUsageSummary(undefined, controller.signal)
       .then(res => {
         if (isMounted) {
-          setKeys(res.items);
-          setTotalKeys(res.total);
-          setKeysError(null);
+          setUsageState({ ownerId: user.id, summary: res, error: null });
         }
       })
       .catch((err: any) => {
+        if (controller.signal.aborted) return;
         if (isMounted) {
-          setKeys([]);
-          setTotalKeys(null);
-          setKeysError(err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')));
+          setUsageState({
+            ownerId: user.id,
+            summary: null,
+            error: err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')),
+          });
         }
       })
       .finally(() => {
-        if (isMounted) setIsKeysLoading(false);
+        if (isMounted && !controller.signal.aborted) {
+          setIsUsageLoading(false);
+        }
       });
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, [retryKeys]);
+  }, [user.id, retryUsage]);
+
+  const activeSubsCount = (usageSummary?.subscriptions || []).filter(
+    s => s.status === 'Active'
+  ).length;
+
+  const totalMonthlyQuotaUsed = (usageSummary?.subscriptions || []).reduce(
+    (acc, s) => acc + parseSafeBigInt(s.quotaUsed),
+    0n
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    setIsKeysLoading(true);
+    setKeysState({ ownerId: user.id, items: [], total: null, error: null });
+
+    listConsumerApiKeys(1, 100, controller.signal)
+      .then(res => {
+        if (isMounted) {
+          setKeysState({ ownerId: user.id, items: res.items, total: res.total, error: null });
+        }
+      })
+      .catch((err: any) => {
+        if (controller.signal.aborted) return;
+        if (isMounted) {
+          setKeysState({
+            ownerId: user.id,
+            items: [],
+            total: null,
+            error: err instanceof ApiError ? err.message : (err?.message || t('Lỗi kết nối máy chủ')),
+          });
+        }
+      })
+      .finally(() => {
+        if (isMounted && !controller.signal.aborted) {
+          setIsKeysLoading(false);
+        }
+      });
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [user.id, retryKeys]);
 
   const activeKeys = keys.filter(k => k.isActive);
   const hasMoreKeysThanFetched = totalKeys !== null && totalKeys > keys.length;
@@ -90,16 +175,16 @@ export const ConsumerDashboardPage: React.FC = () => {
       <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-body-sm text-on-surface flex items-start gap-3">
         <span className="material-symbols-outlined text-primary text-[20px] mt-0.5 flex-shrink-0">info</span>
         <div>
-          <strong className="text-on-surface font-semibold">Hiện trạng chức năng Sprint 3: </strong>
+          <strong className="text-on-surface font-semibold">Hiện trạng chức năng: </strong>
           <span>
-            Kho khóa <strong>API Keys</strong> và <strong>Gói dùng thử Sandbox (5 lượt gọi/API/24h)</strong> đã tích hợp trực tiếp với backend. Gói thuê bao thương mại trả phí (Paid Subscriptions) và bộ hạn chế ngân sách tự động (Cost Guard) dự kiến kích hoạt trong Sprint 4.
+            Kho khóa <strong>API Keys</strong>, <strong>Gói dùng thử Sandbox (5 lượt gọi/API/24h)</strong> và <strong>Gói thuê bao thương mại (Paid Subscriptions)</strong> đã được kết nối trực tiếp với backend và đồng bộ theo thời gian thực.
           </span>
         </div>
       </div>
 
       {/* KPI Bento Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Metric 1: Paid Subscriptions vs Sandbox */}
+        {/* Metric 1: Subscribed APIs & Monthly Quota */}
         <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3 text-on-surface-variant">
@@ -107,18 +192,43 @@ export const ConsumerDashboardPage: React.FC = () => {
               <span className="material-symbols-outlined text-primary text-[22px]">subscriptions</span>
             </div>
             <div className="text-3xl font-extrabold text-on-surface font-code-md">
-              0
+              {isUsageLoading ? (
+                <span className="text-2xl text-on-surface-variant animate-pulse">{t('Đang tải...')}</span>
+              ) : usageError ? (
+                <span className="text-xl font-bold text-error">{t('Không thể tải')}</span>
+              ) : (
+                `${activeSubsCount}`
+              )}
             </div>
-            <p className="text-body-sm text-on-surface-variant mt-1">
-              Gói thuê bao thương mại theo tháng (Sprint 4). Trải nghiệm API qua Sandbox.
-            </p>
+            <div className="text-body-sm text-on-surface-variant mt-1">
+              {usageError ? (
+                <div className="text-error flex items-center justify-between gap-2">
+                  <span className="truncate" title={usageError}>{usageError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRetryUsage(c => c + 1)}
+                    className="text-primary underline hover:text-primary-hover font-medium shrink-0"
+                  >
+                    {t('Thử lại')}
+                  </button>
+                </div>
+              ) : (
+                <p>
+                  {t('Tổng quota đã dùng tháng này:')}{' '}
+                  <strong className="text-on-surface font-code-sm">
+                    {formatBigIntCount(totalMonthlyQuotaUsed)}
+                  </strong>{' '}
+                  {t('lượt')}
+                </p>
+              )}
+            </div>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/subscriptions" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
               {t('View APIs')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
-            <span className="text-[11px] font-code-sm text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded">
-              Sprint 4
+            <span className="text-[11px] font-code-sm text-emerald-600 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
+              {t('Active')}
             </span>
           </div>
         </div>
@@ -214,15 +324,15 @@ export const ConsumerDashboardPage: React.FC = () => {
               </span>
             </div>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              Hạn mức chi tiêu và ngắt tự động (Hard Cutoff) theo dõi tại Sprint 4.
+              Hạn mức chi tiêu và ngắt tự động (Hard Cutoff) bảo vệ ngân sách khi gọi qua Gateway.
             </p>
           </div>
           <div className="mt-5 pt-3 border-t border-outline-variant/20 flex items-center justify-between">
             <Link to="/dashboard/cost-guard" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
               {t('Notification Center')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
-            <span className="text-[11px] font-code-sm text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded">
-              Sprint 4
+            <span className="text-[11px] font-code-sm text-emerald-600 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
+              Active
             </span>
           </div>
         </div>
