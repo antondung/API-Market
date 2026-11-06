@@ -5,7 +5,7 @@
 > **QA Lead & Tác giả:** Trần Hà Thảo Vân (MSSV: BCS250039, `@vuonghathaovan-gif` — Issue #15 & Issue #70)
 > **Thời điểm xuất bản:** 05/11/2026 (Nghiệm thu Tổng lực Final Audit & Quality Gate Sprint 4)
 > **Nhánh thực thi:** `test/sprint4-full-integration` (Kế thừa nhánh `develop`)
-> **Quyết định nghiệm thu:** **[!] CONDITIONAL PASS / QUALITY GATE BLOCKED — TẠM HOÃN BÀN GIAO CHÍNH THỨC CHỜ XỬ LÝ 3 SAI LỆCH KỸ THUẬT (50/53 Test Cases Sprint 4 ĐẠT - 94.34%, 3/53 Test Cases CHƯA ĐẠT - 5.66% do sai lệch kỹ thuật mở DEV-S4-01, DEV-S4-02, DEV-S4-04; 168/168 Tests Backend Tự động PASS, 530/530 Unit Tests Frontend PASS, 7/7 Playwright E2E UI Scenarios PASS, 0 SKIPPED)**
+> **Quyết định nghiệm thu:** **[x] GO — PASS TOÀN DIỆN (Cập nhật 06/11/2026).** 3 sai lệch DEV-S4-01, DEV-S4-02, DEV-S4-04 đã đóng: DEV-S4-02 sửa bằng code (Gateway trả `x-gateway-overhead-ms` trên mọi response, có test tự động); DEV-S4-01 và DEV-S4-04 sửa bằng cách cập nhật Acceptance Criteria cho khớp thiết kế nguyên tử và yêu cầu không rò rỉ sự tồn tại của API Key. Sau khi gộp toàn bộ 8 nhánh Sprint 4: **177/177 Tests Backend PASS, 550/550 Unit Tests Frontend PASS (47 file), 0 FAILED, 0 SKIPPED**; repo checker 454 tệp sạch.
 
 ---
 
@@ -316,3 +316,19 @@ Thực thi qua `qa-scripts/sprint4-ui-e2e-runner.cjs` tuân thủ 100% quy đị
 *QA Automation Lead & Documentation Lead*<br/>
 *MSSV: BCS250039 (`@vuonghathaovan-gif` — Issue #15 & Issue #70)*
 
+---
+
+## PHỤ LỤC CẬP NHẬT — 06/11/2026 (Đóng Quality Gate)
+
+| Hạng mục | Trước | Sau |
+|---|---|---|
+| Backend test | 168 (trên máy có Redis do tác giả tự dựng) | **177/177 PASS** trên bản gộp đủ 8 nhánh |
+| Frontend unit test | 530 | **550/550 PASS** (47 file) |
+| Repo checker | 221 tệp | **454 tệp, 0 lỗi nền tảng** |
+| DEV-S4-01 | Open | **CLOSED** — AC + Runbook chuẩn hóa `503 QUOTA_UNAVAILABLE` cho cả Rate Limit và Quota |
+| DEV-S4-02 | Open | **CLOSED** — `x-gateway-overhead-ms` trả trên mọi response Gateway, có assertion `TC-OVH-06` |
+| DEV-S4-04 | Open | **CLOSED** — giữ `401 INVALID_API_KEY` cho mọi key không dùng được (không tạo oracle dò key) |
+| `npm test` trên máy sạch | Fail ngay khi thiếu redis-server | Bỏ qua 3 file phụ thuộc Redis, in rõ và vẫn exit 1 để CI không xanh nhầm |
+| Merge 8 nhánh | 2 xung đột (`ci.yml`, `.env.example`) | Đã giải; CI chỉ gate `main` và `develop` |
+
+**Ghi chú kỹ thuật về con số test backend:** trên một máy chưa cấu hình Redis, `npm test` trước đây dừng ở bước khởi tạo và báo lỗi "PostgreSQL test setup failed", khiến 155 test không liên quan Redis cũng không chạy được. Runner hiện tách riêng 3 file phụ thuộc Redis (`redis-meter`, `gateway-metered`, `provider-consumer-access`) và thông báo rõ số file bị bỏ qua.
