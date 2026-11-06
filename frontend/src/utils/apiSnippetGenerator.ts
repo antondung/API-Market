@@ -19,6 +19,53 @@ const DEFAULT_BASE_URL = 'https://api.apihub.vn/v1';
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'TRACE']);
 
 /**
+ * Backend Gateway contract: apiId must be a positive 32-bit integer (1 to 2147483647).
+ * Matches backend `marketplaceId = z.string().regex(/^[1-9][0-9]{0,9}$/).refine(value => Number(value) <= 2147483647)`.
+ */
+export function isValidPositiveIntegerApiId(apiId: unknown): boolean {
+  if (apiId === null || apiId === undefined) return false;
+  const raw = String(apiId).trim();
+  if (!/^[1-9][0-9]{0,9}$/.test(raw)) return false;
+  const num = Number(raw);
+  return Number.isSafeInteger(num) && num > 0 && num <= 2147483647;
+}
+
+/**
+ * Detects whether a path or URL uses a template/placeholder API ID rather than a verified positive integer.
+ */
+export function isPlaceholderGatewayRoute(pathOrUrl: string): boolean {
+  if (!pathOrUrl) return false;
+  return /\/api\/gateway\/(?::apiId|<API_ID>|api_id)(?:\/|$)/.test(pathOrUrl) ||
+         /\/api\/gateway\/[^/]+(?:\/|$)/.test(pathOrUrl) && !/\/api\/gateway\/[1-9][0-9]{0,9}(?:\/|$)/.test(pathOrUrl);
+}
+
+/**
+ * Constructs the canonical Gateway reverse-proxy path for an API endpoint:
+ * /api/gateway/:apiId/*rest
+ * Backend strictly accepts positive integer API IDs (1 to 2147483647).
+ * Non-integer or placeholder inputs resolve to canonical template route :apiId.
+ * Strips leading slashes from rest path to ensure single slash separation.
+ */
+export function buildGatewayPath(apiId: string | number, endpointPath: string): string {
+  const rawId = String(apiId ?? '').trim();
+  const rawPath = (endpointPath || '').trim();
+  const normalizedRest = rawPath.replace(/^\/+/, '');
+
+  let routeApiId: string;
+  if (isValidPositiveIntegerApiId(rawId)) {
+    routeApiId = rawId;
+  } else if (rawId === ':apiId' || rawId === '<API_ID>') {
+    routeApiId = ':apiId';
+  } else {
+    // Backend strictly requires a positive 32-bit integer API ID (1 to 2147483647).
+    // Do not silently mutate invalid IDs into arbitrary strings. Emit canonical template placeholder :apiId.
+    routeApiId = ':apiId';
+  }
+
+  return normalizedRest ? `/api/gateway/${routeApiId}/${normalizedRest}` : `/api/gateway/${routeApiId}`;
+}
+
+/**
  * Escapes an arbitrary string for safe usage in POSIX shell (sh/bash).
  * Uses strict single-quote wrapping and replaces internal single quotes with '\''.
  */
@@ -58,11 +105,18 @@ export function buildSafeUrl(
   urlPath: string = '/',
   queryParams?: Record<string, string> | Array<[string, string]>
 ): string {
-  const cleanBase = (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
+  let effectiveBase = (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
   let rawPath = (urlPath || '/').trim().replace(/\0/g, '');
   if (!rawPath.startsWith('/')) {
     rawPath = `/${rawPath}`;
   }
+
+  // If path is a Gateway route /api/gateway/... and default baseUrl with /v1 was used, strip /v1 from base
+  if (rawPath.startsWith('/api/') && effectiveBase.endsWith('/v1')) {
+    effectiveBase = effectiveBase.replace(/\/v1$/, '');
+  }
+
+  const cleanBase = effectiveBase;
 
   const searchParams = new URLSearchParams();
 
@@ -376,4 +430,163 @@ headers = ${pyHeaders}
 ${pyBodySetup}response = ${requestCall}
 print(response.status_code)
 print(response.json())`;
+}
+
+/**
+ * Returns the effective base URL honoring VITE_API_BASE_URL environment variable.
+ */
+export function getDefaultBaseUrl(): string {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) {
+      return String((import.meta as any).env.VITE_API_BASE_URL).replace(/\/+$/, '');
+    }
+  } catch {
+    // ignore
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'https://api.apihub.vn';
+}
+
+/**
+ * Substitutes path parameters (both {param} and :param styles) with values or safe defaults.
+ */
+export function substitutePathParams(
+  endpointPath: string,
+  params?: Record<string, string | number>
+): string {
+  let result = endpointPath || '/';
+
+  // Replace {paramName}
+  result = result.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, paramName) => {
+    if (params && params[paramName] !== undefined && params[paramName] !== null) {
+      return String(params[paramName]);
+    }
+    if (paramName.toLowerCase().endsWith('id')) return '1';
+    return `sample_${paramName}`;
+  });
+
+  // Replace :paramName
+  result = result.replace(/:([a-zA-Z0-9_]+)/g, (_match, paramName) => {
+    if (params && params[paramName] !== undefined && params[paramName] !== null) {
+      return String(params[paramName]);
+    }
+    if (paramName.toLowerCase().endsWith('id')) return '1';
+    return `sample_${paramName}`;
+  });
+
+  return result;
+}
+
+/**
+ * Extracts query parameter key-values from endpoint parameter specifications.
+ */
+export function extractSampleQueryParams(
+  parameters?: Array<Record<string, any>>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!parameters || !Array.isArray(parameters)) return result;
+
+  for (const p of parameters) {
+    if (p && p.in === 'query' && p.name) {
+      const name = String(p.name).trim();
+      const type = String(p.type || p.schema?.type || '').toLowerCase();
+      if (name.toLowerCase() === 'page') {
+        result[name] = '1';
+      } else if (name.toLowerCase() === 'limit' || name.toLowerCase() === 'pagesize') {
+        result[name] = '20';
+      } else if (type === 'integer' || type === 'number') {
+        result[name] = '10';
+      } else if (type === 'boolean') {
+        result[name] = 'true';
+      } else {
+        result[name] = `sample_${name}`;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Generates sample JSON body for POST/PUT/PATCH endpoints based on requestSchema.
+ */
+export function generateSampleJsonBody(
+  requestSchema?: Record<string, unknown> | null,
+  method = 'POST'
+): string | null {
+  const m = method.toUpperCase();
+  if (m === 'GET' || m === 'DELETE' || m === 'HEAD' || m === 'OPTIONS') {
+    return null;
+  }
+
+  if (requestSchema && typeof requestSchema === 'object') {
+    if (requestSchema.example && typeof requestSchema.example === 'object') {
+      return JSON.stringify(requestSchema.example, null, 2);
+    }
+    if (requestSchema.properties && typeof requestSchema.properties === 'object') {
+      const sampleObj: Record<string, unknown> = {};
+      for (const [key, propDef] of Object.entries(requestSchema.properties as Record<string, any>)) {
+        const propType = (propDef?.type || '').toLowerCase();
+        if (propType === 'integer' || propType === 'number') {
+          sampleObj[key] = 100;
+        } else if (propType === 'boolean') {
+          sampleObj[key] = true;
+        } else if (propType === 'array') {
+          sampleObj[key] = [];
+        } else if (propType === 'object') {
+          sampleObj[key] = {};
+        } else {
+          sampleObj[key] = `sample_${key}`;
+        }
+      }
+      return JSON.stringify(sampleObj, null, 2);
+    }
+  }
+
+  return JSON.stringify({ example: 'payload' }, null, 2);
+}
+
+/**
+ * Assembles complete SnippetOptions for an endpoint, handling path substitution,
+ * query parameters, body, credentials, and environment base URL.
+ */
+export function buildEndpointSnippetOptions(
+  apiId: string | number,
+  endpoint: {
+    method?: string;
+    path?: string;
+    parameters?: Array<Record<string, any>> | any[];
+    requestSchema?: Record<string, unknown> | null;
+  },
+  overrides?: Partial<SnippetOptions> & { pathParams?: Record<string, string | number> }
+): SnippetOptions {
+  const method = (endpoint.method || overrides?.method || 'GET').toUpperCase();
+  const rawPath = endpoint.path || '/';
+  const substitutedPath = substitutePathParams(rawPath, overrides?.pathParams);
+  const gatewayPath = buildGatewayPath(apiId, substitutedPath);
+
+  const queryParams = {
+    ...extractSampleQueryParams(endpoint.parameters),
+    ...(overrides?.queryParams && !Array.isArray(overrides.queryParams) ? overrides.queryParams : {}),
+  };
+
+  const body = overrides?.body !== undefined
+    ? overrides.body
+    : generateSampleJsonBody(endpoint.requestSchema, method);
+
+  return {
+    method,
+    urlPath: gatewayPath,
+    baseUrl: overrides?.baseUrl || getDefaultBaseUrl(),
+    apiKey: overrides?.apiKey || 'YOUR_API_KEY',
+    queryParams: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+    headers: overrides?.headers,
+    body,
+    includeTemplateNotice:
+      overrides?.includeTemplateNotice !== undefined
+        ? overrides.includeTemplateNotice
+        : !isValidPositiveIntegerApiId(apiId),
+  };
 }

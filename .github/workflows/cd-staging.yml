@@ -1,0 +1,110 @@
+# Dựng mỗi image một lần, đẩy GHCR, rồi deploy bằng docker-compose.yml
+# và docker-compose.staging.yml. Bỏ qua khi thiếu STAGING_HOST, STAGING_USER
+# hoặc STAGING_SSH_KEY.
+#
+# Máy chủ cần /opt/api-market/.env.staging, tạo từ .env.staging.example và
+# vượt qua scripts/staging-preflight.mjs. Workflow không ghi đè file này.
+# Repository variable STAGING_API_BASE_URL is the real public HTTPS backend origin.
+# It must match VITE_API_BASE_URL on the staging host; the example file is never build configuration.
+
+name: Trien khai staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cd-staging
+  cancel-in-progress: false
+
+jobs:
+  secrets:
+    name: Kiem tra secret staging
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$STAGING_HOST" ] && [ -n "$STAGING_USER" ] && [ -n "$STAGING_SSH_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Staging secrets are absent. Skip image publish and deploy."
+          fi
+
+  images:
+    name: Build va day image
+    needs: secrets
+    if: needs.secrets.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Dang nhap GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Build moi image mot lan roi day len GHCR
+        env:
+          STAGING_API_BASE_URL: ${{ vars.STAGING_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          vite_url="$(node scripts/staging-api-origin.mjs)"
+          build_one() {
+            local name="$1" file="$2"
+            shift 2
+            local ref="ghcr.io/${owner}/api-market-${name}"
+            docker build -f "$file" "$@" -t "${ref}:${GITHUB_SHA}" -t "${ref}:staging" .
+            docker push "${ref}:${GITHUB_SHA}"
+            docker push "${ref}:staging"
+          }
+          build_one backend backend/Dockerfile
+          build_one migrate backend/Dockerfile.migrate
+          build_one frontend frontend/Dockerfile --build-arg "VITE_API_BASE_URL=${vite_url}"
+          build_one mock mock-services/Dockerfile
+
+  deploy:
+    name: Deploy qua SSH
+    needs: [secrets, images]
+    if: needs.secrets.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Copy compose va khoi dong image da build
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile="${RUNNER_TEMP}/staging_key"
+          printf '%s\n' "$STAGING_SSH_KEY" > "$keyfile"
+          if ! grep -q -- '-----BEGIN ' "$keyfile"; then
+            printf '%b\n' "$STAGING_SSH_KEY" > "$keyfile"
+          fi
+          chmod 600 "$keyfile"
+          ssh_opts=(-i "$keyfile" -o StrictHostKeyChecking=accept-new)
+          owner="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          ssh "${ssh_opts[@]}" "$STAGING_USER@$STAGING_HOST" "mkdir -p /opt/api-market"
+          scp "${ssh_opts[@]}" docker-compose.yml docker-compose.staging.yml "$STAGING_USER@$STAGING_HOST:/opt/api-market/"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$STAGING_USER@$STAGING_HOST" "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
+          ssh "${ssh_opts[@]}" "$STAGING_USER@$STAGING_HOST" "cd /opt/api-market && test -f .env.staging && GHCR_OWNER='$owner' IMAGE_TAG='$GITHUB_SHA' docker compose --env-file .env.staging -f docker-compose.yml -f docker-compose.staging.yml --profile frontend pull && GHCR_OWNER='$owner' IMAGE_TAG='$GITHUB_SHA' docker compose --env-file .env.staging -f docker-compose.yml -f docker-compose.staging.yml --profile frontend up -d --remove-orphans"

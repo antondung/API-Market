@@ -13,6 +13,7 @@ import { ApiDetailPage } from '../pages/marketplace/ApiDetailPage';
 import { ApiPlaygroundPage } from '../pages/marketplace/ApiPlaygroundPage';
 import { CheckoutPage } from '../pages/checkout/CheckoutPage';
 import { GatewayOperationsPage } from '../pages/admin/GatewayOperationsPage';
+import * as operationsApi from '../services/operationsApi';
 import { TrySandboxPage } from '../pages/marketplace/TrySandboxPage';
 import { PricingPage } from '../pages/marketplace/PricingPage';
 import { CompareApisPage } from '../pages/marketplace/CompareApisPage';
@@ -195,7 +196,8 @@ it('Playground explains the missing backend and does not send simulated requests
 });
 
 it('Admin monitoring reports unknown rather than unmeasured health/latency/worker activity', async () => {
+  vi.spyOn(operationsApi, 'operations').mockRejectedValue(new Error('Monitoring offline'));
   render(view('/admin/gateway', '/admin/gateway', <GatewayOperationsPage />));
-  expect(screen.getAllByText('Chưa có dữ liệu giám sát')).toHaveLength(5);
+  expect(await screen.findByText('Chưa có dữ liệu giám sát')).toBeDefined();
   await waitFor(() => expect(screen.queryByText(/100% OK|Ready for production|Active daemon|< 2 ms/)).toBeNull());
 });

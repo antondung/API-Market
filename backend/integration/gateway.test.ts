@@ -97,7 +97,9 @@ async function fixture(upstreamPort: number) {
 
     const keys = new ApiKeyService(store.pool);
     const created = await keys.create(consumer.user.id, api, 'test');
-    const app = createApp(auth, () => {}, { gateway: new GatewayService(store.pool, keys, passThroughProxy) });
+    // These tests isolate routing/transport. Subscription enforcement is exercised with real
+    // PostgreSQL + Redis in gateway-metered.test.ts, not via a production bypass switch.
+    const app = createApp(auth, () => {}, { gateway: new GatewayService(store.pool, keys, passThroughProxy, {reserve:async()=>({complete:async()=>{}})}) });
     const server = createServer(app);
     const port = await listen(server);
     return { store, api, keys, consumer, key: created.key, port, close: async () => { server.close(); await close(); } };

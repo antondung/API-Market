@@ -445,7 +445,7 @@ export const PricingPage: React.FC = () => {
                             </div>
                             <div className="text-on-surface-variant flex items-center gap-1.5">
                               <span className="material-symbols-outlined text-primary text-[18px]">speed</span>
-                              <span>{plan.rateLimit} {t('req/sec rate limit')}</span>
+                              <span>{plan.rateLimit} req/phút</span>
                             </div>
                             <div className="text-on-surface-variant flex items-start gap-1.5">
                               <span className="material-symbols-outlined text-emerald-600 text-[16px] flex-shrink-0 mt-0.5">check</span>

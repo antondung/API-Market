@@ -1,0 +1,19 @@
+# Sprint 4 backend — issue #17
+
+User authorized autonomous implementation on 04/11/2026. Scope is Tùng Dương's backend; Frontend, Admin worker, upstream HMAC and staging remain owned by the other members.
+
+Use PR #91's migration 009 unchanged as dependency; preserve provenance. PostgreSQL is authoritative for entitlement/payments/durable quota. Redis is mandatory for Gateway rate/quota gates, fail closed on outage (503), no in-memory production fallback. Keep existing Sandbox HTTP contract separate from subscribed Gateway. Public upstream safety remains SafeProxy.
+
+## Decisions
+- Existing Node/TypeScript/Express/PostgreSQL architecture. 30-day paid/free periods. Cancel stops renewal, retains access until period end; optional explicit immediate cancel. Expiry enforced per request even before worker. Change plan creates a pending change checkout, applies only on successful payment, no destructive changes to prior entitlement on failure. Never reset consumed quota on repeated checkout/webhook/plan change.
+- Local payment sandbox, no real card details or money. Checkout produces a server-signed short-lived confirmation token; authenticated owner may simulate success/failure using that token, which invokes the same idempotent settlement path as HMAC-signed webhook. Client never controls amount/currency/owner. Webhook signs exact raw body with timestamp, constant-time compare, 5-minute tolerance and event uniqueness.
+- Gateway: key -> published route/registered endpoint validation -> subscription/active plan -> atomic Redis rate/quota -> durable quota reservation -> SafeProxy execute -> durable outbox completion -> asynchronous batch usage writer. PostgreSQL subscription lock plus quota_used is the recovery floor so Redis key loss cannot give free requests; overcount on rollback is conservative. No reinitialization below PostgreSQL usage. Denials do not consume quota. Upstream failures do consume accepted usage. Never hold DB lock over network upstream.
+- Durable Usage outbox contains only whitelisted numeric/identifier fields. Writer batches at most 500 every 250ms; retries preserve records and duplicate-safe inserts. No headers/body/query/secret accepted by logger. Shutdown drains. Stale accepted attempts can be recorded as 502 after restart. Stats/history owner-scoped, Provider data excludes Consumer identity; revenue computed from settled transactions independently of traffic. Daily request summary uses aggregates refreshed by worker/flush; active count comes from subscriptions, not traffic.
+- Add hardening migration 010 only for backend outbox/payment change metadata and snapshot fields; do not edit 009. Existing state names mapped to schema (Pending/Active/etc). Failed payment is payment Failed; pending subscription becomes Canceled, avoiding a new unsupported state. Signed confirmation expires after 15min.
+- Tests use PostgreSQL and real Redis processes, plus safe upstream transport fixtures. Benchmark reports p50/p95 overhead and methodology; no fabricated SLA/staging claims.
+
+## Alternatives
+Real payment provider was rejected: sandbox-only requirement and no provider credentials. PostgreSQL-only counter rejected: Redis explicitly required. Redis-only quota with async recovery rejected: eviction/restart before logs flush can grant excess quota. The chosen durable floor costs one short DB transaction per accepted request; benchmark must disclose that.
+
+## Acceptance
+HTTP tests: role/owner isolation, free vs paid, failed/repeated/out-of-order/forged/expired webhook, exact amount, concurrent checkout, cancel/change without quota reset. Real Redis tests: last quota concurrency, minute rate, Redis failure/eviction and floor. Usage redaction, retries/idempotency and provider revenue without usage. Swagger/contract/config/CI and measured benchmark. Independent final code review. PR targets develop and states #91 dependency; no auto-merge, no declaring issue/staging done before QA.

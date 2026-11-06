@@ -44,7 +44,10 @@ function startNxdomainFixture() {
 }
 
 const BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3000';
-const DB_URL = process.env.DATABASE_URL || 'postgresql://postgres:MatKhauCuaToi123!@127.0.0.1:5432/api_market_dev';
+const DB_URL = process.env.DATABASE_URL;
+if (!DB_URL) {
+  throw new Error('Thiếu biến môi trường DATABASE_URL để kết nối PostgreSQL kiểm thử.');
+}
 const FIXTURES_DIR = path.resolve('qa-scripts/openapi-fixtures');
 
 const results = [];

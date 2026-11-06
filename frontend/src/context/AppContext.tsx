@@ -460,7 +460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode; storageScope?: s
           priceMonthly: 0,
           monthlyQuota: 1000,
           rateLimitPerSec: 5,
-          features: ['1,000 monthly calls', '5 req/sec rate limit']
+          features: ['1,000 monthly calls', '5 req/phút']
         }
       ],
       endpoints: newApiData.endpoints || [],
