@@ -71,6 +71,12 @@ describe('ProviderDashboardPage - AC-05 Provider Analytics & Multi-Currency', ()
   };
 
   beforeEach(() => {
+    mockCurrentUser = {
+      id: 'usr_provider_10',
+      email: 'provider@example.com',
+      name: 'Telecom Provider',
+      role: 'API_PROVIDER',
+    };
     vi.clearAllMocks();
     vi.spyOn(providerApi, 'getProviderVerification').mockResolvedValue(mockVerification as any);
     vi.spyOn(providerApi, 'listProviderApis').mockResolvedValue(mockApis as any);
@@ -99,8 +105,9 @@ describe('ProviderDashboardPage - AC-05 Provider Analytics & Multi-Currency', ()
     // Error rate: 750/15000 = 5.0%
     expect(screen.getByText('5.0%')).toBeDefined();
 
-    // Active subscribers
+    // Active subscribers — current count, not clipped by the date window
     expect(screen.getByText('42')).toBeDefined();
+    expect(screen.getByText(/không cắt chỉ số này/)).toBeDefined();
 
     // Average latency
     expect(screen.getByText('45 ms')).toBeDefined();
@@ -188,5 +195,79 @@ describe('ProviderDashboardPage - AC-05 Provider Analytics & Multi-Currency', ()
     // After retry succeeds, shows real data
     expect(await screen.findByText('15.000')).toBeDefined();
     expect(screen.getByText('25.000.000 VND')).toBeDefined();
+  });
+
+  it('links latency detail to the analytics route and draws the daily chart', async () => {
+    render(
+      <MemoryRouter>
+        <ProviderDashboardPage />
+      </MemoryRouter>
+    );
+
+    const link = await screen.findByRole('link', { name: /Xem phân tích sức khỏe/i });
+    expect(link.getAttribute('href')).toBe('/provider/analytics');
+    expect(screen.queryByRole('link', { name: /Telemetry/i })).toBeNull();
+    expect(await screen.findByTestId('chart-bar-2026-11-01')).toBeDefined();
+  });
+
+  it('applies a numeric API id and date window to the overview request', async () => {
+    const overview = vi.spyOn(usageApi, 'getProviderAnalyticsOverview').mockResolvedValue(mockAnalytics);
+
+    render(
+      <MemoryRouter>
+        <ProviderDashboardPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('15.000');
+    fireEvent.change(screen.getByTestId('provider-filter-api-id'), { target: { value: '12' } });
+    fireEvent.change(screen.getByTestId('provider-filter-from'), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByTestId('provider-filter-to'), { target: { value: '2026-10-31' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lọc/ }));
+
+    await waitFor(() => {
+      expect(overview).toHaveBeenCalledWith(
+        { apiId: '12', from: '2026-10-01', to: '2026-10-31' },
+        expect.anything()
+      );
+    });
+  });
+
+  it('does not call analytics when the API id is not a positive integer', async () => {
+    const overview = vi.spyOn(usageApi, 'getProviderAnalyticsOverview').mockResolvedValue(mockAnalytics);
+
+    render(
+      <MemoryRouter>
+        <ProviderDashboardPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText('15.000');
+    const calls = overview.mock.calls.length;
+    fireEvent.change(screen.getByTestId('provider-filter-api-id'), { target: { value: 'sms-gateway' } });
+    fireEvent.click(screen.getByRole('button', { name: /Lọc/ }));
+
+    expect(screen.getByTestId('provider-filter-error').textContent).toContain('2147483647');
+    expect(overview.mock.calls.length).toBe(calls);
+  });
+
+  it('hides provider KPIs from a consumer role', async () => {
+    mockCurrentUser = {
+      id: 'usr_consumer_1',
+      email: 'consumer@example.com',
+      name: 'Consumer User',
+      role: 'USER',
+    };
+    const overview = vi.spyOn(usageApi, 'getProviderAnalyticsOverview').mockResolvedValue(mockAnalytics);
+
+    render(
+      <MemoryRouter>
+        <ProviderDashboardPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByTestId('provider-role-guard')).toBeDefined();
+    expect(screen.queryByText('15.000')).toBeNull();
+    expect(overview).not.toHaveBeenCalled();
   });
 });

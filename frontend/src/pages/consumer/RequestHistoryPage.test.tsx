@@ -448,7 +448,7 @@ describe('RequestHistoryPage Component & Pure Helpers', () => {
 
       // Change API ID
       const apiInput = screen.getByTestId('filter-api-id');
-      fireEvent.change(apiInput, { target: { value: 'api_custom_payment' } });
+      fireEvent.change(apiInput, { target: { value: '108' } });
 
       // Change dates
       const fromInput = screen.getByTestId('filter-date-from');
@@ -464,7 +464,7 @@ describe('RequestHistoryPage Component & Pure Helpers', () => {
       await waitFor(() => {
         expect(fetchSpy).toHaveBeenLastCalledWith(
           expect.objectContaining({
-            apiId: 'api_custom_payment',
+            apiId: '108',
             from: '2026-10-01',
             to: '2026-10-31',
           }),
@@ -514,6 +514,29 @@ describe('RequestHistoryPage Component & Pure Helpers', () => {
       ).toBeDefined();
 
       // No new API fetch triggered while range error exists
+      expect(fetchSpy.mock.calls.length).toBe(initialCalls);
+    });
+
+    it('blocks a non-numeric API id and does not send it to history', async () => {
+      const fetchSpy = vi
+        .spyOn(usageApi, 'getConsumerUsageHistory')
+        .mockResolvedValue(createMockResponse());
+
+      render(
+        <MemoryRouter>
+          <RequestHistoryPage />
+        </MemoryRouter>
+      );
+
+      await screen.findByTestId('history-table');
+      const initialCalls = fetchSpy.mock.calls.length;
+
+      fireEvent.change(screen.getByTestId('filter-api-id'), {
+        target: { value: 'api_custom_payment' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Áp dụng bộ lọc/i }));
+
+      expect(screen.getByTestId('filter-api-error').textContent).toContain('2147483647');
       expect(fetchSpy.mock.calls.length).toBe(initialCalls);
     });
   });

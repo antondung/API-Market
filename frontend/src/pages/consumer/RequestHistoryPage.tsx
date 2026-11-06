@@ -8,6 +8,8 @@ import { useLanguage } from '../../i18n';
 import * as usageApi from '../../services/usageApi';
 import type { UsageHistoryItem, UsageQueryParams } from '../../services/sprint4Types';
 import { ApiError } from '../../services/authApi';
+import { marketplaceApiIdError } from '../../components/usage/usageQuery';
+import { canUseConsumerWorkspace } from '../../components/auth/workspaceRole';
 
 export function formatOccurredAt(dateStr: string | null | undefined): string {
   if (!dateStr) return '-';
@@ -108,6 +110,9 @@ export const RequestHistoryPage: React.FC = () => {
   const [activeDateFrom, setActiveDateFrom] = useState<string>('');
   const [activeDateTo, setActiveDateTo] = useState<string>('');
   const [dateError, setDateError] = useState<string | null>(null);
+  const [apiIdError, setApiIdError] = useState<string | null>(null);
+  const workspaceRole = auth?.currentUser?.role;
+  const consumerAllowed = canUseConsumerWorkspace(workspaceRole);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [rawActiveLog, setRawActiveLog] = useState<UsageHistoryItem | null>(null);
@@ -197,6 +202,12 @@ export const RequestHistoryPage: React.FC = () => {
     const controller = new AbortController();
     setHistoryData({ ownerId: userId, items: [], total: 0, error: null });
     setRawActiveLog(null);
+    if (!consumerAllowed) {
+      setIsLoading(false);
+      return () => {
+        controller.abort();
+      };
+    }
     if (userId) {
       fetchHistory(
         page,
@@ -213,16 +224,17 @@ export const RequestHistoryPage: React.FC = () => {
     return () => {
       controller.abort();
     };
-  }, [userId, fetchHistory, page, selectedStatus, activeApiId, activeDateFrom, activeDateTo]);
+  }, [userId, fetchHistory, page, selectedStatus, activeApiId, activeDateFrom, activeDateTo, consumerAllowed]);
 
   const handleApplyFilter = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const rangeErr = validateDateRange(dateFromInput, dateToInput);
-    if (rangeErr) {
-      setDateError(rangeErr);
+    const idErr = marketplaceApiIdError(apiIdInput);
+    setDateError(rangeErr);
+    setApiIdError(idErr);
+    if (rangeErr || idErr) {
       return;
     }
-    setDateError(null);
     setPage(1);
     setActiveApiId(apiIdInput);
     setActiveDateFrom(dateFromInput);
@@ -238,6 +250,7 @@ export const RequestHistoryPage: React.FC = () => {
     setActiveDateFrom('');
     setActiveDateTo('');
     setDateError(null);
+    setApiIdError(null);
     setPage(1);
   };
 
@@ -256,6 +269,23 @@ export const RequestHistoryPage: React.FC = () => {
   };
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  if (!consumerAllowed) {
+    return (
+      <div
+        role="alert"
+        data-testid="consumer-role-guard"
+        className="rounded-2xl border border-error/30 bg-error/10 p-8 text-center space-y-2"
+      >
+        <h1 className="text-headline-sm font-bold text-on-surface">
+          {t('Màn hình dành cho Consumer')}
+        </h1>
+        <p className="text-body-sm text-on-surface-variant">
+          {t('Lịch sử request chỉ mở cho Consumer và Provider. Tài khoản Admin dùng Admin Console.')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -320,12 +350,12 @@ export const RequestHistoryPage: React.FC = () => {
               className="bg-surface-container border border-outline-variant/40 rounded-xl px-3 py-2 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="all">{t('Tất cả trạng thái (All)')}</option>
-              <option value="200">200 OK (2xx Thành công)</option>
+              <option value="200">200 OK</option>
               <option value="401">401 Unauthorized</option>
               <option value="403">403 Forbidden</option>
               <option value="404">404 Not Found</option>
-              <option value="429">429 Rate Limited (4xx)</option>
-              <option value="500">500 Server Error (5xx)</option>
+              <option value="429">429 Too Many Requests</option>
+              <option value="500">500 Server Error</option>
               <option value="503">503 Unavailable</option>
             </select>
           </div>
@@ -342,7 +372,7 @@ export const RequestHistoryPage: React.FC = () => {
               id="history-api-id-filter"
               type="text"
               data-testid="filter-api-id"
-              placeholder={t('Nhập API ID...')}
+              placeholder={t('Nhập API ID dạng số (ví dụ: 12)')}
               value={apiIdInput}
               onChange={(e) => setApiIdInput(e.target.value)}
               className="bg-surface-container border border-outline-variant/40 rounded-xl px-3 py-2 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
@@ -388,6 +418,10 @@ export const RequestHistoryPage: React.FC = () => {
           </div>
         </div>
 
+        <p className="text-body-xs text-on-surface-variant">
+          {t('Bộ lọc trạng thái khớp đúng một mã HTTP. Hợp đồng backend chưa có lọc theo nhóm 2xx, 4xx hoặc 5xx.')}
+        </p>
+
         {dateError && (
           <div
             role="alert"
@@ -395,6 +429,16 @@ export const RequestHistoryPage: React.FC = () => {
           >
             <span className="material-symbols-outlined text-[16px]">error</span>
             <span>{dateError}</span>
+          </div>
+        )}
+        {apiIdError && (
+          <div
+            role="alert"
+            data-testid="filter-api-error"
+            className="text-body-xs text-error flex items-center gap-1.5 pt-1"
+          >
+            <span className="material-symbols-outlined text-[16px]">error</span>
+            <span>{apiIdError}</span>
           </div>
         )}
 

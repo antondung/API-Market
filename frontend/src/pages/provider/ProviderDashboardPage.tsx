@@ -14,10 +14,14 @@ import { getProviderAnalyticsOverview } from '../../services/usageApi';
 import type { ProviderApisPage, ProviderVerification } from '../../services/providerTypes';
 import {
   type ProviderAnalyticsOverview,
+  type ProviderAnalyticsQueryParams,
   formatBigIntCount,
   parseSafeBigInt,
   formatCurrencyAmount,
 } from '../../services/sprint4Types';
+import { DailyRequestChart } from '../../components/usage/DailyRequestChart';
+import { marketplaceApiIdError, validateUsageDateRange } from '../../components/usage/usageQuery';
+import { canUseProviderWorkspace } from '../../components/auth/workspaceRole';
 
 type Snapshot = {
   userId: string;
@@ -46,11 +50,35 @@ export const ProviderDashboardPage: React.FC = () => {
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(true);
 
   const [revision, setRevision] = useState(0);
+  const [draftApiId, setDraftApiId] = useState('');
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftTo, setDraftTo] = useState('');
+  const [appliedQuery, setAppliedQuery] = useState<ProviderAnalyticsQueryParams>({});
+  const [filterError, setFilterError] = useState<string | null>(null);
   const userId = currentUser?.id;
+  const providerAllowed = canUseProviderWorkspace(currentUser?.role);
+
+  const applyAnalyticsFilters = () => {
+    const idErr = marketplaceApiIdError(draftApiId);
+    const dateErr = validateUsageDateRange(draftFrom, draftTo);
+    if (idErr || dateErr) {
+      setFilterError(idErr || dateErr);
+      return;
+    }
+    setFilterError(null);
+    const next: ProviderAnalyticsQueryParams = {};
+    if (draftApiId.trim()) next.apiId = draftApiId.trim();
+    if (draftFrom.trim()) next.from = draftFrom.trim();
+    if (draftTo.trim()) next.to = draftTo.trim();
+    setAppliedQuery(next);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
-    if (!userId) return () => controller.abort();
+    if (!userId || !providerAllowed) {
+      setIsAnalyticsLoading(false);
+      return () => controller.abort();
+    }
 
     setIsAnalyticsLoading(true);
     setAnalyticsSnapshot(null);
@@ -70,7 +98,8 @@ export const ProviderDashboardPage: React.FC = () => {
         }
       });
 
-    getProviderAnalyticsOverview(undefined, controller.signal)
+    const hasQuery = Boolean(appliedQuery.apiId || appliedQuery.from || appliedQuery.to);
+    getProviderAnalyticsOverview(hasQuery ? appliedQuery : undefined, controller.signal)
       .then((res) => {
         if (!controller.signal.aborted) {
           setAnalyticsSnapshot({ userId, revision, data: res, error: null });
@@ -94,7 +123,7 @@ export const ProviderDashboardPage: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [userId, revision]);
+  }, [userId, revision, providerAllowed, appliedQuery]);
 
   useEffect(() => {
     const refresh = () => setRevision((value) => value + 1);
@@ -154,6 +183,23 @@ export const ProviderDashboardPage: React.FC = () => {
 
   const revenueItems = analytics?.revenue || [];
 
+  if (!providerAllowed) {
+    return (
+      <div
+        role="alert"
+        data-testid="provider-role-guard"
+        className="rounded-2xl border border-error/30 bg-error/10 p-8 text-center space-y-2"
+      >
+        <h1 className="text-headline-sm font-bold text-on-surface">
+          {t('Bảng điều khiển Provider')}
+        </h1>
+        <p className="text-body-sm text-on-surface-variant">
+          {t('Số subscriber, tổng request và doanh thu sandbox chỉ dành cho tài khoản API Provider.')}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header */}
@@ -197,6 +243,69 @@ export const ProviderDashboardPage: React.FC = () => {
           {error}
         </div>
       )}
+
+      <form
+        className="rounded-2xl border border-outline-variant/30 bg-surface-container-low p-4 shadow-sm space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          applyAnalyticsFilters();
+        }}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <label htmlFor="provider-filter-api-id" className="text-body-xs font-semibold text-on-surface-variant block mb-1">
+              {t('API ID')}
+            </label>
+            <input
+              id="provider-filter-api-id"
+              data-testid="provider-filter-api-id"
+              value={draftApiId}
+              onChange={(event) => setDraftApiId(event.target.value)}
+              placeholder={t('Số nguyên, ví dụ 12')}
+              className="w-full px-3 py-2 text-body-sm rounded-xl border border-outline-variant/50 bg-surface text-on-surface"
+            />
+          </div>
+          <div>
+            <label htmlFor="provider-filter-from" className="text-body-xs font-semibold text-on-surface-variant block mb-1">
+              {t('Từ ngày')}
+            </label>
+            <input
+              id="provider-filter-from"
+              data-testid="provider-filter-from"
+              type="date"
+              value={draftFrom}
+              onChange={(event) => setDraftFrom(event.target.value)}
+              className="w-full px-3 py-2 text-body-sm rounded-xl border border-outline-variant/50 bg-surface text-on-surface"
+            />
+          </div>
+          <div>
+            <label htmlFor="provider-filter-to" className="text-body-xs font-semibold text-on-surface-variant block mb-1">
+              {t('Đến ngày')}
+            </label>
+            <input
+              id="provider-filter-to"
+              data-testid="provider-filter-to"
+              type="date"
+              value={draftTo}
+              onChange={(event) => setDraftTo(event.target.value)}
+              className="w-full px-3 py-2 text-body-sm rounded-xl border border-outline-variant/50 bg-surface text-on-surface"
+            />
+          </div>
+          <div className="flex items-end">
+            <Button type="submit" variant="secondary" size="sm" icon="filter_alt">
+              {t('Lọc')}
+            </Button>
+          </div>
+        </div>
+        <p className="text-body-xs text-on-surface-variant">
+          {t('Khi không chọn ngày, backend lấy 30 ngày gần nhất. Doanh thu sandbox được tách theo từng loại tiền, không cộng chéo.')}
+        </p>
+        {filterError && (
+          <div role="alert" data-testid="provider-filter-error" className="text-body-xs text-error">
+            {filterError}
+          </div>
+        )}
+      </form>
 
       {!data && !error && <p role="status">{t('Đang tải dữ liệu Provider…')}</p>}
 
@@ -291,7 +400,7 @@ export const ProviderDashboardPage: React.FC = () => {
               )}
             </div>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              {t('Người dùng có thuê bao Active hợp lệ')}
+              {t('Số thuê bao Active hiện tại. Bộ lọc ngày không cắt chỉ số này, chỉ áp dụng cho request và doanh thu.')}
             </p>
           </div>
           <div className="mt-4 pt-3 border-t border-outline-variant/20">
@@ -322,8 +431,8 @@ export const ProviderDashboardPage: React.FC = () => {
             </p>
           </div>
           <div className="mt-4 pt-3 border-t border-outline-variant/20">
-            <Link to="/provider/telemetry" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
-              {t('Xem Telemetry chi tiết')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+            <Link to="/provider/analytics" className="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1">
+              {t('Xem phân tích sức khỏe')} <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </Link>
           </div>
         </div>
@@ -417,28 +526,34 @@ export const ProviderDashboardPage: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
-            <table className="w-full text-left text-body-sm">
-              <thead className="bg-surface-container border-b border-outline-variant/30 text-on-surface-variant">
-                <tr>
-                  <th className="p-4 font-semibold">{t('Ngày')}</th>
-                  <th className="p-4 font-semibold text-right">{t('Số lượt gọi')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analytics.daily.map((item) => (
-                  <tr
-                    key={item.date}
-                    className="border-b border-outline-variant/20 hover:bg-surface-container-highest/20 transition-colors"
-                  >
-                    <td className="p-4 font-code-sm font-medium text-on-surface">{item.date}</td>
-                    <td className="p-4 font-code-sm text-right font-bold text-primary">
-                      {formatBigIntCount(item.requestCount)}
-                    </td>
+          <div className="space-y-4">
+            <DailyRequestChart
+              points={analytics.daily}
+              title={t('Biểu đồ lượt gọi theo ngày')}
+            />
+            <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+              <table className="w-full text-left text-body-sm">
+                <thead className="bg-surface-container border-b border-outline-variant/30 text-on-surface-variant">
+                  <tr>
+                    <th className="p-4 font-semibold">{t('Ngày')}</th>
+                    <th className="p-4 font-semibold text-right">{t('Số lượt gọi')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {analytics.daily.map((item) => (
+                    <tr
+                      key={item.date}
+                      className="border-b border-outline-variant/20 hover:bg-surface-container-highest/20 transition-colors"
+                    >
+                      <td className="p-4 font-code-sm font-medium text-on-surface">{item.date}</td>
+                      <td className="p-4 font-code-sm text-right font-bold text-primary">
+                        {formatBigIntCount(item.requestCount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>

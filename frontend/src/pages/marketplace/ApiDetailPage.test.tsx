@@ -293,6 +293,13 @@ describe('ApiDetailPage', () => {
     // Verify code block contains Gateway path
     expect(screen.getAllByText(/\/api\/gateway\/1\/v2\/observations\/current/)[0]).toBeDefined();
 
+    expect(screen.getByText(/curl -X GET/)).toBeDefined();
+    expect(screen.getByText(/await fetch/)).toBeDefined();
+    expect(screen.getByText(/import requests/)).toBeDefined();
+    expect(screen.getAllByText(/YOUR_API_KEY/).length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByRole('button', { name: /Copy code/i })).toHaveLength(3);
+    expect(screen.getByText(/curl -X GET/).textContent || '').not.toMatch(/sk_live_|sk_test_|Bearer [A-Za-z0-9._-]{12,}/);
+
     // Verify rate limit unit is req/phút in pricing plans
     const pricingTab = screen.getByRole('button', { name: /Pricing Plans/ });
     fireEvent.click(pricingTab);
