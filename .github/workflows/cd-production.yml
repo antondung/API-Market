@@ -1,0 +1,128 @@
+# Dựng mỗi image một lần, đẩy GHCR, rồi deploy production bằng docker-compose.yml
+# và docker-compose.production.yml. Bỏ qua khi thiếu PROD_HOST, PROD_USER
+# hoặc PROD_SSH_KEY.
+#
+# Máy chủ cần /opt/api-market/.env.production, tạo từ .env.production.example và
+# vượt qua scripts/production-preflight.mjs. Workflow không ghi đè file này.
+# Trước khi pull/up image mới, workflow tự chụp bản backup PostgreSQL và lưu lại
+# IMAGE_TAG trước đó vào .last_image_tag để hỗ trợ rollback tức thì (EN-13).
+name: Trien khai production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+jobs:
+  secrets:
+    name: Kiem tra secret production
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$PROD_HOST" ] && [ -n "$PROD_USER" ] && [ -n "$PROD_SSH_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Production secrets absent. Skip image publish and deploy."
+          fi
+
+  images:
+    name: Build va day image production
+    needs: secrets
+    if: needs.secrets.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Dang nhap GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Kiem tra PROD_API_BASE_URL
+        env:
+          PROD_API_BASE_URL: ${{ vars.PROD_API_BASE_URL }}
+        run: STAGING_API_BASE_URL="$PROD_API_BASE_URL" node scripts/staging-api-origin.mjs
+      - name: Build va push image
+        env:
+          PROD_API_BASE_URL: ${{ vars.PROD_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          for item in \
+            "api-market-backend:backend/Dockerfile" \
+            "api-market-migrate:backend/Dockerfile.migrate" \
+            "api-market-mock:mock-services/Dockerfile"; do
+            name="${item%%:*}"
+            dockerfile="${item#*:}"
+            docker build -f "$dockerfile" -t "ghcr.io/$owner/$name:$GITHUB_SHA" -t "ghcr.io/$owner/$name:production" .
+            docker push "ghcr.io/$owner/$name:$GITHUB_SHA"
+            docker push "ghcr.io/$owner/$name:production"
+          done
+          docker build -f frontend/Dockerfile \
+            --build-arg "VITE_API_BASE_URL=$PROD_API_BASE_URL" \
+            -t "ghcr.io/$owner/api-market-frontend:$GITHUB_SHA" \
+            -t "ghcr.io/$owner/api-market-frontend:production" .
+          docker push "ghcr.io/$owner/api-market-frontend:$GITHUB_SHA"
+          docker push "ghcr.io/$owner/api-market-frontend:production"
+
+  deploy:
+    name: Backup, deploy va smoke test production
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Deploy qua SSH kem backup va rollback tag
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          keyfile="$(mktemp)"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$PROD_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh_opts=(-i "$keyfile" -o StrictHostKeyChecking=accept-new)
+          owner="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          ssh "${ssh_opts[@]}" "$PROD_USER@$PROD_HOST" "mkdir -p /opt/api-market/backups"
+          scp "${ssh_opts[@]}" docker-compose.yml docker-compose.production.yml "$PROD_USER@$PROD_HOST:/opt/api-market/"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$PROD_USER@$PROD_HOST" "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
+          ssh "${ssh_opts[@]}" "$PROD_USER@$PROD_HOST" "cd /opt/api-market && test -f .env.production && \
+            if docker ps --format '{{.Names}}' | grep -q '^api-market-postgres$'; then \
+              . ./.env.production && docker exec api-market-postgres pg_dump -U \"\${POSTGRES_USER:-postgres}\" -Fc \"\${POSTGRES_DB:-api_market_prod}\" > \"backups/pre-deploy-\$(date -u +%Y%m%dT%H%M%SZ).dump\"; \
+            fi && \
+            if [ -f .current_image_tag ]; then cp .current_image_tag .last_image_tag; fi && \
+            printf '%s\n' '$GITHUB_SHA' > .current_image_tag && \
+            GHCR_OWNER='$owner' IMAGE_TAG='$GITHUB_SHA' docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml --profile frontend pull && \
+            GHCR_OWNER='$owner' IMAGE_TAG='$GITHUB_SHA' docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml --profile frontend up -d --remove-orphans"
+      - name: Smoke test sau deploy
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile="$(mktemp)"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$PROD_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -i "$keyfile" -o StrictHostKeyChecking=accept-new "$PROD_USER@$PROD_HOST" "cd /opt/api-market && set -a && . ./.env.production && set +a && \
+            curl -fsS \"http://127.0.0.1:\${BACKEND_PORT:-3000}/health\" && \
+            curl -fsS \"http://127.0.0.1:\${FRONTEND_PORT:-5173}/\" >/dev/null"

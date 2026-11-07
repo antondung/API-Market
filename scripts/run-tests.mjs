@@ -30,7 +30,11 @@ try {
   const tests = ['test', 'integration'].flatMap(folder => readdirSync(`backend/${folder}`).filter(name => name.endsWith('.test.ts')).map(name => `dist/${folder}/${name.replace(/\.ts$/, '.js')}`));
   redis = await testRedis();
   const selected = process.env.TARGET_TEST ? tests.filter(name => new RegExp(process.env.TARGET_TEST).test(name)) : tests;
-  const args=process.argv.includes('--benchmark')?['--import','tsx','backend/src/gateway-benchmark.ts']:['--test','--test-concurrency=4',...selected];
+  const args = process.argv.includes('--benchmark')
+    ? ['--import', 'tsx', 'backend/src/gateway-benchmark.ts']
+    : process.argv.includes('--loadtest')
+      ? ['--import', 'tsx', 'backend/src/gateway-loadtest.ts']
+      : ['--test', '--test-concurrency=4', ...selected];
   const result = spawnSync(process.execPath, args, { stdio: 'inherit', windowsHide: true, env: { ...process.env, PG_TEST_URL: databaseUrl, REDIS_TEST_URL: redis.url } });
   process.exitCode = result.status ?? 1;
 } catch (error) {

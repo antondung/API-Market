@@ -8,6 +8,9 @@
   },
   "scripts": {
     "benchmark:gateway": "node scripts/run-tests.mjs --benchmark",
+    "loadtest:gateway": "node scripts/run-tests.mjs --loadtest",
+    "verify:backup": "npm run build && node scripts/db-backup-restore.mjs --verify-disposable",
+    "preflight:prod": "node --env-file=.env.production scripts/production-preflight.mjs",
     "dev": "node --env-file-if-exists=.env --import tsx backend/src/server.ts",
     "provider:import": "node --import tsx backend/src/provider-import-cli.ts",
     "build": "tsc -p tsconfig.json",
