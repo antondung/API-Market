@@ -62,6 +62,13 @@ async function tableCounts(url) {
       "api_versions",
       "api_endpoints",
       "api_plans",
+      "subscriptions",
+      "payments",
+      "transactions",
+      "usage_logs",
+      "usage_daily_aggregates",
+      "provider_daily_aggregates",
+      "provider_revenue_daily_aggregates",
       "backend_schema_migrations",
     ];
     const counts = {};
