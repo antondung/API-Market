@@ -124,16 +124,20 @@ export class GatewayService {
     if(!this.admission)throw new ApiError(503,'QUOTA_UNAVAILABLE','Subscription metering is unavailable');
     const reservation=await this.admission.reserve(identity,matched.id);
     const upstreamStarted=performance.now();let statusCode=502,errorCode:string|undefined,responseBytes=0;
+    let response: GatewayResponse;
+    let gatewayOverheadMs: number;
     try {
       const result = await this.proxy.execute(target);statusCode=result.status;
       const body=Buffer.from(result.body,result.bodyEncoding);responseBytes=body.length;
-      return { status:result.status,headers:result.headers,body };
+      response = { status: result.status, headers: result.headers, body };
     }catch(error){if(error instanceof ApiError){statusCode=error.status;errorCode=error.code;}throw error;}
     finally {
       const end=performance.now(),latencyMs=Math.ceil(end-started),upstreamLatencyMs=Math.floor(end-upstreamStarted);
-      try{await reservation.complete({statusCode,errorCode,responseBytes,latencyMs,upstreamLatencyMs,gatewayOverheadMs:Math.max(0,latencyMs-upstreamLatencyMs)});}
+      gatewayOverheadMs = Math.max(0, latencyMs - upstreamLatencyMs);
+      try{await reservation.complete({statusCode,errorCode,responseBytes,latencyMs,upstreamLatencyMs,gatewayOverheadMs});}
       catch{console.error('Usage completion pending recovery');}
     }
+    return { ...response, headers: { ...response.headers, 'x-gateway-overhead-ms': String(gatewayOverheadMs) } };
   }
 }
 

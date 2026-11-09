@@ -124,6 +124,8 @@ test("Gateway requires subscription, serializes last quota request, persists red
     await f.usage.flush();
     const logs = (await f.store.pool.query("SELECT * FROM usage_logs")).rows;
     assert.equal(logs.length, 1);
+    const forwarded = results.find((result) => result.status === 200)!;
+    assert.equal(forwarded.headers["x-gateway-overhead-ms"], String(logs[0].gateway_overhead_ms));
     assert.equal(JSON.stringify(logs).includes("secret-"), false);
     assert.equal(
       (
@@ -135,7 +137,8 @@ test("Gateway requires subscription, serializes last quota request, persists red
       "5",
     );
     await f.redis.quit();
-    await f.call().expect(503);
+    const unavailable = await f.call().expect(503);
+    assert.equal(unavailable.body.error.code, "QUOTA_UNAVAILABLE");
     assert.equal(f.hits(), 1);
   } finally {
     await f.close();

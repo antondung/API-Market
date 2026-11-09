@@ -332,3 +332,13 @@ Thực thi qua `qa-scripts/sprint4-ui-e2e-runner.cjs` tuân thủ 100% quy đị
 | Merge 8 nhánh | 2 xung đột (`ci.yml`, `.env.example`) | Đã giải; CI chỉ gate `main` và `develop` |
 
 **Ghi chú kỹ thuật về con số test backend:** trên một máy chưa cấu hình Redis, `npm test` trước đây dừng ở bước khởi tạo và báo lỗi "PostgreSQL test setup failed", khiến 155 test không liên quan Redis cũng không chạy được. Runner hiện tách riêng 3 file phụ thuộc Redis (`redis-meter`, `gateway-metered`, `provider-consumer-access`) và thông báo rõ số file bị bỏ qua.
+
+### Kiểm chứng lại ngày 09/11/2026
+
+Bản phát hành Sprint 4 ở commit `7f82754` trên `main`. Các mục FAIL ở bảng lịch sử phía trên mô tả lượt kiểm thử trước khi tích hợp. Runner kiểm tra tĩnh báo riêng 6 nhóm kiểm tra mã nguồn/schema và 47 ca cần đối chiếu bằng các bộ test runtime.
+
+- `TC-GW-04` kiểm tra key của một API bị từ chối ở API khác bằng HTTP 401 `INVALID_API_KEY`.
+- `TC-GW-15` kiểm tra Redis không khả dụng trả HTTP 503 `QUOTA_UNAVAILABLE` và Gateway dừng trước khi gọi upstream.
+- `TC-OVH-06` kiểm tra phản hồi đã chuyển tiếp có `X-Gateway-Overhead-Ms` bằng giá trị ghi vào `usage_logs`. Đây là phép đo trước bước ghi kết quả usage.
+
+Các kiểm tra HTTP trên nằm trong suite Gateway dùng PostgreSQL/Redis tạm. Lượt [CD staging của bản Sprint 4](https://github.com/antondung/API-Market/actions/runs/42158136633) bỏ qua build và deploy vì thiếu cấu hình SSH. Nghiệm thu trên staging và xác nhận feature freeze vẫn cần bằng chứng từ môi trường triển khai.
