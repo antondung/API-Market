@@ -1,5 +1,4 @@
-/* oxlint-disable react-hooks/exhaustive-deps */
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useLanguage } from '../../i18n';
 import { useOptionalAuth } from '../../context/AuthContext';
@@ -15,6 +14,11 @@ import { ApiError } from '../../services/authApi';
 
 export const CostGuardPage: React.FC = () => {
   const { t } = useLanguage();
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
   const auth = useOptionalAuth();
   const currentUser = auth?.currentUser;
 
@@ -31,16 +35,23 @@ export const CostGuardPage: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Available currencies from summary or fallback to USD
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const activeSaveControllerRef = useRef<AbortController | null>(null);
+  const latestFetchRequestIdRef = useRef<number>(0);
+  const selectedCurrencyRef = useRef<string>(selectedCurrency);
+
+  useEffect(() => {
+    selectedCurrencyRef.current = selectedCurrency;
+  }, [selectedCurrency]);
+
+  // Always ensure USD and VND are available, preserving any other backend currencies
   const availableCurrencies = useMemo(() => {
+    const defaults = ['USD', 'VND'];
     if (!summary || summary.currencies.length === 0) {
-      return ['USD'];
+      return defaults;
     }
-    const list = summary.currencies.map((c) => c.currency);
-    if (!list.includes('USD')) {
-      list.push('USD');
-    }
-    return Array.from(new Set(list));
+    const backendCurrencies = summary.currencies.map((c) => c.currency);
+    return Array.from(new Set([...defaults, ...backendCurrencies]));
   }, [summary]);
 
   const currentCurrencyBudget: CostGuardCurrencyBudget | undefined = useMemo(() => {
@@ -58,35 +69,62 @@ export const CostGuardPage: React.FC = () => {
     }
   }, [selectedCurrency, currentCurrencyBudget]);
 
-  const fetchSummary = useCallback(async (signal?: AbortSignal) => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const data = await getCostGuardSummary(signal);
-      setSummary(data);
-    } catch (err: unknown) {
-      if (signal?.aborted) return;
-      if (err instanceof ApiError) {
-        setLoadError(err.message || 'Lỗi kết nối máy chủ');
-      } else if (err instanceof Error) {
-        setLoadError(err.message);
-      } else {
-        setLoadError('Không thể tải dữ liệu Cost Guard');
+  const fetchSummary = useCallback(
+    async (signal?: AbortSignal) => {
+      const requestId = ++latestFetchRequestIdRef.current;
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const data = await getCostGuardSummary(signal);
+        if (signal?.aborted || requestId !== latestFetchRequestIdRef.current) return;
+        setSummary(data);
+      } catch (err: unknown) {
+        if (signal?.aborted || requestId !== latestFetchRequestIdRef.current) return;
+        if (err instanceof ApiError) {
+          setLoadError(err.message || tRef.current('Lỗi kết nối máy chủ'));
+        } else if (err instanceof Error) {
+          setLoadError(err.message);
+        } else {
+          setLoadError(tRef.current('Không thể tải dữ liệu Cost Guard'));
+        }
+      } finally {
+        if (!signal?.aborted && requestId === latestFetchRequestIdRef.current) {
+          setIsLoading(false);
+        }
       }
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoading(false);
-      }
-    }
-  }, []);
+    },
+    []
+  );
 
+  // Trigger fetch on mount/user switch and ensure full account isolation
   useEffect(() => {
+    activeFetchControllerRef.current?.abort();
+    activeSaveControllerRef.current?.abort();
+
+    setSummary(null);
+    setLoadError(null);
+    setValidationError(null);
+    setSaveError(null);
+    setSaveSuccess(null);
+    setSelectedCurrency('USD');
+    setBudgetInput('');
+    setHardCutoffInput(false);
+
     const controller = new AbortController();
+    activeFetchControllerRef.current = controller;
     fetchSummary(controller.signal);
+
     return () => {
       controller.abort();
     };
-  }, [fetchSummary, currentUser?.id]);
+  }, [currentUser?.id, fetchSummary]);
+
+  const handleRetry = useCallback(() => {
+    activeFetchControllerRef.current?.abort();
+    const controller = new AbortController();
+    activeFetchControllerRef.current = controller;
+    fetchSummary(controller.signal);
+  }, [fetchSummary]);
 
   const handleSaveBudget = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,16 +138,36 @@ export const CostGuardPage: React.FC = () => {
       return;
     }
 
+    const currencyToSave = selectedCurrency;
+    const savingUserId = currentUser?.id;
+
+    activeSaveControllerRef.current?.abort();
+    const saveController = new AbortController();
+    activeSaveControllerRef.current = saveController;
+
     setIsSaving(true);
     try {
-      const updated = await updateCostGuardBudget({
-        currency: selectedCurrency,
-        monthlyBudget: budgetInput.trim(),
-        hardCutoff: hardCutoffInput,
-      });
+      const updated = await updateCostGuardBudget(
+        {
+          currency: currencyToSave,
+          monthlyBudget: budgetInput.trim(),
+          hardCutoff: hardCutoffInput,
+        },
+        saveController.signal
+      );
+
+      if (saveController.signal.aborted || (savingUserId && savingUserId !== currentUser?.id)) {
+        return;
+      }
+
       setSummary(updated);
-      setSaveSuccess(t('Cập nhật ngân sách thành công!'));
+      if (selectedCurrencyRef.current === currencyToSave) {
+        setSaveSuccess(t('Cập nhật ngân sách thành công!'));
+      }
     } catch (err: unknown) {
+      if (saveController.signal.aborted || (savingUserId && savingUserId !== currentUser?.id)) {
+        return;
+      }
       if (err instanceof ApiError) {
         setSaveError(err.message || t('Lỗi lưu ngân sách từ máy chủ.'));
       } else if (err instanceof Error) {
@@ -118,7 +176,9 @@ export const CostGuardPage: React.FC = () => {
         setSaveError(t('Không thể lưu ngân sách. Vui lòng thử lại.'));
       }
     } finally {
-      setIsSaving(false);
+      if (!saveController.signal.aborted && (!savingUserId || savingUserId === currentUser?.id)) {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -129,6 +189,8 @@ export const CostGuardPage: React.FC = () => {
 
   // Cap progress visual width at 100% while displaying actual percent
   const visualProgressWidth = Math.min(100, Math.max(0, spentPercent ?? 0));
+  const ariaValueNow = Math.min(100, Math.max(0, spentPercent ?? 0));
+  const ariaValueText = spentPercent !== null ? `${spentPercent}%` : t('Chưa có ngân sách');
 
   const progressColorClass = useMemo(() => {
     if (spentPercent === null) return 'bg-outline-variant/40';
@@ -205,7 +267,7 @@ export const CostGuardPage: React.FC = () => {
             </h3>
             <p className="text-body-sm text-on-surface-variant mt-1">{loadError}</p>
           </div>
-          <Button variant="primary" onClick={() => fetchSummary()}>
+          <Button variant="primary" onClick={handleRetry}>
             <span className="material-symbols-outlined text-[18px] mr-1.5">refresh</span>
             {t('Thử lại')}
           </Button>
@@ -354,9 +416,10 @@ export const CostGuardPage: React.FC = () => {
             <div className="w-full h-4 bg-surface-container rounded-full overflow-hidden border border-outline-variant/20 relative">
               <div
                 role="progressbar"
-                aria-valuenow={spentPercent ?? 0}
+                aria-valuenow={ariaValueNow}
                 aria-valuemin={0}
                 aria-valuemax={100}
+                aria-valuetext={ariaValueText}
                 aria-label={t('Tỷ lệ sử dụng ngân sách')}
                 className={`h-full transition-all duration-300 ${progressColorClass}`}
                 style={{ width: `${visualProgressWidth}%` }}
