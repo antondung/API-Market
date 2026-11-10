@@ -127,7 +127,10 @@ test("Gateway requires subscription, serializes last quota request, persists red
     assert.equal(results.filter((r) => r.status === 403).length, 4);
     assert.equal(f.hits(), 1);
     await f.usage.flush();
-    const logs = (await f.store.pool.query("SELECT * FROM usage_logs")).rows;
+    const logs = (await f.store.pool.query(
+      "SELECT * FROM usage_logs WHERE consumer_id=$1",
+      [f.user.id],
+    )).rows;
     assert.equal(logs.length, 1);
     assert.equal(JSON.stringify(logs).includes("secret-"), false);
     assert.equal(

@@ -156,7 +156,10 @@ try {
   }
 
   const totalLogged = Number(
-    (await store.pool.query("SELECT COUNT(*) FROM usage_logs")).rows[0].count,
+    (await store.pool.query(
+      "SELECT COUNT(*) FROM usage_logs WHERE consumer_id=$1",
+      [user.id],
+    )).rows[0].count,
   );
   const expectedTotal = 20 + concurrencyLevels.length * requestsPerLevel;
   const valid = totalLogged === expectedTotal &&
