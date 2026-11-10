@@ -56,7 +56,7 @@ Tuyệt đối không chạy kiểm thử, không chỉnh sửa mã nguồn, kh�
 
 ## 4. MA TRẬN TEST CASES CHO ĐỢT RE-TEST SPRINT 4
 
-Tổng số Test Cases: **57 Test Cases** (53 TCs gốc Sprint 4 + 4 TCs mới phục vụ các thay đổi nhóm B).
+Tổng số Test Cases: **58 Test Cases** (53 TCs gốc Sprint 4 + 5 TCs mới phục vụ các thay đổi nhóm B).
 
 | Nhóm chức năng | Tổng số TC | TCs chạy lại bắt buộc (Nhóm B) | TCs chạy lại hồi quy (Regression - Nhóm A) | TCs MỚI bổ sung |
 |---|:---:|---|---|---|
@@ -65,5 +65,6 @@ Tổng số Test Cases: **57 Test Cases** (53 TCs gốc Sprint 4 + 4 TCs mới p
 | **EP08: Data Redaction** | 6 | — | `TC-RED-01` $\to$ `TC-RED-06` | *(Giữ nguyên 6 TCs gốc)* |
 | **EP08: Gateway Overhead** | 6 | `TC-OVH-06` | `TC-OVH-01` $\to$ `TC-OVH-05` | *(Giữ nguyên 6 TCs gốc, thẩm định lại trạng thái sai lệch DEV-S4-02)* |
 | **EP10: Usage & History** | 10 | `TC-HIST-04`, `TC-HIST-05` | `TC-HIST-01` $\to$ `TC-HIST-03`, `TC-HIST-06` $\to$ `TC-HIST-08` | **`TC-HIST-09`**: Provider Dashboard hiển thị số liệu telemetry và doanh thu đa tiền tệ (VND/USD)<br/>**`TC-HIST-10`**: Workspace Role Guard chặn truy cập chéo vai trò |
-| **EP04: Admin Operations** | 7 | `TC-ADM-02` | `TC-ADM-01`, `TC-ADM-03` $\to$ `TC-ADM-06` | **`TC-ADM-07`**: Admin khôi phục subscription đã hết hạn kỳ $\to$ tự động chuyển `Expired`<br/>**`TC-ADM-08`**: Admin khôi phục bảo toàn đúng trạng thái trước khi suspend (Active / Past Due) và giữ nguyên quota |
-| **TỔNG CỘNG** | **57** | **11 TCs** | **42 TCs** | **4 TCs MỚI** |
+| **EP04: Admin Operations** | 8 | `TC-ADM-02` | `TC-ADM-01`, `TC-ADM-03` $\to$ `TC-ADM-06` | **`TC-ADM-07`**: Admin khôi phục subscription đã hết hạn kỳ $\to$ tự động chuyển `Expired`<br/>**`TC-ADM-08`**: Admin khôi phục bảo toàn đúng trạng thái trước khi suspend (Active / Past Due) và giữ nguyên quota |
+| **TỔNG CỘNG** | **58** | **11 TCs** | **42 TCs** | **5 TCs MỚI** |
+
