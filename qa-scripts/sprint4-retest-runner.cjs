@@ -136,7 +136,7 @@ try {
   // Check if backend actually sends x-gateway-overhead-ms header
   const backendAllSrc = fs.readFileSync('backend/src/gateway-service.ts', 'utf8') + fs.readFileSync('backend/src/safe-proxy.ts', 'utf8');
   const hasClientHeader = backendAllSrc.toLowerCase().includes('x-gateway-overhead-ms');
-  
+
   if (hasClientHeader) {
     record('TC-OVH-06', 'Latency and overhead response headers for client inspection', 'Nhóm B (Retest)', 'PASS', 'Gateway exports X-Gateway-Overhead-Ms in HTTP response headers.');
   } else {
@@ -170,7 +170,7 @@ try {
   const providerDashSrc = fs.readFileSync('frontend/src/pages/provider/ProviderDashboardPage.tsx', 'utf8');
   assert(chartSrc.includes('DailyRequestChart'), 'DailyRequestChart component exists');
   assert(providerDashSrc.includes('total_requests') || providerDashSrc.includes('subscriber'), 'Provider dashboard metrics exist');
-  
+
   record('TC-HIST-09', 'Provider Dashboard: Telemetry metrics & multi-currency revenue (VND/USD)', 'Nhóm B (MỚI)', 'PASS', 'Provider Dashboard renders subscriber counts, total requests, multi-currency revenue and DailyRequestChart.');
 
   const roleGuardSrc = fs.readFileSync('frontend/src/components/auth/workspaceRole.ts', 'utf8');
