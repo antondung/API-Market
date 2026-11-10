@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import { PostgresAuthStore } from "../src/postgres-store.js";
 import { UsageService } from "../src/usage-service.js";
-import { UsageAnalytics, usageFilters } from "../src/usage-analytics.js";
+import { UsageAnalytics, providerUsageFilters, usageFilters } from "../src/usage-analytics.js";
 
 async function fixture() {
   const control = new Pool({ connectionString: process.env.PG_TEST_URL });
@@ -68,6 +68,45 @@ async function enqueue(
     client.release();
   }
 }
+
+test("provider analytics scopes endpoint percentiles and errors to the API owner", async () => {
+  const f = await fixture();
+  try {
+    const { providerUserId, consumerId, apiId, endpointId, occurredAt } = f.record;
+    for (const [statusCode, latencyMs, gatewayOverheadMs] of [[200, 10, 1], [404, 20, 2], [503, 30, 3]] as const) {
+      const requestId = randomUUID();
+      const client = await f.store.pool.connect();
+      try {
+        await f.service.enqueue(client, { ...f.record, requestId });
+      } finally {
+        client.release();
+      }
+      await f.service.complete(requestId, occurredAt, { ...result, statusCode, latencyMs, gatewayOverheadMs });
+    }
+    assert.equal(await f.service.flush(), 3);
+    const filters = providerUsageFilters.parse({ apiId, endpointId });
+    const overview = await f.analytics.overview(providerUserId, filters);
+    const traffic = overview.requests;
+    assert.equal(traffic.requestCount, "3");
+    assert.equal(traffic.clientErrorCount, "1");
+    assert.equal(traffic.serverErrorCount, "1");
+    assert.ok(Math.abs(traffic.errorRatePercent - 200 / 3) < 1e-9);
+    assert.deepEqual([traffic.p50LatencyMs, traffic.p95LatencyMs, traffic.p99LatencyMs], [20, 30, 30]);
+    assert.deepEqual([traffic.p50OverheadMs, traffic.p95OverheadMs, traffic.p99OverheadMs], [2, 3, 3]);
+    assert.equal(overview.topEndpoints[0].endpointId, endpointId);
+    assert.equal(overview.topEndpoints[0].path, "/item/{id}");
+    assert.equal(overview.apiBreakdown[0].apiId, apiId);
+    assert.equal(overview.apiBreakdown[0].requestCount, "3");
+    const outsider = await f.analytics.overview(consumerId, filters);
+    assert.equal(outsider.requests.requestCount, "0");
+    assert.deepEqual(outsider.topEndpoints, []);
+    assert.deepEqual(outsider.apiBreakdown, []);
+    const missing = await f.analytics.overview(providerUserId, { ...filters, endpointId: "2147483647" });
+    assert.equal(missing.requests.requestCount, "0");
+  } finally {
+    await f.close();
+  }
+});
 
 test("durable acceptance rolls back, waits for completion and concurrent writers insert exactly once", async () => {
   const f = await fixture();

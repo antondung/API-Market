@@ -98,13 +98,13 @@ try {
       headers: {},
     });
   }
+  await usage.flush();
 
   const concurrencyLevels = [1, 10, 25];
   const requestsPerLevel = 200;
   const stages = [];
 
   for (const concurrency of concurrencyLevels) {
-    const latencies: number[] = [];
     let errors = 0;
     const wallStart = performance.now();
     let cursor = 0;
@@ -121,8 +121,6 @@ try {
             headers: {},
           });
           if (res.status !== 200) errors++;
-          const hdr = Number(res.headers["x-gateway-overhead-ms"] ?? "0");
-          latencies.push(Number.isFinite(hdr) ? hdr : 0);
         } catch {
           errors++;
         }
@@ -133,54 +131,48 @@ try {
     const wallMs = performance.now() - wallStart;
     const samples = (
       await store.pool.query(
-        "SELECT gateway_overhead_ms FROM usage_outbox WHERE gateway_overhead_ms IS NOT NULL ORDER BY occurred_at DESC LIMIT $1",
-        [requestsPerLevel],
+        "SELECT gateway_overhead_ms FROM usage_outbox WHERE gateway_overhead_ms IS NOT NULL",
       )
     ).rows
       .map((r) => Number(r.gateway_overhead_ms))
       .sort((a, b) => a - b);
-    const p50 = samples[Math.floor(samples.length * 0.5)] ?? 0;
-    const p95 = samples[Math.floor(samples.length * 0.95)] ?? 0;
-    const p99 = samples[Math.floor(samples.length * 0.99)] ?? 0;
+    const percentile = (fraction: number) => samples[Math.ceil(samples.length * fraction) - 1] ?? null;
+    const p50 = percentile(0.5);
+    const p95 = percentile(0.95);
+    const p99 = percentile(0.99);
     const rps = Number(((requestsPerLevel / wallMs) * 1000).toFixed(1));
     stages.push({
       concurrency,
       requests: requestsPerLevel,
+      measuredRequests: samples.length,
       errors,
       rps,
       overheadP50Ms: p50,
       overheadP95Ms: p95,
       overheadP99Ms: p99,
-      slaP95Under30Ms: p95 < 30,
+      slaP95Under30Ms: p95 !== null && p95 < 30,
     });
+    await usage.flush();
   }
 
-  while ((await usage.flush()) > 0) {}
   const totalLogged = Number(
     (await store.pool.query("SELECT COUNT(*) FROM usage_logs")).rows[0].count,
   );
   const expectedTotal = 20 + concurrencyLevels.length * requestsPerLevel;
-  if (totalLogged !== expectedTotal) {
-    throw Error(
-      `Durable usage log mismatch: expected ${expectedTotal}, got ${totalLogged}`,
-    );
-  }
-  for (const s of stages) {
-    if (s.errors > 0 || (s.concurrency === 1 && !s.slaP95Under30Ms)) {
-      throw Error(
-        `Load test SLA failed at concurrency=${s.concurrency}: errors=${s.errors}, p95=${s.overheadP95Ms}ms`,
-      );
-    }
-  }
+  const valid = totalLogged === expectedTotal &&
+    stages.every(s => s.errors === 0 && s.measuredRequests === s.requests);
+  const meetsSla = stages.every(s => s.slaP95Under30Ms);
 
   console.log(
     JSON.stringify({
       suite: "Sprint 5 Gateway Concurrent Load Test (EN-12)",
       stages,
       durableUsageRows: totalLogged,
-      status: "PASS",
+      expectedUsageRows: expectedTotal,
+      status: !valid ? "FUNCTIONAL_FAILURE" : meetsSla ? "PASS" : "SLA_MISSED",
     }),
   );
+  if (!valid || !meetsSla) process.exitCode = 1;
 } finally {
   await usage.close();
   if (redis.isOpen) await redis.quit();

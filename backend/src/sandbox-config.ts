@@ -10,7 +10,7 @@ export function sandboxSecret(
   const secret =
     value ||
     createHmac("sha256", jwtSecret).update("payment-sandbox-v1").digest("hex");
-  if (Buffer.byteLength(secret) < 32)
-    throw new Error("Sandbox secret must have at least 32 bytes");
+  if (Buffer.byteLength(secret) < 32 || secret.startsWith("replace-"))
+    throw new Error("SANDBOX_WEBHOOK_SECRET must contain at least 32 bytes and cannot be a placeholder");
   return secret;
 }
