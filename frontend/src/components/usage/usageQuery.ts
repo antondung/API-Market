@@ -15,6 +15,19 @@ export function marketplaceApiIdError(raw: string | null | undefined): string | 
 }
 
 /**
+ * Backend endpoint filter requires marketplaceId: a positive 32-bit integer.
+ * Empty input means "all endpoints".
+ */
+export function marketplaceEndpointIdError(raw: string | null | undefined): string | null {
+  const value = (raw ?? '').trim();
+  if (!value) return null;
+  if (!isValidPositiveIntegerApiId(value)) {
+    return 'Endpoint ID phải là số nguyên dương từ 1 đến 2147483647.';
+  }
+  return null;
+}
+
+/**
  * Same 365-day window the usage endpoints enforce.
  * A single bound is allowed; the backend fills the other side.
  */
