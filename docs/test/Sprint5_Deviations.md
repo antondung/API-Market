@@ -29,7 +29,7 @@
 **Mã tài liệu:** `DEV-S5-01`
 **Phân hệ:** Hạ tầng Môi trường & Dịch vụ Demo (`EN-07`, `EN-16`)
 **Test Case bị ảnh hưởng:** `TC-DEMO-03` (Thử nghiệm Sandbox & Gọi Gateway Upstream), `TC-CST-08` (Ngắt cước khi chạm ngân sách hardCutoff qua Upstream thật), các kịch bản kiểm thử lưu lượng Gateway thực tế.
-**Mức độ:** **High (Chặn kịch bản Demo Phân cảnh 3)**
+**Mức độ:** **High (đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead / DevOps, Issue #21)**
 **Tình trạng:** `Open / Chờ cập nhật cấu hình Dockerfile`
 
@@ -75,7 +75,7 @@ Ba container dịch vụ mock gồm `api-market-weather`, `api-market-currency`,
 **Mã tài liệu:** `DEV-S5-02`
 **Phân hệ:** Cơ sở dữ liệu & Dữ liệu Mẫu (`US-31`, `EN-15`)
 **Test Case bị ảnh hưởng:** `TC-ANL-05` (Doanh thu đa tệ VND/USD), `TC-OPS-02` (Xác thực sao lưu mở rộng), toàn bộ quy trình merge của PR [#104](https://github.com/antondung/API-Market/pull/104) vào `develop`.
-**Mức độ:** **Critical (Blocker hợp nhất mã nguồn Sprint 5)**
+**Mức độ:** **Critical (đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Võ Trọng Danh (`@danhbuonsv2-svg` — Database Developer, Issue #24)**
 **Tình trạng:** `Open / Chờ Database Developer sửa migration và push lại`
 
@@ -132,7 +132,7 @@ Nhánh `feature/24-sprint5-database` (PR [#104](https://github.com/antondung/API
 **Mã tài liệu:** `DEV-S5-03`
 **Phân hệ:** Đo tải & Hiệu năng Gateway (`EN-12`)
 **Test Case bị ảnh hưởng:** `TC-PERF-01` (SLA P95 Gateway Overhead < 30ms).
-**Mức độ:** **High (Rủi ro tiêu chuẩn phi chức năng)**
+**Mức độ:** **High (đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead), Nguyễn Như Tùng Dương (`@Tungdota53` — Backend)**
 **Tình trạng:** `Open / Chờ đo đạc trên Staging và quyết định từ Tech Lead`
 
@@ -140,7 +140,8 @@ Nhánh `feature/24-sprint5-database` (PR [#104](https://github.com/antondung/API
 Theo tiêu chuẩn nghiệm thu tại [`docs/07-sprint5-demo-and-rc-checklist.md:66`](file:///d:/Downloads/AAAAA/API-Market/docs/07-sprint5-demo-and-rc-checklist.md#L66) và [`docs/test/Sprint5_AcceptanceCriteria.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_AcceptanceCriteria.md), độ trễ P95 Gateway Overhead phải đạt ngưỡng $< 30$ms. Tuy nhiên, kết quả đo kiểm thử tải cục bộ của Backend bàn giao tại PR [#106](https://github.com/antondung/API-Market/pull/106) ghi nhận mức overhead vượt ngưỡng khi tải đồng thời tăng lên.
 
 #### 2. Bằng chứng đã xác minh
-- **Số liệu bàn giao trong [`backend/SPRINT-5-HANDOFF.md`](file:///d:/Downloads/AAAAA/API-Market/backend/SPRINT-5-HANDOFF.md#L45-L55):**
+- **Nguồn số liệu:** Số liệu do dev tự ghi trong HANDOFF.md ([`backend/SPRINT-5-HANDOFF.md`](file:///d:/Downloads/AAAAA/API-Market/backend/SPRINT-5-HANDOFF.md#L45-L55)), QA chưa tự đo.
+- **Số liệu bàn giao trong HANDOFF.md:**
   - Mức đồng thời $c=1$: P95 = **7ms** (Đạt chuẩn $< 30$ms).
   - Mức đồng thời $c=10$: P95 = **38ms** (Vượt ngưỡng 30ms).
   - Mức đồng thời $c=25$: P95 = **44ms** (Vượt ngưỡng 30ms).
@@ -160,7 +161,7 @@ Theo tiêu chuẩn nghiệm thu tại [`docs/07-sprint5-demo-and-rc-checklist.md
 **Mã tài liệu:** `DEV-S5-04`
 **Phân hệ:** Provider Analytics & Bảo mật Cách ly Dữ liệu (`US-31`, `EN-11`)
 **Test Case bị ảnh hưởng:** `TC-ANL-06` (Bảo mật cách ly dữ liệu: Ngăn Provider A xem Analytics của Provider B).
-**Mức độ:** **Medium (Tiêu chuẩn hợp đồng giao tiếp API)**
+**Mức độ:** **Medium (đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead), Nguyễn Như Tùng Dương (`@Tungdota53` — Backend)**
 **Tình trạng:** `Open / Đã đăng câu hỏi trên PR #108, chờ Tech Lead quyết định`
 
@@ -169,6 +170,7 @@ Khi Provider A đăng nhập và gửi request `GET /api/provider/analytics/over
 - Yêu cầu đặc tả gốc (`backend/SPRINT-5-HANDOFF.md`) chỉ nêu: "chỉ tổng hợp API thuộc tài khoản" và "cô lập dữ liệu", chưa quy định rõ trả về mã HTTP `200` kèm dữ liệu rỗng hay mã lỗi `403 Forbidden`.
 
 #### 2. Bằng chứng đã xác minh
+- **Căn cứ xác minh:** Bằng chứng dựa trên việc đọc code backend (`backend/src/usage-analytics.ts:77`), QA chưa chạy thực tế với backend.
 - **Code hiện tại trong PR #106 (`backend/src/usage-analytics.ts:77`):**
   Hệ thống lọc theo `provider_id` của tài khoản đăng nhập. Khi không có bản ghi nào khớp, backend trả về HTTP `200 OK` kèm `requestCount: "0"`, `errorCount: "0"`, và mảng rỗng `topEndpoints: []`. Không rò rỉ dữ liệu của Provider B.
 
@@ -189,7 +191,7 @@ Khi Provider A đăng nhập và gửi request `GET /api/provider/analytics/over
 **Mã tài liệu:** `DEV-S5-05`
 **Phân hệ:** Vận hành & Phục hồi Thảm họa (`EN-13`)
 **Test Case bị ảnh hưởng:** `TC-OPS-03` (Kế hoạch Rollback tức thì phiên bản ứng dụng và Database < 60 giây).
-**Mức độ:** **Medium (Ràng buộc môi trường kiểm thử)**
+**Mức độ:** **Medium (đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — DevOps Lead)**
 **Tình trạng:** `KHÔNG THỰC HIỆN ĐƯỢC trên local / Chờ staging diễn tập`
 
