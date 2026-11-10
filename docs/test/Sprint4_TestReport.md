@@ -1,12 +1,12 @@
 # Báo cáo Kiểm thử Sprint 4 — Nghiệm thu Tích hợp & Kiểm toán Chất lượng (Comprehensive QA Audit)
 
-> **Dự án:** API Marketplace Platform
-> **Phiên bản:** Lần test 2 / Re-test Sprint 4 (10/11/2026)
-> **Giai đoạn:** Sprint 4 — Gói cước (Pricing Plans), Đăng ký (Subscriptions), Thanh toán Sandbox (Stripe-like), API Gateway Định tuyến & Hạn ngạch (Quota/Rate Limit), Ký Upstream HMAC & Che giấu Dữ liệu (Sensitive Data Redaction), Đo lường Độ trễ Overhead, Lịch sử Gọi API (Request History), Sinh mã Tích hợp (Code Generator), Giám sát Admin & Worker Tự động.
-> **QA Lead & Tác giả:** Trần Hà Thảo Vân (MSSV: BCS250039, `@vuonghathaovan-gif` — Issue #15 & Issue #70)
-> **Thời điểm thực hiện re-test:** 10/11/2026
-> **Cột mốc kiểm thử (Baseline SHA):** `713aedacdd0fdd651d7800185626eea5a85e4388` (PR #101 trên `develop` / PR #102 trên `main` `7f827548772a859737ae417ceef041b6bf193c6f`)
-> **Nhánh thực thi:** `test/15-sprint4-retest` (khởi tạo từ mốc đóng Sprint 4 `713aeda`)
+> **Dự án:** API Marketplace Platform<br>
+> **Phiên bản:** Lần test 2 / Re-test Sprint 4 (10/11/2026)<br>
+> **Giai đoạn:** Sprint 4 — Gói cước (Pricing Plans), Đăng ký (Subscriptions), Thanh toán Sandbox (Stripe-like), API Gateway Định tuyến & Hạn ngạch (Quota/Rate Limit), Ký Upstream HMAC & Che giấu Dữ liệu (Sensitive Data Redaction), Đo lường Độ trễ Overhead, Lịch sử Gọi API (Request History), Sinh mã Tích hợp (Code Generator), Giám sát Admin & Worker Tự động.<br>
+> **QA Lead & Tác giả:** Trần Hà Thảo Vân (MSSV: BCS250039, `@vuonghathaovan-gif` — Issue #15 & Issue #70)<br>
+> **Thời điểm thực hiện re-test:** 10/11/2026<br>
+> **Cột mốc kiểm thử (Baseline SHA):** `713aedacdd0fdd651d7800185626eea5a85e4388` (PR #101 trên `develop` / PR #102 trên `main` `7f827548772a859737ae417ceef041b6bf193c6f`)<br>
+> **Nhánh thực thi:** `test/15-sprint4-retest` (khởi tạo từ mốc đóng Sprint 4 `713aeda`)<br>
 > **Đề xuất của QA:** **Conditional GO (chờ PO/Tech Lead quyết định) — 57/58 Test Cases ĐẠT (98.28%), 1/58 CHƯA ĐẠT (1.72% do BUG-S4-01 tại TC-OVH-06 mức độ Medium, không chặn luồng nghiệp vụ); 177/177 Tests Backend PASS (100%), 550/550 Unit Tests Frontend PASS (100%), 8/8 Playwright E2E UI Scenarios PASS (100%), 0 SKIPPED, 0 BLOCKED.**
 
 ---

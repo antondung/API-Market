@@ -3,11 +3,11 @@
 ## DỰ ÁN: NỀN TẢNG API MARKETPLACE & MANAGEMENT
 ### QUY CHUẨN HỌC THUẬT: IAN SOMMERVILLE — SOFTWARE ENGINEERING (10TH EDITION), CHAPTER 9: SOFTWARE TESTING
 
-> **QA Lead & Tác giả:** Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #15 & Issue #70)
-> **Phiên bản:** Lần test 2 / Re-test Sprint 4 (10/11/2026)
-> **Cột mốc kiểm thử (Baseline):** Commit `713aedacdd0fdd651d7800185626eea5a85e4388` (PR #101 trên `develop` / PR #102 trên `main` `7f827548772a859737ae417ceef041b6bf193c6f`)
-> **Phạm vi kiểm thử:** `EP09` (Pricing, Subscription & Payment Sandbox), `EP08` (API Gateway Enforcement, Upstream Signing & Redaction), `EP10` (Usage Tracking, Request History & Code Generator), `EP04` (Admin Subscription Monitoring & Worker Automation).
-> **Căn cứ kỹ thuật & Quy tắc:** `docs/test/Sprint4_AcceptanceCriteria.md`, `docs/test/sprint4-retest-scope.md`, `docs/test/TESTING_RULES.md`, `docs/05-quy-trinh-quan-ly-bug.md`.
+> **QA Lead & Tác giả:** Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #15 & Issue #70)<br>
+> **Phiên bản:** Lần test 2 / Re-test Sprint 4 (10/11/2026)<br>
+> **Cột mốc kiểm thử (Baseline):** Commit `713aedacdd0fdd651d7800185626eea5a85e4388` (PR #101 trên `develop` / PR #102 trên `main` `7f827548772a859737ae417ceef041b6bf193c6f`)<br>
+> **Phạm vi kiểm thử:** `EP09` (Pricing, Subscription & Payment Sandbox), `EP08` (API Gateway Enforcement, Upstream Signing & Redaction), `EP10` (Usage Tracking, Request History & Code Generator), `EP04` (Admin Subscription Monitoring & Worker Automation).<br>
+> **Căn cứ kỹ thuật & Quy tắc:** `docs/test/Sprint4_AcceptanceCriteria.md`, `docs/test/sprint4-retest-scope.md`, `docs/test/TESTING_RULES.md`, `docs/05-quy-trinh-quan-ly-bug.md`.<br>
 > **Phương pháp phân loại đợt re-test:**
 > - **Nhóm A (Hồi quy / Regression):** 43 ca kiểm thử thuộc các thay đổi gốc Sprint 4 (đã pass đợt 1, chạy lại bảo đảm không hồi quy).
 > - **Nhóm B (Chạy lại & Bổ sung / Retest & New):** 15 ca kiểm thử gồm các ca bị ảnh hưởng bởi thay đổi mới của thành viên sau lần test đầu (PR #97, #98, #99, #101) và 5 ca kiểm thử mới được bổ sung.

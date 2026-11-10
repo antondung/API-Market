@@ -1,11 +1,11 @@
 # Kế hoạch Xác định Phạm vi Kiểm thử lại Sprint 4 (Sprint 4 Re-test Scope)
 
-> **Dự án:** API Marketplace Platform
-> **Phiên bản kiểm thử:** Lần test 2 / Re-test Sprint 4
-> **QA Automation Engineer:** Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #15 & #70)
-> **Thời điểm xác lập:** 10/11/2026
-> **Mốc Sprint 4:** 02/11/2026 — 06/11/2026
-> **Commit mốc kiểm thử (Baseline SHA):** `713aedacdd0fdd651d7800185626eea5a85e4388` (PR #101 trên `develop` / PR #102 trên `main` `7f827548772a859737ae417ceef041b6bf193c6f`)
+> **Dự án:** API Marketplace Platform<br>
+> **Phiên bản kiểm thử:** Lần test 2 / Re-test Sprint 4<br>
+> **QA Automation Engineer:** Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #15 & #70)<br>
+> **Thời điểm xác lập:** 10/11/2026<br>
+> **Mốc Sprint 4:** 02/11/2026 — 06/11/2026<br>
+> **Commit mốc kiểm thử (Baseline SHA):** `713aedacdd0fdd651d7800185626eea5a85e4388` (PR #101 trên `develop` / PR #102 trên `main` `7f827548772a859737ae417ceef041b6bf193c6f`)<br>
 > **Quy định tuân thủ:** [AGENTS.md](../../AGENTS.md), [docs/test/TESTING_RULES.md](TESTING_RULES.md), [docs/05-quy-trinh-quan-ly-bug.md](../05-quy-trinh-quan-ly-bug.md)
 
 ---
