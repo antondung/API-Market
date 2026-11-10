@@ -169,18 +169,20 @@ async function runScenario1(browser, vp) {
       await passwordInput.pressSequentially(DEMO_ACCOUNTS.provider.password, { delay: 15 });
       await submitBtn.click();
 
-      await page.waitForURL('**/dashboard', { timeout: 15000 });
+      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định API_PROVIDER chuyển hướng về /provider
+      await page.waitForURL('**/provider**', { timeout: 15000 });
       await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc01-01-provider-${vp.name}.png`) });
     });
 
     await runStep(`E2E-S5-SC01-WIZARD-${vp.name}`, `[${vp.name}] Mở Create API Wizard và nạp OpenAPI đặc tả`, async () => {
       await page.goto(`${BASE_URL}/provider/create-api`, { waitUntil: 'networkidle' });
 
-      const heading = page.getByRole('heading', { name: /Tạo API|Create API|Wizard/i });
+      // Nguồn: frontend/src/pages/provider/CreateApiWizardPage.tsx:713-715 breadcrumb New API Wizard và h1 Register & Package API Product
+      const heading = page.getByRole('heading', { name: /Tạo API|Create API|Wizard|Đăng ký|Register/i });
       await heading.first().waitFor({ state: 'visible', timeout: 10000 });
 
-      // Nhập tên API
-      const apiNameInput = page.getByLabel(/Tên API|API Name/i);
+      // Nhập tên API (Nguồn: frontend/src/pages/provider/CreateApiWizardPage.tsx:825 placeholder Công cụ suy luận NLP thời gian thực / Real-time NLP)
+      const apiNameInput = page.getByPlaceholder(/Công cụ suy luận|Real-time NLP/i);
       if (await apiNameInput.isVisible()) {
         await apiNameInput.pressSequentially('Weather Forecast Live S5', { delay: 15 });
       }
@@ -239,7 +241,8 @@ async function runScenario2(browser, vp) {
       await passwordInput.pressSequentially(DEMO_ACCOUNTS.admin.password, { delay: 15 });
       await submitBtn.click();
 
-      await page.waitForURL('**/admin/**', { timeout: 15000 });
+      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định ADMIN chuyển hướng về /admin
+      await page.waitForURL('**/admin*', { timeout: 15000 });
       await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc02-01-admin-${vp.name}.png`) });
     });
 
@@ -247,9 +250,9 @@ async function runScenario2(browser, vp) {
       await page.goto(`${BASE_URL}/admin/api-reviews`, { waitUntil: 'networkidle' });
       await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc02-02-reviews-${vp.name}.png`) });
 
-      // Điều hướng tới Audit Logs để kiểm chứng tính bất biến
+      // Điều hướng tới Audit Logs để kiểm chứng tính bất biến (Nguồn: frontend/src/pages/admin/AuditLogsPage.tsx:126 và vi-custom.json:460)
       await page.goto(`${BASE_URL}/admin/audit-logs`, { waitUntil: 'networkidle' });
-      const auditHeading = page.getByRole('heading', { name: /Audit Log|Nhật ký hoạt động|Giám sát/i });
+      const auditHeading = page.getByRole('heading', { name: /Audit|Nhật ký kiểm toán|Nhật ký hoạt động|Giám sát/i });
       await auditHeading.first().waitFor({ state: 'visible', timeout: 10000 });
 
       await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc02-03-audit-${vp.name}.png`) });
@@ -302,6 +305,7 @@ async function runScenario3(browser, vp) {
       await passwordInput.pressSequentially(DEMO_ACCOUNTS.consumer.password, { delay: 15 });
       await submitBtn.click();
 
+      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định USER (Consumer) chuyển hướng về /dashboard
       await page.waitForURL('**/dashboard', { timeout: 15000 });
 
       await page.goto(`${BASE_URL}/dashboard/subscriptions`, { waitUntil: 'networkidle' });
@@ -360,6 +364,7 @@ async function runScenario4(browser, vp) {
       await emailInput.pressSequentially(DEMO_ACCOUNTS.consumer.email, { delay: 15 });
       await passwordInput.pressSequentially(DEMO_ACCOUNTS.consumer.password, { delay: 15 });
       await submitBtn.click();
+      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định USER (Consumer) chuyển hướng về /dashboard
       await page.waitForURL('**/dashboard', { timeout: 15000 });
 
       await page.goto(`${BASE_URL}/dashboard/usage`, { waitUntil: 'networkidle' });
@@ -387,7 +392,8 @@ async function runScenario4(browser, vp) {
       await emailInput.pressSequentially(DEMO_ACCOUNTS.provider.email, { delay: 15 });
       await passwordInput.pressSequentially(DEMO_ACCOUNTS.provider.password, { delay: 15 });
       await submitBtn.click();
-      await page.waitForURL('**/dashboard', { timeout: 15000 });
+      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định API_PROVIDER chuyển hướng về /provider
+      await page.waitForURL('**/provider**', { timeout: 15000 });
 
       await page.goto(`${BASE_URL}/provider/analytics`, { waitUntil: 'networkidle' });
       await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-03-analytics-${vp.name}.png`) });
@@ -403,7 +409,8 @@ async function runScenario4(browser, vp) {
       await emailInput.pressSequentially(DEMO_ACCOUNTS.admin.email, { delay: 15 });
       await passwordInput.pressSequentially(DEMO_ACCOUNTS.admin.password, { delay: 15 });
       await submitBtn.click();
-      await page.waitForURL('**/admin/**', { timeout: 15000 });
+      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định ADMIN chuyển hướng về /admin
+      await page.waitForURL('**/admin*', { timeout: 15000 });
 
       // Đường dẫn quản trị Gateway thực tế trong frontend/src/App.tsx
       await page.goto(`${BASE_URL}/admin/gateway`, { waitUntil: 'networkidle' });
