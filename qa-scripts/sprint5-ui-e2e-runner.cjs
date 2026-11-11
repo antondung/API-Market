@@ -342,83 +342,124 @@ async function runScenario4(browser, vp) {
   log(`⚡ [KỊCH BẢN CHỜ FE #23] Chạy kiểm tra Phân cảnh 4 trên ${vp.name}...`);
   log(`----------------------------------------------------------------------`);
 
-  const consoleErrors = [];
-  const pageErrors = [];
-
-  // Quy tắc H1: Clean State context
-  const context = await browser.newContext({
-    viewport: { width: vp.width, height: vp.height }
-  });
-
-  const page = await context.newPage();
-  setupConsoleGuard(page, consoleErrors, pageErrors);
-
-  try {
-    await runStep(`E2E-S5-SC04-USAGE-${vp.name}`, `[${vp.name}] Consumer xem Usage Quota và đối soát Request History`, async () => {
-      await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
-
-      const emailInput = page.getByLabel(/Địa chỉ Email/i);
-      const passwordInput = page.getByLabel(/Mật khẩu/i);
-      const submitBtn = page.getByRole('button', { name: /Đăng nhập/i });
-
-      await emailInput.pressSequentially(DEMO_ACCOUNTS.consumer.email, { delay: 15 });
-      await passwordInput.pressSequentially(DEMO_ACCOUNTS.consumer.password, { delay: 15 });
-      await submitBtn.click();
-      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định USER (Consumer) chuyển hướng về /dashboard
-      await page.waitForURL('**/dashboard', { timeout: 15000 });
-
-      await page.goto(`${BASE_URL}/dashboard/usage`, { waitUntil: 'networkidle' });
-      await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-01-usage-${vp.name}.png`) });
+  // 1. Consumer Context: Usage & Cost Guard (Quy tắc H1: Clean State)
+  {
+    const consoleErrors = [];
+    const pageErrors = [];
+    const context = await browser.newContext({
+      viewport: { width: vp.width, height: vp.height }
     });
+    const page = await context.newPage();
+    setupConsoleGuard(page, consoleErrors, pageErrors);
 
-    await runStep(`E2E-S5-SC04-COSTGUARD-${vp.name}`, `[${vp.name}] Consumer kiểm tra giao diện Cost Guard (AC-US32)`, async () => {
-      await page.goto(`${BASE_URL}/dashboard/cost-guard`, { waitUntil: 'networkidle' });
+    try {
+      await runStep(`E2E-S5-SC04-USAGE-${vp.name}`, `[${vp.name}] Consumer xem Usage Quota và đối soát Request History`, async () => {
+        await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
 
-      const heading = page.getByRole('heading', { name: /Cost Guard|Bảo vệ ngân sách|Hạn mức chi tiêu/i });
-      if (await heading.first().isVisible()) {
-        log('Đã phát hiện tiêu đề Cost Guard.');
+        const emailInput = page.getByLabel(/Địa chỉ Email/i);
+        const passwordInput = page.getByLabel(/Mật khẩu/i);
+        const submitBtn = page.getByRole('button', { name: /Đăng nhập/i });
+
+        await emailInput.pressSequentially(DEMO_ACCOUNTS.consumer.email, { delay: 15 });
+        await passwordInput.pressSequentially(DEMO_ACCOUNTS.consumer.password, { delay: 15 });
+        await submitBtn.click();
+        // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định USER (Consumer) chuyển hướng về /dashboard
+        await page.waitForURL('**/dashboard', { timeout: 15000 });
+
+        await page.goto(`${BASE_URL}/dashboard/usage`, { waitUntil: 'networkidle' });
+        await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-01-usage-${vp.name}.png`) });
+      });
+
+      await runStep(`E2E-S5-SC04-COSTGUARD-${vp.name}`, `[${vp.name}] Consumer kiểm tra giao diện Cost Guard (AC-US32)`, async () => {
+        await page.goto(`${BASE_URL}/dashboard/cost-guard`, { waitUntil: 'networkidle' });
+
+        const heading = page.getByRole('heading', { name: /Cost Guard|Bảo vệ ngân sách|Hạn mức chi tiêu/i });
+        if (await heading.first().isVisible()) {
+          log('Đã phát hiện tiêu đề Cost Guard.');
+        }
+
+        await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-02-costguard-${vp.name}.png`) });
+      });
+
+      if (pageErrors.length > 0) {
+        throw new Error(`Phát hiện lỗi unhandled page error: ${pageErrors.join('; ')}`);
       }
+    } finally {
+      await context.close();
+    }
+  }
 
-      await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-02-costguard-${vp.name}.png`) });
+  // 2. Provider Context: Analytics (Quy tắc H1: Clean State)
+  {
+    const consoleErrors = [];
+    const pageErrors = [];
+    const context = await browser.newContext({
+      viewport: { width: vp.width, height: vp.height }
     });
+    const page = await context.newPage();
+    setupConsoleGuard(page, consoleErrors, pageErrors);
 
-    await runStep(`E2E-S5-SC04-ANALYTICS-${vp.name}`, `[${vp.name}] Provider kiểm tra Analytics Dashboard (AC-US31)`, async () => {
-      await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
+    try {
+      await runStep(`E2E-S5-SC04-ANALYTICS-${vp.name}`, `[${vp.name}] Provider kiểm tra Analytics Dashboard (AC-US31)`, async () => {
+        await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
 
-      const emailInput = page.getByLabel(/Địa chỉ Email/i);
-      const passwordInput = page.getByLabel(/Mật khẩu/i);
-      const submitBtn = page.getByRole('button', { name: /Đăng nhập/i });
+        const emailInput = page.getByLabel(/Địa chỉ Email/i);
+        const passwordInput = page.getByLabel(/Mật khẩu/i);
+        const submitBtn = page.getByRole('button', { name: /Đăng nhập/i });
 
-      await emailInput.pressSequentially(DEMO_ACCOUNTS.provider.email, { delay: 15 });
-      await passwordInput.pressSequentially(DEMO_ACCOUNTS.provider.password, { delay: 15 });
-      await submitBtn.click();
-      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định API_PROVIDER chuyển hướng về /provider
-      await page.waitForURL('**/provider**', { timeout: 15000 });
+        await emailInput.pressSequentially(DEMO_ACCOUNTS.provider.email, { delay: 15 });
+        await passwordInput.pressSequentially(DEMO_ACCOUNTS.provider.password, { delay: 15 });
+        await submitBtn.click();
+        // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định API_PROVIDER chuyển hướng về /provider
+        await page.waitForURL('**/provider**', { timeout: 15000 });
 
-      await page.goto(`${BASE_URL}/provider/analytics`, { waitUntil: 'networkidle' });
-      await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-03-analytics-${vp.name}.png`) });
+        await page.goto(`${BASE_URL}/provider/analytics`, { waitUntil: 'networkidle' });
+        await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-03-analytics-${vp.name}.png`) });
+      });
+
+      if (pageErrors.length > 0) {
+        throw new Error(`Phát hiện lỗi unhandled page error: ${pageErrors.join('; ')}`);
+      }
+    } finally {
+      await context.close();
+    }
+  }
+
+  // 3. Admin Context: Gateway Operations (Quy tắc H1: Clean State)
+  {
+    const consoleErrors = [];
+    const pageErrors = [];
+    const context = await browser.newContext({
+      viewport: { width: vp.width, height: vp.height }
     });
+    const page = await context.newPage();
+    setupConsoleGuard(page, consoleErrors, pageErrors);
 
-    await runStep(`E2E-S5-SC04-ADMIN-${vp.name}`, `[${vp.name}] Admin kiểm tra Gateway Health và điều hành`, async () => {
-      await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
+    try {
+      await runStep(`E2E-S5-SC04-ADMIN-${vp.name}`, `[${vp.name}] Admin kiểm tra Gateway Health và điều hành`, async () => {
+        await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
 
-      const emailInput = page.getByLabel(/Địa chỉ Email/i);
-      const passwordInput = page.getByLabel(/Mật khẩu/i);
-      const submitBtn = page.getByRole('button', { name: /Đăng nhập/i });
+        const emailInput = page.getByLabel(/Địa chỉ Email/i);
+        const passwordInput = page.getByLabel(/Mật khẩu/i);
+        const submitBtn = page.getByRole('button', { name: /Đăng nhập/i });
 
-      await emailInput.pressSequentially(DEMO_ACCOUNTS.admin.email, { delay: 15 });
-      await passwordInput.pressSequentially(DEMO_ACCOUNTS.admin.password, { delay: 15 });
-      await submitBtn.click();
-      // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định ADMIN chuyển hướng về /admin
-      await page.waitForURL('**/admin*', { timeout: 15000 });
+        await emailInput.pressSequentially(DEMO_ACCOUNTS.admin.email, { delay: 15 });
+        await passwordInput.pressSequentially(DEMO_ACCOUNTS.admin.password, { delay: 15 });
+        await submitBtn.click();
+        // Nguồn: frontend/src/pages/auth/LoginPage.tsx:8 homeForRole quy định ADMIN chuyển hướng về /admin
+        await page.waitForURL('**/admin*', { timeout: 15000 });
 
-      // Đường dẫn quản trị Gateway thực tế trong frontend/src/App.tsx
-      await page.goto(`${BASE_URL}/admin/gateway`, { waitUntil: 'networkidle' });
-      await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-04-admin-gateway-${vp.name}.png`) });
-    });
+        // Đường dẫn quản trị Gateway thực tế trong frontend/src/App.tsx
+        await page.goto(`${BASE_URL}/admin/gateway`, { waitUntil: 'networkidle' });
+        await page.screenshot({ path: path.resolve(SCREENSHOT_DIR, `sprint5-sc04-04-admin-gateway-${vp.name}.png`) });
+      });
 
-  } finally {
-    await context.close();
+      if (pageErrors.length > 0) {
+        throw new Error(`Phát hiện lỗi unhandled page error: ${pageErrors.join('; ')}`);
+      }
+    } finally {
+      await context.close();
+    }
   }
 }
 
