@@ -67,7 +67,7 @@ const scenarioExecutionStatus = {
   SC01: { status: 'CHƯA CHẠY', reason: 'Chưa khởi chạy', viewportsTested: [] },
   SC02: { status: 'CHƯA CHẠY', reason: 'Chưa khởi chạy', viewportsTested: [] },
   SC03: { status: 'CHƯA CHẠY', reason: 'Chưa khởi chạy', viewportsTested: [] },
-  SC04: { status: 'CHƯA CHẠY', reason: 'Chờ Frontend Issue #23 (@leduwn) merge vào develop', viewportsTested: [] }
+  SC04: { status: 'CHƯA CHẠY', reason: 'Chưa khởi chạy', viewportsTested: [] }
 };
 
 if (!fs.existsSync(SCREENSHOT_DIR)) {
@@ -542,8 +542,8 @@ async function main() {
       scenarioExecutionStatus.SC04.reason = 'Hoàn tất cả 2 viewports';
 
     } else {
-      // Chế độ mặc định: Chạy các phân cảnh đã sẵn sàng trên develop (SC01, SC02, SC03)
-      log('Chạy các kịch bản demo khả dụng (SC01, SC02, SC03) trên cả Desktop & Tablet...');
+      // Chế độ mặc định: Chạy toàn bộ 4 phân cảnh trên develop (SC01, SC02, SC03, SC04)
+      log('Chạy toàn bộ các kịch bản demo (SC01, SC02, SC03, SC04) trên cả Desktop & Tablet...');
 
       for (const vp of VIEWPORTS) {
         await runScenario1(browser, vp);
@@ -566,9 +566,12 @@ async function main() {
       scenarioExecutionStatus.SC03.status = 'ĐÃ CHẠY PASS';
       scenarioExecutionStatus.SC03.reason = 'Hoàn tất cả 2 viewports (Desktop, Tablet)';
 
-      // Phân cảnh 4 giữ trạng thái CHƯA CHẠY do chờ FE Issue #23
-      scenarioExecutionStatus.SC04.status = 'CHƯA CHẠY';
-      scenarioExecutionStatus.SC04.reason = 'Chờ Frontend Issue #23 (@leduwn) merge vào develop';
+      for (const vp of VIEWPORTS) {
+        await runScenario4(browser, vp);
+        scenarioExecutionStatus.SC04.viewportsTested.push(vp.name);
+      }
+      scenarioExecutionStatus.SC04.status = 'ĐÃ CHẠY PASS';
+      scenarioExecutionStatus.SC04.reason = 'Hoàn tất cả 2 viewports (Desktop, Tablet)';
     }
 
   } finally {
