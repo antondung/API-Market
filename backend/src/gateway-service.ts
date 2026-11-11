@@ -75,13 +75,8 @@ export class GatewayService {
    * Finds the registered endpoint matching this method and concrete path. Without this a key
    * issued for one API could reach arbitrary paths on the provider host.
    */
-  private async registeredEndpoint(apiId: string, method: string, path: string) {
-    const result = await this.pool.query(
-      `SELECT e.id::text,e.path FROM api_endpoints e JOIN api_versions v ON v.id=e.version_id
-       WHERE e.api_id=$1 AND e.method=$2 AND v.api_id=$1`,
-      [apiId, method]
-    );
-    for (const row of result.rows as { id:string; path: string }[]) {
+  private registeredEndpoint(endpoints: { id: string; path: string }[], path: string) {
+    for (const row of endpoints) {
       const params = matchTemplate(row.path, path);
       if (params) return { id:row.id,registeredPath: row.path, pathParams: params };
     }
@@ -101,8 +96,9 @@ export class GatewayService {
     // Authenticate before resolving the route so an unauthenticated caller cannot probe which
     // APIs exist.
     const identity=await this.keys.authenticate(apiKey, apiId);
-    const matched = await this.registeredEndpoint(apiId, method, path);
-    const route = await this.registry.resolve(apiId);
+    const lookup = await this.registry.lookup(apiId, method);
+    const matched = this.registeredEndpoint(lookup.endpoints, path);
+    const route = await this.registry.resolve(apiId, lookup.route);
 
     const headers: Record<string, string> = {};
     for (const name of ALLOWED_REQUEST_HEADERS) {
