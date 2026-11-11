@@ -34,6 +34,7 @@ CREATE INDEX idx_provider_revenue_provider_date
 
 CREATE OR REPLACE FUNCTION refresh_usage_aggregates(p_from DATE, p_to DATE)
 RETURNS VOID AS $$
+#variable_conflict use_column
 BEGIN
     IF p_from IS NULL OR p_to IS NULL OR p_to < p_from THEN
         RAISE EXCEPTION 'Invalid aggregate date range';

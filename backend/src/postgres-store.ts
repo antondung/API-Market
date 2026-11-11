@@ -56,7 +56,12 @@ export class PostgresAuthStore implements AuthStore {
           if (applied.rows[0].checksum !== checksum) throw new Error(`Applied migration changed: ${name}`);
           continue;
         }
-        await client.query(source.replace(/^\s*BEGIN;\s*/, '').replace(/\s*COMMIT;\s*$/, ''));
+        try {
+          await client.query(source.replace(/^\s*BEGIN;\s*/, '').replace(/\s*COMMIT;\s*$/, ''));
+        } catch (error) {
+          if (error instanceof Error) error.message = `Migration ${name} failed: ${error.message}`;
+          throw error;
+        }
         await client.query('INSERT INTO backend_schema_migrations (name,checksum) VALUES ($1,$2)', [name, checksum]);
       }
       // Roles are needed for signup; demo users from 002 are explicit local seed only.
