@@ -30,6 +30,10 @@ export function buildUsageQueryString(
     searchParams.set('apiId', params.apiId.trim());
   }
 
+  if ('endpointId' in params && params.endpointId !== undefined && params.endpointId !== null && params.endpointId.trim() !== '') {
+    searchParams.set('endpointId', params.endpointId.trim());
+  }
+
   if (params.status !== undefined && params.status !== null) {
     searchParams.set('status', String(params.status));
   }
