@@ -42,15 +42,15 @@ BEGIN
 
     DELETE FROM usage_daily_aggregates WHERE usage_date BETWEEN p_from AND p_to;
     INSERT INTO usage_daily_aggregates
-    SELECT occurred_at::date, consumer_id, api_id, COALESCE(endpoint_id, 0),
-           COALESCE(subscription_id, 0), COUNT(*),
-           COUNT(*) FILTER (WHERE status_code < 400),
-           COUNT(*) FILTER (WHERE status_code >= 400),
-           SUM(latency_ms), COALESCE(SUM(response_bytes), 0), CURRENT_TIMESTAMP
-    FROM usage_logs
-    WHERE occurred_at >= p_from AND occurred_at < p_to + 1
-    GROUP BY occurred_at::date, consumer_id, api_id,
-             COALESCE(endpoint_id, 0), COALESCE(subscription_id, 0);
+    SELECT l.occurred_at::date, l.consumer_id, l.api_id,
+           COALESCE(l.endpoint_id, 0), COALESCE(l.subscription_id, 0), COUNT(*),
+           COUNT(*) FILTER (WHERE l.status_code < 400),
+           COUNT(*) FILTER (WHERE l.status_code >= 400),
+           SUM(l.latency_ms), COALESCE(SUM(l.response_bytes), 0), CURRENT_TIMESTAMP
+    FROM usage_logs AS l
+    WHERE l.occurred_at >= p_from AND l.occurred_at < p_to + 1
+    GROUP BY l.occurred_at::date, l.consumer_id, l.api_id,
+             COALESCE(l.endpoint_id, 0), COALESCE(l.subscription_id, 0);
 
     DELETE FROM provider_daily_aggregates WHERE usage_date BETWEEN p_from AND p_to;
     INSERT INTO provider_daily_aggregates
