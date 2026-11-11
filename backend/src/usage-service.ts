@@ -50,9 +50,10 @@ export class UsageService {
   async complete(requestId: string, occurredAt: Date, r: UsageResult) {
     const errorCode =
       r.errorCode && /^[A-Z0-9_]{1,64}$/.test(r.errorCode) ? r.errorCode : null;
-    await this.pool.query(
-      `UPDATE usage_outbox SET status_code=$3,error_code=$4,latency_ms=$5,upstream_latency_ms=$6,response_bytes=$7,gateway_overhead_ms=$8,completed=true WHERE request_id=$1 AND occurred_at=$2 AND NOT completed`,
-      [
+    await this.pool.query({
+      name: "usage-complete",
+      text: `UPDATE usage_outbox SET status_code=$3,error_code=$4,latency_ms=$5,upstream_latency_ms=$6,response_bytes=$7,gateway_overhead_ms=$8,completed=true WHERE request_id=$1 AND occurred_at=$2 AND NOT completed`,
+      values: [
         requestId,
         occurredAt,
         r.statusCode,
@@ -62,52 +63,31 @@ export class UsageService {
         r.responseBytes,
         r.gatewayOverheadMs,
       ],
-    );
+    });
   }
   async flush() {
-    const c = await this.pool.connect();
-    try {
-      await c.query("BEGIN");
-      const batch = await c.query(
-        `SELECT * FROM usage_outbox WHERE completed OR created_at<NOW()-INTERVAL '1 minute' ORDER BY created_at,request_id FOR UPDATE SKIP LOCKED LIMIT 500`,
-      );
-      let inserted = 0;
-      for (const r of batch.rows) {
-        const result = await c.query(
-          `INSERT INTO usage_logs(occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id,status_code,error_code,latency_ms,upstream_latency_ms,response_bytes,gateway_overhead_ms,is_sandbox,cost_currency,estimated_cost)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,false,$14,$15) ON CONFLICT(occurred_at,request_id) DO NOTHING`,
-          [
-            r.occurred_at,
-            r.request_id,
-            r.api_key_id,
-            r.subscription_id,
-            r.consumer_id,
-            r.api_id,
-            r.endpoint_id,
-            r.completed ? r.status_code : 502,
-            r.completed ? r.error_code : "GATEWAY_INTERRUPTED",
-            r.completed ? r.latency_ms : 0,
-            r.completed ? r.upstream_latency_ms : 0,
-            r.completed ? r.response_bytes : 0,
-            r.completed ? r.gateway_overhead_ms : 0,
-            r.cost_currency,
-            r.estimated_cost,
-          ],
-        );
-        inserted += result.rowCount ?? 0;
-        await c.query(
-          "DELETE FROM usage_outbox WHERE occurred_at=$1 AND request_id=$2",
-          [r.occurred_at, r.request_id],
-        );
-      }
-      await c.query("COMMIT");
-      return inserted;
-    } catch (e) {
-      await c.query("ROLLBACK");
-      throw e;
-    } finally {
-      c.release();
-    }
+    const result = await this.pool.query<{ inserted: number }>(`WITH batch AS MATERIALIZED (
+      SELECT * FROM usage_outbox WHERE completed OR created_at<NOW()-INTERVAL '1 minute'
+      ORDER BY created_at,request_id LIMIT 500 FOR UPDATE SKIP LOCKED
+    ), written AS (
+      INSERT INTO usage_logs(occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id,
+        status_code,error_code,latency_ms,upstream_latency_ms,response_bytes,gateway_overhead_ms,is_sandbox,
+        cost_currency,estimated_cost)
+      SELECT occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id,
+        CASE WHEN completed THEN status_code ELSE 502 END,
+        CASE WHEN completed THEN error_code ELSE 'GATEWAY_INTERRUPTED' END,
+        CASE WHEN completed THEN latency_ms ELSE 0 END,
+        CASE WHEN completed THEN upstream_latency_ms ELSE 0 END,
+        CASE WHEN completed THEN response_bytes ELSE 0 END,
+        CASE WHEN completed THEN gateway_overhead_ms ELSE 0 END,
+        false,cost_currency,estimated_cost
+      FROM batch ON CONFLICT(occurred_at,request_id) DO NOTHING RETURNING 1
+    ), removed AS (
+      DELETE FROM usage_outbox o USING batch b
+      WHERE o.occurred_at=b.occurred_at AND o.request_id=b.request_id
+    )
+    SELECT COUNT(*)::int AS inserted FROM written`);
+    return result.rows[0]!.inserted;
   }
   start() {
     if (this.timer) return;

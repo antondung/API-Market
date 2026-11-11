@@ -8,21 +8,21 @@ Nếu kỳ đã hết trước khi bấm Mở khóa, Restore không trả về A
 
 Chưa có cơ chế cộng bù số ngày bị đình chỉ. Điểm này đang chờ Tech Lead quyết định.
 
-## Gateway tuần tự hóa request trên cùng một subscription
+## Gateway giữ quota nhất quán khi gọi đồng thời
 
-`GatewayEntitlement.reserve` mở transaction và khóa dòng subscription bằng `FOR UPDATE OF s` để quota luôn chính xác dưới tải đồng thời. Hệ quả: các request của **cùng một Consumer trên cùng một API** xếp hàng tuần tự.
+Với gói giá bằng 0, Gateway kiểm tra Redis trước rồi dùng một câu lệnh PostgreSQL để kiểm tra lại thuê bao và API key, cập nhật quota và ghi outbox. PostgreSQL vẫn từ chối khi hết quota nếu Redis mất bộ đếm. Với gói trả phí, Gateway giữ khóa dòng thuê bao trong giao dịch để đồng bộ quota, Cost Guard và outbox. Các request trả phí của cùng một Consumer trên cùng một API vẫn chờ nhau ở bước này.
 
 Đo trên máy local (`npm run loadtest:gateway`):
 
 | Đồng thời | RPS | P95 overhead |
 | ---: | ---: | ---: |
-| 1 | ~40 | 13–19 ms |
-| 10 | ~270–320 | 38–59 ms |
-| 25 | ~340–380 | 84–150 ms |
+| 1 | 40–57 | 5–6 ms |
+| 10 | 678 | 18–21 ms |
+| 25 | 963–1053 | 25–29 ms |
 
-Ngưỡng SLA trong runner: P95 < 30 ms khi đồng thời = 1, P95 < 60 ms khi đồng thời > 1. Mức 25 vượt ngưỡng trên máy local.
+Hai lượt đo dùng một thuê bao miễn phí, PostgreSQL và Redis tạm trên Windows, với tối đa 10 kết nối PostgreSQL. Mỗi lượt ghi đủ 620 bản ghi, không có lỗi. Ngưỡng SLA trong runner là P95 < 30 ms khi đồng thời = 1 và P95 < 60 ms khi đồng thời > 1.
 
-Đây là đánh đổi có chủ đích: nới khóa sẽ cho phép vượt quota. Nếu cần throughput cao hơn cho một Consumer, hướng xử lý là gộp quota vào Redis Lua script (đã có sẵn cho rate limit) và chỉ ghi PostgreSQL theo lô — chưa làm vì chưa có yêu cầu tải thật.
+Gateway mặc định dùng tối đa 10 kết nối và có thể điều chỉnh bằng `PG_POOL_MAX`. Trong lượt đo cùng mã với pool 20, PostgreSQL mở thêm 10 kết nối ở mức 25 luồng và P95 lên 105 ms. Số đo trên xác nhận workload cục bộ đã kiểm thử. Staging và tải gói trả phí cần đo riêng.
 
 ## Provider Analytics trả 404 khi hỏi API của người khác
 

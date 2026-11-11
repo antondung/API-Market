@@ -38,6 +38,18 @@ Chạy `npm test`. Bằng chứng nằm trong [test Gateway](integration/gateway
 
 Đối soát đủ 620/620 usage logs sau khi flush, gồm cả lượt làm nóng. P95 đạt mục tiêu dưới 30 ms ở một luồng, còn 10 và 25 luồng vượt mục tiêu. Runner trả `SLA_MISSED` và exit code 1 nếu bất kỳ mức nào vượt ngưỡng. Các tối ưu đã thực hiện gồm bỏ giao dịch ghi ở bước tra route có sẵn, hạn chế cập nhật dấu thời gian dùng key, dùng lại câu lệnh đã chuẩn bị và ghi quota/outbox bằng một câu lệnh. Các lượt của cùng thuê bao vẫn tuần tự hóa khi giữ khóa quota để bảo toàn lượt cuối.
 
+### Kiểm tra lại DEV-S5-03 ngày 11/11/2026
+
+Gateway đã gộp tra route với endpoint, rút ngắn thời gian khóa quota gói miễn phí và ghi usage theo lô trong một câu lệnh. Khôi phục mặc định 10 kết nối PostgreSQL. Giữ ngưỡng QA P95 dưới 30 ms ở một luồng và dưới 60 ms khi chạy đồng thời.
+
+| Kết nối tối đa | P95 1 luồng | P95 10 luồng | P95 25 luồng | Kết quả |
+| ---: | ---: | ---: | ---: | --- |
+| 20 | 5 ms | 27 ms | 105 ms | Vượt ngưỡng ở 25 luồng |
+| 10 | 6 ms | 21 ms | 25 ms | Đạt |
+| 10 | 5 ms | 18 ms | 29 ms | Đạt |
+
+Mỗi lượt không có lỗi và lưu đủ 620/620 bản ghi. Hai ca hồi quy chứng minh PostgreSQL vẫn giữ đúng lượt cuối nếu Redis cho nhiều yêu cầu đi tiếp, và không chuyển tiếp yêu cầu nếu thuê bao bị hủy giữa chừng. Các số đo dùng workload gói miễn phí cục bộ.
+
 ## Migration và phát hành
 
 1. Trên môi trường triển khai, sao lưu theo [runbook](../docs/06-production-rollback-runbook.md) và chạy production preflight bằng `npm run preflight:prod` với cấu hình thật. Backend production cũng kiểm tra ba secret JWT, sandbox và upstream độc lập.

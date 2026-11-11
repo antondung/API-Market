@@ -33,10 +33,13 @@ export class PostgresAuthStore implements AuthStore {
   constructor(connectionString: string, schema?: string) {
     if (!connectionString) throw new Error('DATABASE_URL is required');
     if (schema && !/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error('Invalid test schema');
-    // Pool size is the Gateway's concurrency ceiling: each forwarded request holds a
-    // connection for key auth, entitlement and the usage outbox write.
-    const max = Number(process.env.PG_POOL_MAX ?? 20);
-    this.pool = new Pool({ connectionString, max: Number.isSafeInteger(max) && max > 0 ? max : 20, options: schema ? `-c search_path=${schema},public` : undefined });
+    const defaultPoolMax = 10;
+    const max = Number(process.env.PG_POOL_MAX ?? defaultPoolMax);
+    this.pool = new Pool({
+      connectionString,
+      max: Number.isSafeInteger(max) && max > 0 ? max : defaultPoolMax,
+      options: schema ? `-c search_path=${schema},public` : undefined,
+    });
     this.pool.on('error', () => console.error('PostgreSQL idle connection error'));
   }
   async ready() {

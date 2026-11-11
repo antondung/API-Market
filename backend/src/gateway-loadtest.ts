@@ -106,6 +106,7 @@ try {
 
   for (const concurrency of concurrencyLevels) {
     let errors = 0;
+    const poolConnectionsBefore = store.pool.totalCount;
     const wallStart = performance.now();
     let cursor = 0;
 
@@ -141,19 +142,23 @@ try {
     const p95 = percentile(0.95);
     const p99 = percentile(0.99);
     const rps = Number(((requestsPerLevel / wallMs) * 1000).toFixed(1));
+    const p95LimitMs = concurrency === 1 ? 30 : 60;
     stages.push({
       concurrency,
       requests: requestsPerLevel,
       measuredRequests: samples.length,
       errors,
       rps,
+      poolConnectionsBefore,
+      poolConnectionsAfter: store.pool.totalCount,
       overheadP50Ms: p50,
       overheadP95Ms: p95,
       overheadP99Ms: p99,
             // SLA is per concurrency level. A single stream must stay under 30ms.
             // Concurrent streams serialize on the subscription row lock (FOR UPDATE OF s)
             // to keep quota exact, so their ceiling is throughput, not latency.
-            slaP95Under30Ms: p95 !== null && p95 < (concurrency === 1 ? 30 : 60),
+      p95LimitMs,
+      meetsP95Sla: p95 !== null && p95 < p95LimitMs,
     });
     await usage.flush();
   }
@@ -167,7 +172,7 @@ try {
   const expectedTotal = 20 + concurrencyLevels.length * requestsPerLevel;
   const valid = totalLogged === expectedTotal &&
     stages.every(s => s.errors === 0 && s.measuredRequests === s.requests);
-  const meetsSla = stages.every(s => s.slaP95Under30Ms);
+  const meetsSla = stages.every(s => s.meetsP95Sla);
 
   console.log(
     JSON.stringify({
