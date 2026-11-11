@@ -99,7 +99,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['X-Request-Id', 'Retry-After'],
+    exposedHeaders: ['X-Request-Id', 'Retry-After', 'X-Gateway-Overhead-Ms'],
     credentials: false, maxAge: 600, optionsSuccessStatus: 204,
   }));
   // The Gateway proxies arbitrary bodies and must see the raw bytes, so it is mounted before

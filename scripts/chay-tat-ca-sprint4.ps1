@@ -138,13 +138,12 @@ if ($step3.ExitCode -ne 0) { $hasFailed = $true }
 $step4 = Run-Step "4" "Sprint 4 Acceptance QA Runner" "node qa-scripts/sprint4-full-runner.cjs" {
     node qa-scripts/sprint4-full-runner.cjs 2>&1
 }
-# Runner truy vet tra ve Exit Code 1 do con 3 sai lech ky thuat mo (GW-15, OVH-06, GW-04)
 $step4Status = if ($step4.ExitCode -eq 0) { "PASS" } else { "FAIL" }
 $results.Add([PSCustomObject]@{
     Step = "4. Acceptance Runner"
     Command = "node sprint4-full-runner.cjs"
     Duration = "$($step4.Duration)s"
-    Details = "50 PASS / 3 FAIL (DEV-S4-01, DEV-S4-02, DEV-S4-04)"
+    Details = "Static groups and runtime-suite references"
     ExitCode = $step4.ExitCode
     Status = $step4Status
 })
@@ -212,7 +211,7 @@ $pwMatch = [regex]::Match($step8Out, "Passed:\s+([0-9]+)/([0-9]+)")
 $pwDetail = if ($pwMatch.Success) {
     "$($pwMatch.Groups[1].Value)/$($pwMatch.Groups[2].Value) E2E scenarios passed"
 } else {
-    if ($step8.ExitCode -eq 0) { "7/7 E2E scenarios passed" } else { "Loi chay E2E: $($step8.ExitCode)" }
+    "No E2E count reported (exit $($step8.ExitCode))"
 }
 $step8Status = if ($step8.ExitCode -eq 0) { "PASS" } else { "FAIL" }
 $results.Add([PSCustomObject]@{
@@ -235,7 +234,7 @@ $results | Format-Table -AutoSize Step, Command, Duration, ExitCode, Status, Det
 
 Write-Host ("=" * 80) -ForegroundColor Cyan
 if ($hasFailed) {
-    Write-Host "[KET QUA TONG QUAN]: CO BUOC THAT BAI (CHAN BOI SAI LECH DEV-S4-01 / DEV-S4-02 HOAC LOI TEST)" -ForegroundColor Red
+    Write-Host "[KET QUA TONG QUAN]: CO BUOC KIEM THU THAT BAI" -ForegroundColor Red
     exit 1
 } else {
     Write-Host "[KET QUA TONG QUAN]: TOAN BO CAC BUOC KIEM THU THUC THI HOAN TOAN XANH!" -ForegroundColor Green
