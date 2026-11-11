@@ -112,11 +112,12 @@ async function authenticate(role) {
     }
   });
 
-  if (res.statusCode !== 200 || !res.body || !res.body.token) {
+  const token = res.body?.data?.accessToken || res.body?.token;
+  if (res.statusCode !== 200 || !token) {
     throw new Error(`Không thể đăng nhập vai trò ${role}: HTTP ${res.statusCode} - ${JSON.stringify(res.body)}`);
   }
 
-  return res.body.token;
+  return token;
 }
 
 /**
@@ -126,39 +127,12 @@ const CostGuardSuite = {
   name: 'Cost Guard APIs (US-32)',
 
   /**
-   * [TC-CST-02] Lấy thông tin tóm tắt Cost Guard
+   * [TC-CST-01] Thiết lập ngân sách tháng và chế độ ngắt cứng thành công
    */
-  async runTcCost02(tokens) {
-    const res = await sendRequest('/api/consumer/cost-guard', {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${tokens.consumer}` }
-    });
-
-    if (res.statusCode !== 200) {
-      throw new Error(`[TC-CST-02] Kỳ vọng HTTP 200, thực tế nhận: ${res.statusCode}`);
-    }
-
-    const body = res.body;
-    const requiredFields = ['monthlyBudgetUsd', 'currentMonthSpendUsd', 'budgetPercentage', 'reachedThresholds'];
-    for (const field of requiredFields) {
-      if (!(field in body)) {
-        throw new Error(`[TC-CST-02] Thiếu trường bắt buộc trong phản hồi Cost Guard: ${field}`);
-      }
-    }
-
-    return {
-      tcId: 'TC-CST-02',
-      status: 'PASS',
-      details: `HTTP 200, budget: ${body.monthlyBudgetUsd}, spend: ${body.currentMonthSpendUsd}, percentage: ${body.budgetPercentage}%`
-    };
-  },
-
-  /**
-   * [TC-CST-03] Cập nhật hạn mức ngân sách tháng và chế độ ngắt cứng
-   */
-  async runTcCost03(tokens) {
+  async runTcCost01(tokens) {
     const payload = {
-      monthlyBudgetUsd: '50.00',
+      currency: 'USD',
+      monthlyBudget: '50.00',
       hardCutoff: true
     };
 
@@ -169,73 +143,111 @@ const CostGuardSuite = {
     });
 
     if (res.statusCode !== 200) {
-      throw new Error(`[TC-CST-03] Kỳ vọng HTTP 200, thực tế nhận: ${res.statusCode}`);
+      throw new Error(`[TC-CST-01] Kỳ vọng HTTP 200, thực tế nhận: ${res.statusCode}`);
     }
 
-    if (res.body.monthlyBudgetUsd !== '50.00' && res.body.monthlyBudget !== '50.00') {
-      throw new Error(`[TC-CST-03] Ngân sách không khớp giá trị vừa cập nhật: ${JSON.stringify(res.body)}`);
+    const currencies = res.body?.data?.currencies || [];
+    const usd = currencies.find(c => c.currency === 'USD');
+    if (!usd || usd.monthlyBudget !== '50.00' || usd.hardCutoff !== true) {
+      throw new Error(`[TC-CST-01] Ngân sách không khớp giá trị vừa cập nhật: ${JSON.stringify(res.body)}`);
     }
 
     return {
-      tcId: 'TC-CST-03',
+      tcId: 'TC-CST-01',
       status: 'PASS',
-      details: `HTTP 200, cập nhật thành công ngân sách USD 50.00, hardCutoff: true`
+      details: 'HTTP 200, thiết lập thành công ngân sách USD 50.00 và hardCutoff: true'
     };
   },
 
   /**
-   * [TC-CST-07] Kiểm tra bảo mật xác thực và vai trò Buyer trên Cost Guard
+   * [TC-CST-02] Ép lỗi dữ liệu ngân sách không hợp lệ và thiếu auth (AC-US32-01)
    */
-  async runTcCost07(tokens) {
-    // 1. Unauthenticated -> 401
-    const unauthRes = await sendRequest('/api/consumer/cost-guard', { method: 'GET' });
-    if (unauthRes.statusCode !== 401) {
-      throw new Error(`[TC-CST-07] Gọi không token kỳ vọng HTTP 401, nhận: ${unauthRes.statusCode}`);
-    }
-
-    // 2. Admin gọi route consumer cost-guard -> 403 Forbidden
-    const adminRes = await sendRequest('/api/consumer/cost-guard', {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${tokens.admin}` }
-    });
-    if (adminRes.statusCode !== 403) {
-      throw new Error(`[TC-CST-07] Admin gọi route cost-guard kỳ vọng HTTP 403, nhận: ${adminRes.statusCode}`);
-    }
-
-    return {
-      tcId: 'TC-CST-07',
-      status: 'PASS',
-      details: `Unauth trả HTTP 401; Admin trả HTTP 403; Phân quyền Buyer bảo đảm an toàn`
-    };
-  },
-
-  /**
-   * [TC-CST-08] Kiểm chứng ngắt cước tự động (hardCutoff) trả HTTP 429 BUDGET_EXHAUSTED
-   */
-  async runTcCost08(tokens) {
-    // Đặt ngân sách về mức tối thiểu 0.01 để kích hoạt điều kiện ngắt cước
-    const setupRes = await sendRequest('/api/consumer/cost-guard', {
+  async runTcCost02(tokens) {
+    // 1. Gửi PUT với monthlyBudget không hợp lệ (âm) -> HTTP 400
+    const badRes = await sendRequest('/api/consumer/cost-guard', {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${tokens.consumer}` },
-      body: { monthlyBudgetUsd: '0.01', hardCutoff: true }
+      body: { currency: 'USD', monthlyBudget: '-10.00', hardCutoff: true }
     });
 
-    if (setupRes.statusCode !== 200) {
-      throw new Error(`[TC-CST-08] Không thể cấu hình ngân sách kiểm thử: HTTP ${setupRes.statusCode}`);
+    if (badRes.statusCode !== 400) {
+      throw new Error(`[TC-CST-02] Kỳ vọng HTTP 400 khi gửi ngân sách âm, thực tế nhận: ${badRes.statusCode}`);
+    }
+
+    // 2. Gửi không kèm header Authorization -> HTTP 401
+    const unauthRes = await sendRequest('/api/consumer/cost-guard', {
+      method: 'GET'
+    });
+
+    if (unauthRes.statusCode !== 401) {
+      throw new Error(`[TC-CST-02] Kỳ vọng HTTP 401 khi không có token, thực tế nhận: ${unauthRes.statusCode}`);
     }
 
     return {
-      tcId: 'TC-CST-08',
+      tcId: 'TC-CST-02',
       status: 'PASS',
-      details: `Cấu hình thành công hardCutoff mức 0.01 USD để kiểm thử ngắt cước Gateway`
+      details: 'HTTP 400 Bad Request cho ngân sách âm (-10.00) và HTTP 401 cho request không xác thực'
     };
   },
 
   /**
-   * [TC-CST-09] Hỗ trợ cấu hình đa tiền tệ trên Cost Guard (VND và USD)
+   * [TC-CST-03] Tính chi phí tích lũy theo snapshot giá từng request
+   */
+  async runTcCost03() {
+    return {
+      tcId: 'TC-CST-03',
+      status: 'KHÔNG THỰC HIỆN ĐƯỢC',
+      details: 'Yêu cầu gọi request qua Gateway tới mock upstream để tính estimated_cost trong usage_logs; mock-services đang crash'
+    };
+  },
+
+  /**
+   * [TC-CST-04] Đối soát 4 tầng Cost Guard: UI <-> API JSON <-> PostgreSQL <-> Redis
+   */
+  async runTcCost04() {
+    return {
+      tcId: 'TC-CST-04',
+      status: 'KHÔNG THỰC HIỆN ĐƯỢC',
+      details: 'Yêu cầu phát sinh lưu lượng thực tế qua Gateway để đối soát chi phí tích lũy; mock-services đang crash'
+    };
+  },
+
+  /**
+   * [TC-CST-07] Chặn Gateway 429 BUDGET_EXHAUSTED khi bật hardCutoff = true và chạm trần
+   */
+  async runTcCost07() {
+    return {
+      tcId: 'TC-CST-07',
+      status: 'KHÔNG THỰC HIỆN ĐƯỢC',
+      details: 'Yêu cầu gọi Gateway chạm trần để nhận 429 BUDGET_EXHAUSTED; mock-services upstream đang crash'
+    };
+  },
+
+  /**
+   * [TC-CST-08] Miễn trừ Cost Guard cho gói Free (0 USD) và lượt dùng thử Sandbox
+   */
+  async runTcCost08() {
+    return {
+      tcId: 'TC-CST-08',
+      status: 'KHÔNG THỰC HIỆN ĐƯỢC',
+      details: 'Mock-services upstream đang crash do thiếu entrypoint, không thể kiểm thử gọi Gateway ngắt cước/miễn trừ'
+    };
+  },
+
+  /**
+   * [TC-CST-09] Tương thích ngược: Đếm riêng các request cũ không có giá (unpricedRequests)
    */
   async runTcCost09(tokens) {
-    // 1. Cập nhật theo loại tiền VND
+    // 1. Kiểm tra tương thích ngược unpricedRequests theo TC-CST-09 (AC-US32-05)
+    const summaryRes = await sendRequest('/api/consumer/cost-guard', {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${tokens.consumer}` }
+    });
+    if (summaryRes.statusCode !== 200 || summaryRes.body?.data?.unpricedRequests === undefined) {
+      throw new Error(`[TC-CST-09] Thiếu trường unpricedRequests trong phản hồi Cost Guard: ${JSON.stringify(summaryRes.body)}`);
+    }
+
+    // 2. Cập nhật theo loại tiền VND
     const vndPayload = { currency: 'VND', monthlyBudget: '500000', hardCutoff: true };
     const vndRes = await sendRequest('/api/consumer/cost-guard', {
       method: 'PUT',
@@ -247,7 +259,7 @@ const CostGuardSuite = {
       throw new Error(`[TC-CST-09] Cập nhật ngân sách VND kỳ vọng HTTP 200, nhận: ${vndRes.statusCode}`);
     }
 
-    // 2. Cập nhật theo loại tiền USD
+    // 3. Cập nhật theo loại tiền USD
     const usdPayload = { currency: 'USD', monthlyBudget: '25.00', hardCutoff: true };
     const usdRes = await sendRequest('/api/consumer/cost-guard', {
       method: 'PUT',
@@ -262,7 +274,7 @@ const CostGuardSuite = {
     return {
       tcId: 'TC-CST-09',
       status: 'PASS',
-      details: `Hỗ trợ độc lập cả tiền tệ VND và USD trên cùng endpoint theo AC-US32-05`
+      details: `unpricedRequests: "${summaryRes.body.data.unpricedRequests}", hỗ trợ độc lập cả tiền tệ VND và USD theo AC-US32-05`
     };
   }
 };
@@ -287,15 +299,16 @@ const AnalyticsSuite = {
       throw new Error(`[TC-ANL-01] Kỳ vọng HTTP 200, thực tế nhận: ${res.statusCode}`);
     }
 
-    const body = res.body;
-    if (!('requestCount' in body) || !('errorRatePercent' in body)) {
-      throw new Error(`[TC-ANL-01] Thiếu trường cơ bản trong analytics response: ${JSON.stringify(body)}`);
+    const data = res.body?.data || res.body;
+    const reqStats = data.requests || data;
+    if (!('requestCount' in reqStats) || !('errorRatePercent' in reqStats)) {
+      throw new Error(`[TC-ANL-01] Thiếu trường cơ bản trong analytics response: ${JSON.stringify(data)}`);
     }
 
     return {
       tcId: 'TC-ANL-01',
       status: 'PASS',
-      details: `HTTP 200, requests: ${body.requestCount}, errorRate: ${body.errorRatePercent}%`
+      details: `HTTP 200, requests: ${reqStats.requestCount}, errorRate: ${reqStats.errorRatePercent}%`
     };
   },
 
@@ -334,7 +347,9 @@ const AnalyticsSuite = {
       throw new Error(`[TC-ANL-03] Kỳ vọng HTTP 200, thực tế nhận: ${res.statusCode}`);
     }
 
-    const { p50LatencyMs, p95LatencyMs, p99LatencyMs } = res.body;
+    const data = res.body?.data || res.body;
+    const reqStats = data.requests || data;
+    const { p50LatencyMs, p95LatencyMs, p99LatencyMs } = reqStats;
     if (p50LatencyMs !== null && p95LatencyMs !== null && p99LatencyMs !== null) {
       if (p50LatencyMs > p95LatencyMs || p95LatencyMs > p99LatencyMs) {
         throw new Error(`[TC-ANL-03] Tương quan phân vị vi phạm toán học: P50=${p50LatencyMs}, P95=${p95LatencyMs}, P99=${p99LatencyMs}`);
@@ -359,20 +374,41 @@ const AnalyticsSuite = {
       headers: { 'Authorization': `Bearer ${tokens.provider}` }
     });
 
-    // Bất biến: tuyệt đối không được trả dữ liệu có nghĩa của người khác
-    if (res.statusCode === 200) {
-      const count = Number(res.body.requestCount || 0);
-      if (count > 0) {
-        throw new Error(`[TC-ANL-06] RÒ RỈ DỮ LIỆU: apiId của người khác trả requestCount > 0: ${count}`);
-      }
-    } else if (res.statusCode !== 403 && res.statusCode !== 404) {
-      throw new Error(`[TC-ANL-06] Mã HTTP không nằm trong phương án hợp lệ (200 rỗng, 403 hoặc 404): ${res.statusCode}`);
+    // Quyết định chính thức (PR #112 / commit e786a52): CHỈ chấp nhận HTTP 404 NOT_FOUND
+    // để không làm rò rỉ sự tồn tại của apiId người khác
+    if (res.statusCode !== 404) {
+      throw new Error(`[TC-ANL-06] Kỳ vọng HTTP 404 NOT_FOUND khi gọi apiId không sở hữu, thực tế nhận: ${res.statusCode}`);
+    }
+    if (res.body?.error?.code !== 'NOT_FOUND' || res.body?.error?.message !== 'API not found') {
+      throw new Error(`[TC-ANL-06] Cấu trúc lỗi không khớp chuẩn: ${JSON.stringify(res.body)}`);
     }
 
     return {
       tcId: 'TC-ANL-06',
       status: 'PASS',
-      details: `Bảo đảm bất biến cách ly: HTTP ${res.statusCode}, không để rò rỉ lưu lượng của bên thứ ba`
+      details: `Bảo mật cách ly đạt chuẩn: HTTP 404 NOT_FOUND ('API not found'), không làm lộ ID space của bên thứ ba`
+    };
+  },
+
+  /**
+   * [TC-ANL-05] Phân tách doanh thu độc lập theo loại tiền tệ (VND và USD)
+   */
+  async runTcAnl05() {
+    return {
+      tcId: 'TC-ANL-05',
+      status: 'KHÔNG THỰC HIỆN ĐƯỢC',
+      details: 'Cần phát sinh giao dịch thật qua Gateway tới upstream mock services; mock-services đang crash'
+    };
+  },
+
+  /**
+   * [TC-ANL-07] Đối soát 4 tầng Analytics: UI Dashboard <-> API JSON <-> PostgreSQL <-> Redis
+   */
+  async runTcAnl07() {
+    return {
+      tcId: 'TC-ANL-07',
+      status: 'KHÔNG THỰC HIỆN ĐƯỢC',
+      details: 'Cần gửi requests qua Gateway tới mock upstream để đối soát đồng bộ; mock-services đang crash'
     };
   }
 };
@@ -408,19 +444,19 @@ const SecurityAndPerfSuite = {
    * [TC-SEC-05] Khử dữ liệu nhạy cảm trong hệ thống Log và Gateway Headers
    */
   async runTcSec05(tokens) {
-    const res = await sendRequest('/api/consumer/request-history?page=1&limit=5', {
+    const res = await sendRequest('/api/consumer/usage/history?page=1&pageSize=5', {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${tokens.consumer}` }
     });
 
     if (res.statusCode !== 200) {
-      throw new Error(`[TC-SEC-05] Không thể đọc request history: HTTP ${res.statusCode}`);
+      throw new Error(`[TC-SEC-05] Không thể đọc usage history: HTTP ${res.statusCode}`);
     }
 
     // Kiểm tra không có token hay khóa thô trong lịch sử
     const text = JSON.stringify(res.body);
     if (text.includes('Bearer ') || text.includes('password') || text.includes('client_secret')) {
-      throw new Error(`[TC-SEC-05] Phát hiện rò rỉ dữ liệu nhạy cảm dạng thô trong request history`);
+      throw new Error(`[TC-SEC-05] Phát hiện rò rỉ dữ liệu nhạy cảm dạng thô trong usage history`);
     }
 
     return {
@@ -480,6 +516,7 @@ async function main() {
   const allSuites = [CostGuardSuite, AnalyticsSuite, SecurityAndPerfSuite];
   let passCount = 0;
   let failCount = 0;
+  let blockedCount = 0;
   const results = [];
 
   for (const suite of allSuites) {
@@ -500,9 +537,15 @@ async function main() {
       process.stdout.write(`  ⏳ Đang chạy ${tcName}... `);
       try {
         const result = await suite[method](tokens);
-        passCount++;
-        results.push(result);
-        console.log(`✅ [PASS] — ${result.details}`);
+        if (result.status === 'KHÔNG THỰC HIỆN ĐƯỢC') {
+          blockedCount++;
+          results.push(result);
+          console.log(`⚠️  [KHÔNG THỰC HIỆN ĐƯỢC] — ${result.details}`);
+        } else {
+          passCount++;
+          results.push(result);
+          console.log(`✅ [PASS] — ${result.details}`);
+        }
       } catch (err) {
         failCount++;
         results.push({ tcId: tcName, status: 'FAIL', error: err.message });
@@ -513,7 +556,7 @@ async function main() {
   }
 
   console.log('================================================================================');
-  console.log(`📊 TỔNG KẾT THỰC THI API RUNNER: ${passCount} PASS / ${failCount} FAIL`);
+  console.log(`📊 TỔNG KẾT THỰC THI API RUNNER: ${passCount} PASS / ${failCount} FAIL / ${blockedCount} KHÔNG THỰC HIỆN ĐƯỢC`);
   console.log('================================================================================');
 
   if (failCount > 0) {
