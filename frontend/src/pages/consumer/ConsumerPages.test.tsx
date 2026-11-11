@@ -341,7 +341,7 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
   });
 
   describe('CostGuardPage', () => {
-    it('disables save mutation and honestly indicates Cost Guard is scheduled for Sprint 4', () => {
+    it('renders Cost Guard budget and monitoring page (Sprint 5 US-32)', () => {
       render(
         <MemoryRouter>
           <AppProvider>
@@ -350,9 +350,7 @@ describe('Consumer Pages - Sprint 3 Real Backend Alignment & Honest States', () 
         </MemoryRouter>
       );
 
-      expect(screen.getByText(/Hiện trạng chức năng Sprint 3/)).toBeDefined();
-      const saveBtn = screen.getByRole('button', { name: /Save Guard Policy/ });
-      expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByText('API Cost Guard & Giám Sát Ngân Sách')).toBeDefined();
     });
   });
 

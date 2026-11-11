@@ -138,7 +138,16 @@ export interface ProviderAnalyticsRequests {
   requestCount: string;
   successCount: string;
   errorCount: string;
+  clientErrorCount?: string;
+  serverErrorCount?: string;
+  errorRatePercent?: number;
   averageLatencyMs: number;
+  p50LatencyMs?: number | null;
+  p95LatencyMs?: number | null;
+  p99LatencyMs?: number | null;
+  p50OverheadMs?: number | null;
+  p95OverheadMs?: number | null;
+  p99OverheadMs?: number | null;
 }
 
 export interface ProviderAnalyticsDaily {
@@ -151,17 +160,55 @@ export interface ProviderAnalyticsRevenue {
   amount: string;
 }
 
+export interface ProviderTopEndpoint {
+  apiId: string;
+  apiName: string;
+  endpointId: string;
+  method: string;
+  path: string;
+  requestCount: string;
+  errorCount: string;
+  clientErrorCount?: string;
+  serverErrorCount?: string;
+  errorRatePercent?: number;
+  p50LatencyMs?: number | null;
+  p95LatencyMs?: number | null;
+  p99LatencyMs?: number | null;
+  p50OverheadMs?: number | null;
+  p95OverheadMs?: number | null;
+  p99OverheadMs?: number | null;
+}
+
+export interface ProviderApiBreakdown {
+  apiId: string;
+  apiName: string;
+  requestCount: string;
+  errorCount: string;
+  clientErrorCount?: string;
+  serverErrorCount?: string;
+  errorRatePercent?: number;
+  p50LatencyMs?: number | null;
+  p95LatencyMs?: number | null;
+  p99LatencyMs?: number | null;
+  p50OverheadMs?: number | null;
+  p95OverheadMs?: number | null;
+  p99OverheadMs?: number | null;
+}
+
 export interface ProviderAnalyticsOverview {
   requests: ProviderAnalyticsRequests;
   daily: ProviderAnalyticsDaily[];
   revenue: ProviderAnalyticsRevenue[];
   activeSubscribers: string;
+  topEndpoints?: ProviderTopEndpoint[];
+  apiBreakdown?: ProviderApiBreakdown[];
 }
 
 export interface ProviderAnalyticsQueryParams {
   page?: number;
   pageSize?: number;
   apiId?: string;
+  endpointId?: string;
   status?: number;
   from?: string;
   to?: string;

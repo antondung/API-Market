@@ -3,18 +3,24 @@ import {
   barSharePercent,
   formatUsageDayLabel,
   marketplaceApiIdError,
+  marketplaceEndpointIdError,
   usageRatePercent,
   validateUsageDateRange,
 } from './usageQuery';
 
 describe('usageQuery contract helpers', () => {
-  it('accepts only positive 32-bit marketplace API ids', () => {
+  it('accepts only positive 32-bit marketplace API ids and endpoint ids', () => {
     expect(marketplaceApiIdError('')).toBeNull();
     expect(marketplaceApiIdError('  12  ')).toBeNull();
     expect(marketplaceApiIdError('2147483647')).toBeNull();
     expect(marketplaceApiIdError('0')).toContain('số nguyên dương');
     expect(marketplaceApiIdError('api_weather')).toContain('2147483647');
     expect(marketplaceApiIdError('2147483648')).toContain('số nguyên dương');
+
+    expect(marketplaceEndpointIdError('')).toBeNull();
+    expect(marketplaceEndpointIdError('42')).toBeNull();
+    expect(marketplaceEndpointIdError('0')).toContain('số nguyên dương');
+    expect(marketplaceEndpointIdError('ep_test')).toContain('2147483647');
   });
 
   it('rejects inverted ranges and windows longer than 365 days', () => {

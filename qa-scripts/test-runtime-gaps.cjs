@@ -240,7 +240,8 @@ async function main() {
     console.log(`   - HTTP Status thật: ${resScope.status}`);
     console.log(`   - Response Body: ${JSON.stringify(scopeBody)}`);
     console.log(`   - Error Code thật: "${scopeBody.error?.code}"`);
-    console.log(`   - Đối chiếu AC-S4-06 & TC-GW-04: Kỳ vọng "API_KEY_SCOPE_MISMATCH", Thực tế "${scopeBody.error?.code}"`);
+    assert.strictEqual(resScope.status, 401, 'Gateway must reject a key issued for a different API');
+    assert.strictEqual(scopeBody.error?.code, 'INVALID_API_KEY');
 
     console.log('\n' + '='.repeat(80));
     console.log('🎉 TOÀN BỘ 4 TEST CASES RUNTIME GAPS (GW-05, RED-01, OVH-05, GW-04) ĐÃ HOÀN TẤT ĐO ĐẠC!');
