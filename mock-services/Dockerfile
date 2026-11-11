@@ -20,4 +20,8 @@ USER node
 
 EXPOSE 4011 4012 4013
 
+# node:22-alpine ships docker-entrypoint.sh, which turns a bare CMD into
+# `node <arg>`. Pin the entrypoint so `command: ["weather"]` becomes an
+# argument to server.mjs instead of a module path.
+ENTRYPOINT ["node", "mock-services/server.mjs"]
 CMD ["weather"]
