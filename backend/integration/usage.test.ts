@@ -101,6 +101,9 @@ test("provider analytics scopes endpoint percentiles and errors to the API owner
     assert.equal(outsider.requests.requestCount, "0");
     assert.deepEqual(outsider.topEndpoints, []);
     assert.deepEqual(outsider.apiBreakdown, []);
+        // The router turns a non-owned apiId into 404 instead of an empty report.
+        assert.equal(await f.analytics.ownsApi(providerUserId, apiId), true);
+        assert.equal(await f.analytics.ownsApi(consumerId, apiId), false);
     const missing = await f.analytics.overview(providerUserId, { ...filters, endpointId: "2147483647" });
     assert.equal(missing.requests.requestCount, "0");
   } finally {

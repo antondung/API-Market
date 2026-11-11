@@ -8,8 +8,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Chỉ copy phần cần thiết: server và spec của 3 API demo.
+# Chỉ copy phần cần thiết: server, module xác thực upstream và spec của 3 API demo.
 COPY mock-services/server.mjs ./mock-services/server.mjs
+COPY mock-services/gateway-auth.mjs ./mock-services/gateway-auth.mjs
 COPY mock-services/weather ./mock-services/weather
 COPY mock-services/currency ./mock-services/currency
 COPY mock-services/catalog ./mock-services/catalog
