@@ -10,11 +10,11 @@ import { createApp } from "../src/app.js";
 import { ApiKeyService } from "../src/consumer-service.js";
 import { GatewayService } from "../src/gateway-service.js";
 import { GatewayEntitlement } from "../src/gateway-entitlement.js";
-import { RedisMeter } from "../src/redis-meter.js";
+import { RedisMeter, type RedisEval } from "../src/redis-meter.js";
 import { UsageService } from "../src/usage-service.js";
 import { BillingService } from "../src/billing-service.js";
 import { UsageAnalytics } from "../src/usage-analytics.js";
-async function fixture(rate = 100) {
+async function fixture(rate = 100, meterClient?: RedisEval) {
   const schema = `metered_${randomUUID().replaceAll("-", "")}`,
     control = new Pool({ connectionString: process.env.PG_TEST_URL });
   await control.query(`CREATE SCHEMA ${schema}`);
@@ -69,7 +69,7 @@ async function fixture(rate = 100) {
   };
   const admission = new GatewayEntitlement(
     store.pool,
-    new RedisMeter(redis, schema),
+    new RedisMeter(meterClient ?? redis, schema),
     usage,
   );
   const gateway = new GatewayService(store.pool, keys, proxy, admission);
@@ -152,6 +152,46 @@ test("Gateway requires subscription, serializes last quota request, persists red
     await f.close();
   }
 });
+test("Gateway admits exactly one final free request even if Redis admits all contenders", async () => {
+  const f = await fixture(100, { eval: async () => 1 });
+  try {
+    const sub = await f.billing.subscribe(f.user.id, f.plan);
+    await f.store.pool.query("UPDATE subscriptions SET quota_used=4 WHERE id=$1", [sub.id]);
+
+    const responses = await Promise.all(Array.from({ length: 5 }, () => f.call()));
+    assert.equal(responses.filter(response => response.status === 200).length, 1);
+    const rejected = responses.filter(response => response.status === 403);
+    assert.equal(rejected.length, 4);
+    assert.ok(rejected.every(response => response.body.error.code === "QUOTA_EXHAUSTED"));
+    assert.equal(f.hits(), 1);
+    assert.equal((await f.billing.get(f.user.id, sub.id)).quotaUsed, "5");
+    const outbox = await f.store.pool.query("SELECT request_id FROM usage_outbox WHERE subscription_id=$1", [sub.id]);
+    assert.equal(outbox.rowCount, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("Gateway rejects a free reservation when the subscription is canceled during metering", async () => {
+  let cancelSubscription = async () => {};
+  const f = await fixture(100, {
+    eval: async () => {
+      await cancelSubscription();
+      return 1;
+    },
+  });
+  try {
+    const sub = await f.billing.subscribe(f.user.id, f.plan);
+    cancelSubscription = async () => { await f.billing.cancel(f.user.id, sub.id, true); };
+    const result = await f.call().expect(403);
+    assert.equal(result.body.error.code, "SUBSCRIPTION_REQUIRED");
+    assert.equal(f.hits(), 0);
+    assert.equal((await f.billing.get(f.user.id, sub.id)).quotaUsed, "0");
+  } finally {
+    await f.close();
+  }
+});
+
 test("Gateway rate limit does not consume quota and canceled/expired subscription blocks immediately", async () => {
   const f = await fixture(1);
   try {
