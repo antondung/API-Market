@@ -108,12 +108,18 @@ export class ApiKeyService {
   async authenticate(key: string, apiId: string) {
     const denied = () => new ApiError(401, 'INVALID_API_KEY', 'Invalid API key');
     if (!/^ak_live_[A-Za-z0-9_-]{43}$/.test(key)) throw denied();
-    const result = await this.pool.query(`UPDATE api_keys k SET last_used_at=NOW()
-      FROM users u, roles r, apis a, api_providers p, users pu
+    const result = await this.pool.query(`WITH valid_key AS MATERIALIZED (
+      SELECT k.id, k.user_id, k.api_id
+      FROM api_keys k, users u, roles r, apis a, api_providers p, users pu
       WHERE k.key_hash=$1 AND k.api_id=$2 AND k.is_active AND k.revoked_at IS NULL
         AND u.id=k.user_id AND u.is_active AND r.id=u.role_id AND r.name IN ('USER','API_PROVIDER')
         AND a.id=k.api_id AND a.status='Published' AND p.id=a.provider_id AND pu.id=p.user_id AND pu.is_active
-      RETURNING k.id::text, k.user_id::text AS "userId", k.api_id::text AS "apiId"`, [secretHash(key), apiId]);
+    ), touch AS (
+      UPDATE api_keys k SET last_used_at=NOW() FROM valid_key v
+      WHERE k.id=v.id AND k.is_active AND k.revoked_at IS NULL
+        AND (k.last_used_at IS NULL OR k.last_used_at < NOW() - INTERVAL '1 minute')
+    )
+    SELECT id::text, user_id::text AS "userId", api_id::text AS "apiId" FROM valid_key`, [secretHash(key), apiId]);
     if (!result.rows[0]) throw denied();
     return result.rows[0] as { id: string; userId: string; apiId: string };
   }

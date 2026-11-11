@@ -1,5 +1,5 @@
 import { Router, type RequestHandler } from "express";
-import { UsageAnalytics, usageFilters } from "./usage-analytics.js";
+import { UsageAnalytics, providerUsageFilters, usageFilters } from "./usage-analytics.js";
 export function usageConsumerRouter(
   service: UsageAnalytics,
   auth: RequestHandler,
@@ -42,7 +42,7 @@ export function usageProviderRouter(
     res.json({
       data: await service.overview(
         res.locals.identity.user.id,
-        usageFilters.parse(req.query),
+        providerUsageFilters.parse(req.query),
       ),
     }),
   );

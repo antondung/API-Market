@@ -35,6 +35,9 @@ import {billingRouter,webhookRouter} from './billing-router.js';
 import type {UsageAnalytics} from './usage-analytics.js';
 import {usageConsumerRouter,usageProviderRouter} from './usage-router.js';
 import {sprint4Paths} from './sprint4-contract.js';
+import { costGuardPaths, gatewayApiKey, gatewayPaths } from './sprint5-contract.js';
+import { CostGuard } from './cost-guard.js';
+import { costGuardRouter } from './cost-guard-router.js';
 import {operationsRouter, type OperationsHealth} from './operations-router.js';
 import type {SubscriptionAdminService} from './subscription-admin-service.js';
 import {operationsPaths} from './operations-contract.js';
@@ -115,8 +118,12 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
   const document = { ...baseDocument,
+    components: { ...baseDocument.components, securitySchemes: {
+      ...baseDocument.components.securitySchemes, ...(options.gateway ? { gatewayApiKey } : {}),
+    } },
     paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
-      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}),...(options.operations?operationsPaths:{}) } };
+      ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}),...(options.operations?operationsPaths:{}),
+      ...(options.usage ? costGuardPaths : {}), ...(options.gateway ? gatewayPaths : {}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -139,6 +146,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   if (options.provider) app.use('/api/provider', providerRouter(options.provider, requireAuth, requireRole('Provider')));
   if(options.billing)app.use('/api/consumer/subscriptions',billingRouter(options.billing,requireAuth,requireBuyer));
   if(options.usage){app.use('/api/consumer/usage',usageConsumerRouter(options.usage,requireAuth,requireBuyer));app.use('/api/provider/analytics',usageProviderRouter(options.usage,requireAuth,requireRole('Provider')));}
+  if (options.usage) app.use('/api/consumer/cost-guard', costGuardRouter(new CostGuard(options.usage.pool), requireAuth, requireBuyer));
   if(options.operations)app.use('/api/admin',operationsRouter(options.operations.admin,options.operations.health,requireAuth,requireRole('Admin')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
   if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireBuyer));

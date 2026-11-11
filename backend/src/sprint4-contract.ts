@@ -39,6 +39,43 @@ const usageQuery = [
     schema: { type: "string", format: "date" },
   })),
 ];
+const metricCount = { type: "string", pattern: "^[0-9]+$" };
+const trafficSchema = {
+  requestCount: metricCount,
+  errorCount: metricCount,
+  clientErrorCount: metricCount,
+  serverErrorCount: metricCount,
+  errorRatePercent: { type: "number", minimum: 0, maximum: 100 },
+  ...Object.fromEntries([50, 95, 99].flatMap(p => [
+    [`p${p}LatencyMs`, { type: "integer", nullable: true }],
+    [`p${p}OverheadMs`, { type: "integer", nullable: true }],
+  ])),
+};
+const overviewOperation = operation(
+  "Owned API and top endpoint traffic, error rate, latency, active subscribers and sandbox revenue",
+  undefined,
+  [
+    ...usageQuery,
+    { name: "endpointId", in: "query", schema: id, description: "Limits traffic metrics only. Revenue and subscribers remain scoped to the selected API." },
+  ],
+);
+const apiTraffic = { ...trafficSchema, apiId: id, apiName: { type: "string" } };
+const overviewSchema = {
+  type: "object",
+  properties: {
+    data: {
+      type: "object",
+      properties: {
+        requests: { type: "object", properties: { ...trafficSchema, successCount: metricCount, averageLatencyMs: { type: "number" } } },
+        daily: { type: "array", items: { type: "object", properties: { date: { type: "string", format: "date" }, requestCount: metricCount } } },
+        revenue: { type: "array", items: { type: "object", properties: { currency: { type: "string" }, amount: { type: "string" } } } },
+        activeSubscribers: metricCount,
+        apiBreakdown: { type: "array", items: { type: "object", properties: apiTraffic } },
+        topEndpoints: { type: "array", maxItems: 10, items: { type: "object", properties: { ...apiTraffic, endpointId: id, method: { type: "string" }, path: { type: "string" } } } },
+      },
+    },
+  },
+};
 function operation(
   summary: string,
   schema?: object,
@@ -160,10 +197,12 @@ export const sprint4Paths = {
     ),
   },
   "/api/provider/analytics/overview": {
-    get: operation(
-      "Owned API requests, active subscriber count and settled sandbox revenue by currency",
-      undefined,
-      usageQuery,
-    ),
+    get: {
+      ...overviewOperation,
+      responses: {
+        ...overviewOperation.responses,
+        "200": { description: "Traffic analytics by UTC date. Percentiles are null when no samples match.", content: { "application/json": { schema: overviewSchema } } },
+      },
+    },
   },
 };
