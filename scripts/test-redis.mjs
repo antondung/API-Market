@@ -1,9 +1,36 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, rmSync, realpathSync, accessSync, constants } from "node:fs";
 import { tmpdir, homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute } from "node:path";
 import { createServer } from "node:net";
 import { createClient } from "redis";
+
+/** Test files that need a live Redis. Kept in one place so the runner can skip them. */
+export const REDIS_TEST_FILES = [
+  'redis-meter.test.ts',
+  'gateway-metered.test.ts',
+  'provider-consumer-access.test.ts',
+];
+
+function resolveBinary() {
+  if (process.env.REDIS_SERVER_BIN) return process.env.REDIS_SERVER_BIN;
+  if (process.platform === 'win32')
+    return join(homedir(), '.cache/api-market-test/redis-5.0.14.1/redis-server.exe');
+  return 'redis-server';
+}
+
+/** True when the configured binary is an absolute path that exists and is executable. */
+export function redisBinaryIsUsable() {
+  const binary = resolveBinary();
+  if (!isAbsolute(binary)) return true; // resolved through PATH; let spawn report the truth
+  try {
+    accessSync(binary, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function testRedis() {
   if (process.env.REDIS_TEST_URL)
     return { url: process.env.REDIS_TEST_URL, close: async () => {} };
