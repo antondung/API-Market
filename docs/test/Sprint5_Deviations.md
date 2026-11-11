@@ -3,7 +3,7 @@
 > **Dự án:** API-Market Platform
 > **QA Lead & Tác giả:** Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #25)
 > **Thời điểm lập:** 10/11/2026 — **Cập nhật ngày 11/11/2026** (Sau khi toàn bộ PR Sprint 5 hợp nhất vào `develop` và `main`)
-> **Trạng thái:** `GHI NHẬN LẠI 01 SAI LỆCH MỞ (DEV-S5-01 REOPENED — ĐỀ NGHỊ TECH LEAD XÁC NHẬN), 01 FAIL MỘT PHẦN (DEV-S5-03) & 01 GIỚI HẠN MÔI TRƯỜNG (DEV-S5-05)`
+> **Trạng thái:** `01 FAIL MỘT PHẦN (DEV-S5-03) & 01 GIỚI HẠN MÔI TRƯỜNG (DEV-S5-05); DEV-S5-01, DEV-S5-02, DEV-S5-04 ĐÃ KHẮC PHỤC HOÀN TOÀN`
 > **Căn cứ quy chuẩn:** [`docs/test/TESTING_RULES.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/TESTING_RULES.md), [`docs/test/Sprint5_AcceptanceCriteria.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_AcceptanceCriteria.md), [`docs/test/Sprint5_TestCases.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_TestCases.md), [`docs/known-limitations.md`](file:///d:/Downloads/AAAAA/API-Market/docs/known-limitations.md)
 
 ---
@@ -21,6 +21,7 @@
 | **#111** | release: Sprint 5 (Cost Guard, Provider Analytics, Production Ops) | `develop` | `main` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE LÊN MAIN** (commit `593b376`) |
 | **#112** | fix(sprint5): unblock demo services, patch dependencies and settle open deviations | `fix/sprint5-final` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `289e20e`, HEAD develop) |
 | **#113** | release: Sprint 5 hotfix (demo services, dependencies, deviations) | `develop` | `main` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE LÊN MAIN** (commit `2193395`, HEAD main) |
+| **#115** | fix(demo): pin mock ENTRYPOINT so CMD is an argument, not a module path | `fix/mock-entrypoint` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE VÀO DEVELOP** (commit `6584064`, `540da4d`) |
 
 ---
 
@@ -35,7 +36,7 @@
 **Test Case bị ảnh hưởng:** `TC-DEMO-03` (Thử nghiệm Sandbox & Gọi Gateway Upstream), `TC-CST-03`, `TC-CST-04`, `TC-CST-07`, `TC-CST-08`, `TC-ANL-04`, `TC-ANL-05`, `TC-ANL-07` (Các kịch bản kiểm thử lưu lượng Gateway thực tế qua upstream mock), `TC-SEC-03` (chứng minh chặn 429 qua Gateway), `TC-SEC-05` (chứng minh Gateway headers `[REDACTED]`).
 **Mức độ:** **High (Đề xuất của QA, đề nghị Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead / DevOps, Issue #21)**
-**Tình trạng:** **MỞ LẠI (REOPENED) — Đề nghị Tech Lead xác nhận** (Lỗi tái hiện 100% trên `develop` sạch sau khi build no-cache)
+**Tình trạng:** **ĐÃ KHẮC PHỤC (RESOLVED)** — Đã xác minh thực tế qua PR #115 (commit `6584064` / `540da4d`)
 
 #### 1. Mô tả sự cố
 Sau khi PR #112 hợp nhất để sửa lỗi thiếu tệp `gateway-auth.mjs` trong Dockerfile, QA đã tiến hành kiểm chứng độc lập bằng cách build hoàn toàn mới không dùng cache (`--no-cache`) cho service `weather`:
@@ -90,7 +91,17 @@ Container `api-market-weather` tiếp tục thoát ngay sau khi khởi động (
   ```yaml
   command: ["node", "mock-services/server.mjs", "weather"]
   ```
-- **Tác động kiểm thử:** Do mock container chưa khởi động được, các Test Case cần upstream mock chuyển trạng thái sang **KHÔNG THỰC HIỆN ĐƯỢC**. Không nới lỏng assertion để che lỗi.
+- **Tác động kiểm thử ban đầu:** Khi mock container chưa khởi động được, các Test Case cần upstream mock phải chuyển trạng thái sang **KHÔNG THỰC HIỆN ĐƯỢC**. Không nới lỏng assertion để che lỗi.
+
+#### 5. Kết quả xác minh khắc phục thực tế (PR #115)
+Tech Lead (@antondung) đã triển khai chính xác Phương án 1 được QA khuyến nghị: bổ sung `ENTRYPOINT ["node", "mock-services/server.mjs"]` và `CMD ["weather"]` vào `mock-services/Dockerfile:22-25` thông qua PR #115 (commit `6584064`, hợp nhất vào `develop` tại commit `540da4d`).
+- QA đã rebase nhánh `docs/25-sprint5-final-qa-signoff` lên `540da4d`, cấu hình `.env.docker` bổ sung `GATEWAY_UPSTREAM_SECRET` và build lại toàn bộ services (`docker compose --env-file .env.docker --profile demo up --build -d`).
+- Kiểm tra trạng thái runtime thực tế từ Docker daemon: cả 3 mock containers đều ở trạng thái `Up (healthy)`:
+  - `api-market-weather` (port 4011): `GET http://127.0.0.1:4011/health` $\to$ `HTTP 200 {"status":"ok","service":"weather"}`
+  - `api-market-currency` (port 4012): `GET http://127.0.0.1:4012/health` $\to$ `HTTP 200 {"status":"ok","service":"currency"}`
+  - `api-market-catalog` (port 4013): `GET http://127.0.0.1:4013/health` $\to$ `HTTP 200 {"status":"ok","service":"catalog"}`
+- Toàn bộ 12 Test Cases phụ thuộc mock services (`TC-DEMO-03`, `TC-CST-03`..`08`, `TC-ANL-04`, `05`, `07`, `TC-SEC-03`, `05`) đã được kích hoạt chạy thật trên runner API và runner UI E2E, đạt 100% PASS (không nới lỏng bất kỳ assertion nào).
+- **Kết luận:** Sai lệch `DEV-S5-01` chính thức **ĐÃ KHẮC PHỤC (RESOLVED)**.
 
 ---
 
