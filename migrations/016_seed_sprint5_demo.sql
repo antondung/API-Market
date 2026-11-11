@@ -12,7 +12,7 @@ INSERT INTO subscriptions
     (consumer_id, plan_id, api_id, status, current_period_start,
      current_period_end, quota_reset_at, expires_at, quota_used,
      quota_limit, rate_limit_per_minute, price_amount, price_currency)
-SELECT consumer_id, plan_id, api_id, 'Active', date_trunc('month', CURRENT_TIMESTAMP),
+SELECT t.consumer_id, t.plan_id, t.api_id, 'Active', date_trunc('month', CURRENT_TIMESTAMP),
        date_trunc('month', CURRENT_TIMESTAMP) + INTERVAL '1 month',
        date_trunc('month', CURRENT_TIMESTAMP) + INTERVAL '1 month',
        date_trunc('month', CURRENT_TIMESTAMP) + INTERVAL '1 month', 0,
@@ -59,22 +59,22 @@ WITH demo AS (
     JOIN apis a ON a.id = s.api_id AND a.name = 'Product Catalog API'
     ORDER BY s.id DESC LIMIT 1
 ), samples AS (
-    SELECT d.*, g.day_offset, g.sample,
-           (CURRENT_DATE - g.day_offset + make_interval(hours => 8 + g.sample * 3))::timestamptz occurred_at
-    FROM demo d CROSS JOIN generate_series(0, 13) AS g(day_offset)
-    CROSS JOIN generate_series(0, 2) AS sample
+    SELECT d.*, days.day_offset, sample_series.sample,
+           (CURRENT_DATE - days.day_offset + make_interval(hours => 8 + sample_series.sample * 3))::timestamptz occurred_at
+    FROM demo d CROSS JOIN generate_series(0, 13) AS days(day_offset)
+    CROSS JOIN generate_series(0, 2) AS sample_series(sample)
 )
 INSERT INTO usage_logs
     (occurred_at, request_id, subscription_id, consumer_id, api_id,
      endpoint_id, status_code, latency_ms, response_bytes, is_sandbox,
      gateway_overhead_ms)
-SELECT occurred_at,
-       (substr(h,1,8)||'-'||substr(h,9,4)||'-'||substr(h,13,4)||'-'||substr(h,17,4)||'-'||substr(h,21,12))::uuid,
-       subscription_id, consumer_id, api_id, endpoint_id,
-       CASE WHEN sample = 2 AND day_offset % 4 = 0 THEN 429 ELSE 200 END,
-       35 + day_offset * 2 + sample * 5, 1024 + sample * 128, FALSE, 5
-FROM samples
-CROSS JOIN LATERAL (SELECT md5('sprint5-demo-'||day_offset||'-'||sample) h) hash
+SELECT s.occurred_at,
+       (substr(hash.h,1,8)||'-'||substr(hash.h,9,4)||'-'||substr(hash.h,13,4)||'-'||substr(hash.h,17,4)||'-'||substr(hash.h,21,12))::uuid,
+       s.subscription_id, s.consumer_id, s.api_id, s.endpoint_id,
+       CASE WHEN s.sample = 2 AND s.day_offset % 4 = 0 THEN 429 ELSE 200 END,
+       35 + s.day_offset * 2 + s.sample * 5, 1024 + s.sample * 128, FALSE, 5
+FROM samples s
+CROSS JOIN LATERAL (SELECT md5('sprint5-demo-'||s.day_offset||'-'||s.sample) h) hash
 ON CONFLICT (occurred_at, request_id) DO NOTHING;
 
 UPDATE subscriptions s
