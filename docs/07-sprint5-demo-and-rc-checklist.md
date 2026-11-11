@@ -59,10 +59,20 @@
 
 ## PHẦN 3 — CHECKLIST XÁC NHẬN RELEASE CANDIDATE (EN-15)
 
-- [x] Toàn bộ migration `001` $\to$ `014` chạy sạch từ DB trống và chạy lặp an toàn (idempotent).
-- [x] `npm run lint` (Backend) và `npx tsc -b` (Frontend) đạt 0 lỗi.
-- [x] Bộ test tự động Backend + PostgreSQL + Redis đạt 100%.
-- [x] Bộ unit/component test Frontend (Vitest) đạt 100%.
-- [x] Kịch bản tải đồng thời Gateway (`npm run loadtest:gateway`) đạt P95 overhead $< 30\text{ ms}$, 0 lỗi.
-- [x] Kiểm chứng sao lưu & phục hồi (`npm run verify:backup`) khôi phục khớp 100% dữ liệu.
-- [x] Không còn bug mức Critical/High mở; kho mã nguồn vượt qua `scripts/kiem-tra-kho-ma-nguon.ps1`.
+- [x] Toàn bộ migration `001` $\to$ `017` (gồm 015 analytics aggregates, 016 demo seeds, 017 cost guard) chạy sạch từ DB trống và chạy lặp an toàn (idempotent).
+- [x] `npm run lint` / `tsc --noEmit` (Backend) và `npx tsc -b` (Frontend) đạt 0 lỗi.
+- [x] Bộ test tự động Backend + PostgreSQL + Redis đạt 100% (183/183 pass trên nhánh gộp).
+- [x] Bộ unit/component test Frontend (Vitest) đạt 100% (578/578 pass trên 49 tệp).
+- [ ] Kịch bản tải đồng thời Gateway (`npm run loadtest:gateway`) FAIL một phần trên máy QA: $c=1$ P95 11ms ($< 30$ms, PASS); $c=10$ (98ms) và $c=25$ (162ms) vượt ngưỡng 60ms; mức $c=25$ được Tech Lead chấp nhận có điều kiện theo DEV-S5-03; mức $c=10$ chờ Tech Lead xác nhận.
+- [x] Kiểm chứng sao lưu & phục hồi (`verify:backup` qua PostgreSQL container) khôi phục khớp 100% dữ liệu các bảng cốt lõi và bảng Sprint 5.
+- [x] Toàn bộ 6 lỗ hổng bảo mật dependency đã được vá sạch (`0 vulnerabilities` qua `npm audit`).
+- [ ] Xử lý dứt điểm các sai lệch kỹ thuật: `DEV-S5-01` MỞ LẠI — Đề nghị Tech Lead xác nhận (3 container mock-services crash do thiếu ENTRYPOINT); `DEV-S5-03` FAIL một phần (ở $c > 1$); `DEV-S5-05` chờ diễn tập staging.
+- [x] Kho mã nguồn vượt qua kiểm tra nền tảng `scripts/kiem-tra-kho-ma-nguon.ps1` (0 lỗi).
+- [x] User Guide cho 3 vai trò (Consumer / Provider / Admin) hoàn tất tại [`docs/user-guide/Sprint5_UserGuide.md`](docs/user-guide/Sprint5_UserGuide.md).
+
+### KÝ DUYỆT RELEASE CANDIDATE SPRINT 5 (RC SIGN-OFF)
+
+| Vai trò | Người phụ trách | Quyết định | Thời điểm ký | Ghi chú nghiệm thu |
+|:---|:---|:---:|:---:|:---|
+| **Tech Lead / DevOps** | Nguyễn Tấn Dũng (`@antondung` — Issue #21) | *(Để trống)* | *(Chờ Tech Lead ký)* | Chờ Tech Lead (@antondung) kiểm tra hiện trạng và ký duyệt chính thức. |
+| **QA Lead / Documentation** | Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #25) | **CHƯA ĐỦ ĐIỀU KIỆN KÝ GO** | 11/11/2026 | Đạt 100% kiểm thử unit/integration (183/183 BE, 578/578 FE) và 26/42 TC PASS qua kiểm thử tự động, runner API và E2E UI. Ghi nhận 1 TC FAIL một phần (TC-PERF-01 ở c>1) và 15 TC phụ thuộc hạ tầng live/staging (mock-services DEV-S5-01 REOPENED, CD rollback DEV-S5-05) đang KHÔNG THỰC HIỆN ĐƯỢC, chưa đủ điều kiện ký GO. |
