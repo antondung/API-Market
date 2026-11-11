@@ -74,12 +74,12 @@
 - **Phát biểu kiểm chứng:**
   1. **Bảo mật cách ly dữ liệu (Data Isolation):**
      - Hệ thống tuyệt đối không trả bất kỳ dữ liệu lưu lượng hay doanh thu nào của provider khác khi Provider A truy vấn `apiId` thuộc sở hữu của Provider B.
-     - **Mã phản hồi HTTP:** **CHƯA XÁC NHẬN — cần Tech Lead chốt** (hiện tại mã nguồn backend PR #106 tại `backend/src/usage-analytics.ts:77` cách ly bằng mệnh đề `WHERE a.provider_id IN (SELECT id FROM api_providers WHERE user_id=$1)`, nên khi Provider A gọi `apiId` của Provider B, hệ thống trả về HTTP `200 OK` kèm `requestCount: "0"` và mảng rỗng; yêu cầu gốc chưa quy định cụ thể có chuyển sang `403 Forbidden` (`FORBIDDEN_RESOURCE`) hay giữ `200 OK` dữ liệu rỗng. Xem chi tiết tại mục Câu hỏi mở).
+     - **Mã phản hồi HTTP:** **HTTP 404 NOT_FOUND** (`{ error: { code: 'NOT_FOUND', message: 'API not found' } }`). Quyết định chính thức từ Tech Lead (@antondung trong PR #112 / commit `e786a52`), triển khai tại `backend/src/usage-router.ts:47-49` và ghi nhận tại `docs/known-limitations.md`. Lý do: Trả 404 để không xác nhận sự tồn tại của API đó, tránh rò rỉ không gian ID (ID space leak).
   2. **Doanh thu phân tách độc lập:** Doanh thu trả về tách biệt theo loại tiền tệ (VND và USD). Tuyệt đối không cộng gộp lẫn số tiền khác loại tiền tệ.
-- **Nguồn yêu cầu:** Issue #22, `backend/SPRINT-5-HANDOFF.md` mục US-31 & EN-11, `backend/SPRINT-5-DATABASE-HANDOFF.md`.
-- **Nguồn triển khai:** `backend/src/usage-analytics.ts:77` (PR #106), `migrations/015_sprint5_analytics_performance.sql:20` (PR #104).
+- **Nguồn yêu cầu:** Issue #22, `backend/SPRINT-5-HANDOFF.md` mục US-31 & EN-11, `backend/SPRINT-5-DATABASE-HANDOFF.md`, `docs/known-limitations.md`.
+- **Nguồn triển khai:** `backend/src/usage-analytics.ts:77`, `backend/src/usage-router.ts:47-49` (PR #112), `migrations/015_sprint5_analytics_performance.sql:20` (PR #104).
 - **Vai trò liên quan:** `API_PROVIDER`.
-- **Trạng thái phụ thuộc:** Chờ Database PR #104 và Backend PR #106.
+- **Trạng thái phụ thuộc:** Đã tích hợp trên `develop` (PR #104, #106, #110, #112).
 
 ---
 
@@ -407,23 +407,20 @@
 | **Header x-gateway-overhead-ms**| AC-S4-17<br>TC-OVH-06 | `docs/test/Sprint4_AcceptanceCriteria.md` (AC-S4-17); Issue #22, #105 | `backend/src/gateway-service.ts:146` (`origin/codex/sprint4-qa-closeout`, PR #105) | **[XÁC NHẬN]** Đầy đủ 2 nguồn |
 | **Mã lỗi SSRF** | AC-EN11-01<br>TC-SEC-01, 02 | `docs/test/TESTING_RULES.md` mục 9; Issue #22, #25 | `backend/src/safe-proxy.ts:23`, `backend/src/provider-dns.ts:34` (`origin/develop`) | **[XÁC NHẬN]** Đầy đủ 2 nguồn |
 | **Route /admin/gateway** | AC-EN16-04<br>TC-DEMO-04 | `docs/07-sprint5-demo-and-rc-checklist.md:55` ("Operations Health") | `frontend/src/App.tsx:185` (`origin/develop`, commit `27307ca`) | **[XÁC NHẬN]** Đầy đủ 2 nguồn |
-| **Mã HTTP cách ly Provider** | AC-US31-04<br>TC-ANL-06 | `backend/SPRINT-5-HANDOFF.md` ("chỉ tổng hợp API thuộc tài khoản", "cô lập dữ liệu"). KHÔNG quy định mã HTTP. | `backend/src/usage-analytics.ts:77` (trả 200 kèm mảng rỗng) | **[CHƯA CÓ YÊU CẦU GỐC XÁC NHẬN]**<br>Cần Tech Lead chốt (403 vs 200 rỗng) |
+| **Mã HTTP cách ly Provider** | AC-US31-04<br>TC-ANL-06 | `backend/SPRINT-5-HANDOFF.md` ("chỉ tổng hợp API thuộc tài khoản", "cô lập dữ liệu"); `docs/known-limitations.md` | `backend/src/usage-router.ts:47-49` (PR #112 / commit `e786a52`, trả 404 NOT_FOUND) | **[XÁC NHẬN]** Đã chốt mã 404 NOT_FOUND (PR #112) |
 
 ---
 
 ## 5. RỦI RO KỸ THUẬT & CÂU HỎI MỞ CẦN TECH LEAD / DEV CHỐT
 
-1. **[Mở — Cần Tech Lead chốt mã HTTP cách ly Provider (AC-US31-04, TC-ANL-06)]:**
-   - Yêu cầu gốc tại `SPRINT-5-HANDOFF.md` chỉ quy định: *"chỉ tổng hợp API thuộc tài khoản"* và *"cô lập dữ liệu"*, không chỉ định mã HTTP.
-   - Mã nguồn triển khai hiện tại của Tungdota53 (`backend/src/usage-analytics.ts:77`) dùng query:
-     `a.provider_id IN (SELECT id FROM api_providers WHERE user_id=$1) AND ($4::integer IS NULL OR a.id=$4)`
-     nên khi Provider A truy vấn `apiId` của Provider B, hệ thống trả về HTTP `200 OK` kèm `requestCount: "0"` và mảng `topEndpoints: []`.
-   - **Câu hỏi cho Tech Lead (@antondung):** Dự án muốn giữ hành vi HTTP 200 kèm dữ liệu rỗng (an toàn, không lộ sự tồn tại của API ID người khác) hay muốn ném HTTP 403 Forbidden (`FORBIDDEN_RESOURCE`)?
-2. **[Rủi ro SLA Load Test c=10 và c=25 (AC-EN12-01, TC-PERF-01)]:**
-   - Kết quả đo thử nghiệm cục bộ của Tungdota53 ghi nhận P95 overhead đạt 38ms (ở c=10) và 44ms (ở c=25), vượt ngưỡng SLA thiết kế (< 30ms).
-   - QA giữ nguyên assertion $< 30\text{ ms}$ theo Quy tắc Z4. Khi chạy trên Staging, nếu vẫn vượt ngưỡng sẽ kích hoạt cờ `SLA_MISSED` và mở Deviation Report.
-3. **[Frontend Issue #23 chưa tích hợp API thật]:**
-   - Các trang `CostGuardPage.tsx` và `AnalyticsHealthPage.tsx` đã có khung hiển thị trên `develop` nhưng đang dùng dữ liệu mock/hardcoded cục bộ. Toàn bộ 12 ca kiểm thử UI liên quan đang bị chặn chờ PR hoàn thiện từ bạn Lê Hải Dương (@leduwn).
+1. **[ĐÃ ĐÓNG / CHỐT — Mã HTTP cách ly Provider (AC-US31-04, TC-ANL-06)]:**
+   - Tech Lead (@antondung trong PR #112 / commit `e786a52`) đã chốt phương án trả HTTP **`404 NOT_FOUND`** (`{ error: { code: 'NOT_FOUND', message: 'API not found' } }`) tại `backend/src/usage-router.ts:47-49` qua kiểm tra quyền `service.ownsApi`.
+   - Lý do: Không trả 200 rỗng để tránh vô tình xác nhận sự tồn tại của `apiId` người khác, triệt tiêu rủi ro rò rỉ không gian ID (ID space leak).
+2. **[ĐÃ GHI NHẬN HẠN CHẾ KIẾN TRÚC — Rủi ro SLA Load Test (AC-EN12-01, TC-PERF-01)]:**
+   - Tech Lead đã chuẩn hóa ngưỡng SLA phân tầng trong `docs/known-limitations.md`: P95 overhead $< 30$ms khi đồng thời $c = 1$, và $< 60$ms khi $c > 1$.
+   - Mức $c = 25$ vượt ngưỡng trên máy local được ghi nhận là đánh đổi có chủ đích: `GatewayEntitlement.reserve` sử dụng khóa dòng PostgreSQL `FOR UPDATE OF s` để đảm bảo quota chính xác tuyệt đối dưới tải đồng thời. Hướng nâng cấp chuyển sang Redis Lua script được bảo lưu vào roadmap.
+3. **[ĐÃ TÍCH HỢP HOÀN TẤT — Frontend Issue #23]:**
+   - PR #109 (commit `1ff69a3`, `572afb0`) đã nối API thực tế cho `CostGuardPage.tsx` và `AnalyticsHealthPage.tsx`, vượt qua 578/578 tests unit/integration, và đã được gộp vào `develop` qua PR #110.
 
 ---
 

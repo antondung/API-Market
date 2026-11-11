@@ -2,21 +2,25 @@
 
 > **Dự án:** API-Market Platform
 > **QA Lead & Tác giả:** Trần Hà Thảo Vân (`@vuonghathaovan-gif` — Issue #25)
-> **Thời điểm lập:** 10/11/2026 (Cập nhật sau đợt quét thực chứng & kiểm thử sớm)
-> **Trạng thái:** `Open / Theo dõi kỹ thuật qua DEV-S5`
-> **Căn cứ quy chuẩn:** [`docs/test/TESTING_RULES.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/TESTING_RULES.md), [`docs/test/Sprint5_AcceptanceCriteria.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_AcceptanceCriteria.md), [`docs/test/Sprint5_TestCases.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_TestCases.md)
+> **Thời điểm lập:** 10/11/2026 — **Cập nhật ngày 11/11/2026** (Sau khi toàn bộ PR Sprint 5 hợp nhất vào `develop` và `main`)
+> **Trạng thái:** `GHI NHẬN LẠI 01 SAI LỆCH MỞ (DEV-S5-01 REOPENED — ĐỀ NGHỊ TECH LEAD XÁC NHẬN), 01 FAIL MỘT PHẦN (DEV-S5-03) & 01 GIỚI HẠN MÔI TRƯỜNG (DEV-S5-05)`
+> **Căn cứ quy chuẩn:** [`docs/test/TESTING_RULES.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/TESTING_RULES.md), [`docs/test/Sprint5_AcceptanceCriteria.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_AcceptanceCriteria.md), [`docs/test/Sprint5_TestCases.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_TestCases.md), [`docs/known-limitations.md`](file:///d:/Downloads/AAAAA/API-Market/docs/known-limitations.md)
 
 ---
 
-## BẢNG HIỆN TRẠNG CÁC PULL REQUEST SPRINT 5 (TÍNH ĐẾN 10/11/2026)
+## BẢNG HIỆN TRẠNG CÁC PULL REQUEST SPRINT 5 (CẬP NHẬT 11/11/2026)
 
 | PR # | Tiêu đề PR | Nhánh nguồn (Head) | Nhánh đích (Base) | Trạng thái (State) | Merge State | Trạng thái CI | Đã merge vào `develop`? |
 |:---:|---|---|:---:|:---:|:---:|:---:|:---:|
-| **#104** | Feature/24 sprint5 database | `feature/24-sprint5-database` | `develop` | `OPEN` | `BLOCKED` | **CI ĐỎ (FAILURE)** | **CHƯA** |
-| **#105** | fix(qa): đối chiếu Gateway và runner nghiệm thu Sprint 4 | `codex/sprint4-qa-closeout` | `develop` | `OPEN` | `BLOCKED (chờ approval)` | **CI XANH (SUCCESS)** | **CHƯA** |
-| **#106** | feat(backend): bàn giao Cost Guard, Analytics và Gateway Sprint 5 | `codex/sprint5-backend` | `develop` | `OPEN` | `BLOCKED (chờ approval)` | **CI XANH (SUCCESS)** | **CHƯA** |
-| **#108** | docs(qa): Sprint 5 acceptance criteria, test cases và E2E runner (Refs #25) | `test/25-sprint5-qa-closeout` | `develop` | `OPEN` | `BLOCKED (chờ approval)` | **CI XANH (SUCCESS)** | **CHƯA** |
-| **#109** | feat(frontend): deliver Sprint 5 Cost Guard UI and Provider Analytics (Refs #23) | `feature/23-sprint5-frontend` | `develop` | `OPEN` | `BLOCKED (DRAFT)` | **CI XANH (SUCCESS)** | **CHƯA** |
+| **#104** | Feature/24 sprint5 database | `feature/24-sprint5-database` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `640db04`, `282eceb`) |
+| **#105** | fix(qa): đối chiếu Gateway và runner nghiệm thu Sprint 4 | `codex/sprint4-qa-closeout` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `9e2669b`) |
+| **#106** | feat(backend): bàn giao Cost Guard, Analytics và Gateway Sprint 5 | `codex/sprint5-backend` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `4ce5394`) |
+| **#108** | docs(qa): Sprint 5 acceptance criteria, test cases và E2E runner (Refs #25) | `test/25-sprint5-qa-closeout` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `9a48d60`) |
+| **#109** | feat(frontend): deliver Sprint 5 Cost Guard UI and Provider Analytics (Refs #23) | `feature/23-sprint5-frontend` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `1ff69a3`, `572afb0`) |
+| **#110** | release: Sprint 5 - Cost Guard, Provider Analytics, Production Ops va QA closeout | `s5merge` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `1b9edd4`) |
+| **#111** | release: Sprint 5 (Cost Guard, Provider Analytics, Production Ops) | `develop` | `main` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE LÊN MAIN** (commit `593b376`) |
+| **#112** | fix(sprint5): unblock demo services, patch dependencies and settle open deviations | `fix/sprint5-final` | `develop` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE** (commit `289e20e`, HEAD develop) |
+| **#113** | release: Sprint 5 hotfix (demo services, dependencies, deviations) | `develop` | `main` | `MERGED` | `Clean` | **CI XANH (SUCCESS)** | **ĐÃ MERGE LÊN MAIN** (commit `2193395`, HEAD main) |
 
 ---
 
@@ -28,45 +32,65 @@
 
 **Mã tài liệu:** `DEV-S5-01`
 **Phân hệ:** Hạ tầng Môi trường & Dịch vụ Demo (`EN-07`, `EN-16`)
-**Test Case bị ảnh hưởng:** `TC-DEMO-03` (Thử nghiệm Sandbox & Gọi Gateway Upstream), `TC-CST-08` (Ngắt cước khi chạm ngân sách hardCutoff qua Upstream thật), các kịch bản kiểm thử lưu lượng Gateway thực tế.
-**Mức độ:** **High (đề xuất của QA, chờ Tech Lead xác nhận)**
+**Test Case bị ảnh hưởng:** `TC-DEMO-03` (Thử nghiệm Sandbox & Gọi Gateway Upstream), `TC-CST-03`, `TC-CST-04`, `TC-CST-07`, `TC-CST-08`, `TC-ANL-04`, `TC-ANL-05`, `TC-ANL-07` (Các kịch bản kiểm thử lưu lượng Gateway thực tế qua upstream mock), `TC-SEC-03` (chứng minh chặn 429 qua Gateway), `TC-SEC-05` (chứng minh Gateway headers `[REDACTED]`).
+**Mức độ:** **High (Đề xuất của QA, đề nghị Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead / DevOps, Issue #21)**
-**Tình trạng:** `Open / Chờ cập nhật cấu hình Dockerfile`
+**Tình trạng:** **MỞ LẠI (REOPENED) — Đề nghị Tech Lead xác nhận** (Lỗi tái hiện 100% trên `develop` sạch sau khi build no-cache)
 
 #### 1. Mô tả sự cố
-Khi khởi động hệ thống với profile demo bằng lệnh:
+Sau khi PR #112 hợp nhất để sửa lỗi thiếu tệp `gateway-auth.mjs` trong Dockerfile, QA đã tiến hành kiểm chứng độc lập bằng cách build hoàn toàn mới không dùng cache (`--no-cache`) cho service `weather`:
 ```bash
-docker compose --env-file .env.docker --profile frontend --profile demo up -d
+docker compose --env-file .env.docker --profile demo build --no-cache weather
+docker compose --env-file .env.docker --profile demo up -d weather
 ```
-Ba container dịch vụ mock gồm `api-market-weather`, `api-market-currency`, và `api-market-catalog` khởi động nhưng lập tức thoát với `Exit code 1` và chuyển sang trạng thái `Restarting (1)` chu kỳ liên tục, không thể lắng nghe trên các cổng 4011, 4012, 4013.
+Container `api-market-weather` tiếp tục thoát ngay sau khi khởi động (`Exit code 1`) và rơi vào chu kỳ `Restarting (1)` vô hạn, không thể lắng nghe trên cổng 4011. Hiện tượng tương tự xảy ra với `currency` (4012) và `catalog` (4013).
 
-#### 2. Bằng chứng đã xác minh
-- **Log container thu thập thực tế:**
+#### 2. Bằng chứng đã xác minh từ Docker thực tế
+- **Inspect cấu hình image vừa build (`Created: 2026-11-11T10:23:29Z`):**
+  ```bash
+  docker image inspect api-market-weather:latest --format "Entrypoint: {{json .Config.Entrypoint}} | Cmd: {{json .Config.Cmd}}"
+  # Output: Entrypoint: ["docker-entrypoint.sh"] | Cmd: ["weather"]
+  ```
+- **Log container thu thập thực tế sau khi build sạch không cache:**
   ```text
   api-market-weather   | Error: Cannot find module '/app/weather'
   api-market-weather   |     at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+  api-market-weather   |     at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)
+  api-market-weather   |     at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)
+  api-market-weather   |     at Function._load (node:internal/modules/cjs/loader:1216:25)
+  api-market-weather   |     at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+  api-market-weather   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+  api-market-weather   |     at node:internal/main/run_main_module:36:49 {
   api-market-weather   |   code: 'MODULE_NOT_FOUND',
   api-market-weather   |   requireStack: []
+  api-market-weather   | }
   ```
-  *(Lỗi tương tự xuất hiện trên container `currency` với `/app/currency` và `catalog` với `/app/catalog`).*
-- **Cấu trúc image đã kiểm chứng:**
-  Lệnh kiểm tra `docker run --rm --entrypoint ls api-market-weather /app` cho thấy trong thư mục `/app` chỉ có thư mục con `mock-services` (chứa `server.mjs`, `weather`, `currency`, `catalog`). Không tồn tại tệp thực thi nào có đường dẫn `/app/weather`.
-- **Cấu hình Dockerfile hiện tại ([mock-services/Dockerfile:22](file:///d:/Downloads/AAAAA/API-Market/mock-services/Dockerfile#L22)):**
-  Khai báo `CMD ["weather"]`, hoàn toàn không có chỉ thị `ENTRYPOINT`.
+- **Cấu hình Compose đã giải quyết (`docker compose --env-file .env.docker --profile demo config`):**
+  - Không có `docker-compose.override.yml`, không có biến môi trường nào can thiệp entrypoint.
+  - Service `weather` nhận `command: ["weather"]`, hoàn toàn không có chỉ thị `entrypoint`.
 
-#### 3. Nghi ngờ, chưa xác minh
-- Nghi ngờ cơ chế khởi chạy mặc định của base image `node:22-alpine` sử dụng entrypoint `docker-entrypoint.sh`. Khi `docker-compose.yml` truyền tham số `command: ["weather"]`, script entrypoint của Node tự động gắn tiền tố `node` phía trước đối số, khiến lệnh thực thi trở thành `node weather` ngay tại thư mục làm việc `/app`.
+#### 3. Đối chiếu với commit `e786a52` (PR #112) và nguyên nhân gốc
+- **PR #112 thực sự đã sửa lỗi nào?**
+  Qua kiểm tra `git show e786a52 -- mock-services/`, PR #112 thực chất chỉ bổ sung lệnh copy `COPY mock-services/gateway-auth.mjs ./mock-services/gateway-auth.mjs` vào Dockerfile và bổ sung `GATEWAY_UPSTREAM_SECRET` mẫu vào `.env.docker.example`.
+- **Lỗi hiện tại có trùng với lỗi trước PR #112 không?**
+  - **Khác nhau:** Lỗi trước PR #112 xảy ra khi Node chạy `server.mjs` và không tìm thấy file import `gateway-auth.mjs`.
+  - **Lỗi hiện tại:** Xảy ra ngay ở tầng khởi chạy entrypoint của Docker image `node:22-alpine` trước cả khi file `server.mjs` được gọi.
+- **Nguyên nhân gốc (kèm vị trí file:dòng):**
+  1. [`mock-services/Dockerfile:23`](file:///d:/Downloads/AAAAA/API-Market/mock-services/Dockerfile#L23): Chỉ khai báo `CMD ["weather"]`, hoàn toàn thiếu chỉ thị `ENTRYPOINT`.
+  2. [`docker-compose.yml:187, 209, 231`](file:///d:/Downloads/AAAAA/API-Market/docker-compose.yml#L187): Khai báo `command: ["weather"]` (hoặc `currency`, `catalog`).
+  3. Entrypoint mặc định của base image `node:22-alpine` là `/usr/local/bin/docker-entrypoint.sh`. Khi nhận đối số là `weather`, script này tự động chạy `exec node "weather"` tại thư mục làm việc `/app`. Vì không có tệp `/app/weather` (code nằm trong `/app/mock-services/server.mjs`), Node runtime ném `MODULE_NOT_FOUND`.
 
-#### 4. Gợi ý để dev xem xét
-- Xem xét bổ sung chỉ thị `ENTRYPOINT` vào [`mock-services/Dockerfile`](file:///d:/Downloads/AAAAA/API-Market/mock-services/Dockerfile):
+#### 4. Khuyến nghị gửi Tech Lead xem xét (QA không tự ý sửa code ứng dụng)
+- **Phương án 1 (Khuyến nghị trong Dockerfile):** Bổ sung `ENTRYPOINT` vào [`mock-services/Dockerfile:23`](file:///d:/Downloads/AAAAA/API-Market/mock-services/Dockerfile#L23):
   ```dockerfile
   ENTRYPOINT ["node", "mock-services/server.mjs"]
+  CMD ["weather"]
   ```
-- Hoặc xem xét điều chỉnh tham số `command` cho 3 services trong [`docker-compose.yml`](file:///d:/Downloads/AAAAA/API-Market/docker-compose.yml):
+- **Phương án 2 (Cấu hình docker-compose):** Điều chỉnh lại `command` trong [`docker-compose.yml:187, 209, 231`](file:///d:/Downloads/AAAAA/API-Market/docker-compose.yml#L187):
   ```yaml
   command: ["node", "mock-services/server.mjs", "weather"]
   ```
-- Thử build lại với `--no-cache` và khởi động lại container để xác nhận trạng thái `healthy`.
+- **Tác động kiểm thử:** Do mock container chưa khởi động được, các Test Case cần upstream mock chuyển trạng thái sang **KHÔNG THỰC HIỆN ĐƯỢC**. Không nới lỏng assertion để che lỗi.
 
 ---
 
@@ -75,9 +99,9 @@ Ba container dịch vụ mock gồm `api-market-weather`, `api-market-currency`,
 **Mã tài liệu:** `DEV-S5-02`
 **Phân hệ:** Cơ sở dữ liệu & Dữ liệu Mẫu (`US-31`, `EN-15`)
 **Test Case bị ảnh hưởng:** `TC-ANL-05` (Doanh thu đa tệ VND/USD), `TC-OPS-02` (Xác thực sao lưu mở rộng), toàn bộ quy trình merge của PR [#104](https://github.com/antondung/API-Market/pull/104) vào `develop`.
-**Mức độ:** **Critical (đề xuất của QA, chờ Tech Lead xác nhận)**
+**Mức độ:** **Critical (đã được giải quyết)**
 **Người phụ trách:** **Võ Trọng Danh (`@danhbuonsv2-svg` — Database Developer, Issue #24)**
-**Tình trạng:** `Open / Chờ Database Developer sửa migration và push lại`
+**Tình trạng:** **ĐÃ KHẮC PHỤC (RESOLVED)** — Hoàn tất trong PR #104 (commit `282eceb`, `640db04`)
 
 #### 1. Mô tả sự cố
 Nhánh `feature/24-sprint5-database` (PR [#104](https://github.com/antondung/API-Market/pull/104)) khi chạy kiểm thử tự động trên CI của GitHub Actions bị thất bại đồng loạt ở 4 jobs (`Node.js`, `API E2E Sprint 2`, `Frontend Browser E2E Sprint 2`, `Kiem tra nen tang`) do lỗi thực thi câu lệnh SQL seed.
@@ -93,37 +117,14 @@ Nhánh `feature/24-sprint5-database` (PR [#104](https://github.com/antondung/API
   Node.js: error: 'column reference "api_id" is ambiguous' code: '42702'
   ```
 - **Đối chiếu mã nguồn dòng 12–18 trong `migrations/016_seed_sprint5_demo.sql`:**
-  ```sql
-  WITH target AS (
-      SELECT u.id AS consumer_id, a.id AS api_id, p.id AS plan_id
-      FROM users u
-      JOIN apis a ON a.name = 'Product Catalog API' AND a.status = 'Published'
-      JOIN api_plans p ON p.api_id = a.id AND p.name = 'Basic'
-      WHERE u.email_normalized = 'user@example.com'
-  )
-  INSERT INTO subscriptions
-      (consumer_id, plan_id, api_id, ...)
-  SELECT consumer_id, plan_id, api_id, ...
-  FROM target t JOIN api_plans p ON p.id = t.plan_id
-  ```
   Trong mệnh đề `SELECT`, cột `api_id` xuất hiện ở cả 2 bảng `target t` và `api_plans p`, dẫn tới lỗi ambiguous.
+  Đồng thời, CTE `samples` dòng 59–60 dùng `g.sample` nhưng alias bảng chỉ định nghĩa `g(day_offset)`.
 
-#### 3. Nghi ngờ, chưa xác minh
-- Nghi ngờ tại dòng 59–60 CTE `samples`:
-  ```sql
-  samples AS (
-      SELECT d.*, g.day_offset, g.sample,
-             (CURRENT_DATE - g.day_offset + make_interval(hours => 8 + g.sample * 3))::timestamptz occurred_at
-      FROM demo d CROSS JOIN generate_series(0, 13) AS g(day_offset)
-      CROSS JOIN generate_series(0, 2) AS sample
-  )
-  ```
-  Bảng `generate_series(0, 13) AS g(day_offset)` chỉ có duy nhất cột `day_offset`. Việc truy vấn `g.sample` hai lần có thể khiến PostgreSQL báo lỗi `column g.sample does not exist` ngay sau khi lỗi `api_id` được khắc phục.
-
-#### 4. Gợi ý để dev xem xét
-- Xem xét thêm tiền tố bảng rõ ràng `t.api_id` ở dòng 17.
-- Xem xét đổi alias CTE tạo sample: `generate_series(0, 2) AS s(sample)` và dùng `s.sample`.
-- Chạy thử migration trên database mới bằng lệnh `docker compose run --rm migrate --seed` để bảo đảm seed chạy thông suốt trước khi push commit.
+#### 3. Kết quả khắc phục thực chứng
+- Database Developer và Tech Lead đã sửa đổi trực tiếp trong commit `282eceb` và tích hợp vào `develop` qua PR #104 / PR #110:
+  1. [`migrations/016_seed_sprint5_demo.sql:17`](file:///d:/Downloads/AAAAA/API-Market/migrations/016_seed_sprint5_demo.sql#L17): Thêm tiền tố định danh rõ ràng `t.api_id`.
+  2. [`migrations/016_seed_sprint5_demo.sql:60`](file:///d:/Downloads/AAAAA/API-Market/migrations/016_seed_sprint5_demo.sql#L60): Khai báo đúng alias `generate_series(0, 2) AS sample_series(sample)` và gọi `sample_series.sample`.
+- **Kiểm chứng thực tế:** Migration 016 thực thi thành công từ cơ sở dữ liệu trắng, toàn bộ 7 check CI của PR #108 và PR #110 đều XANH 100%. Trạng thái: **ĐÃ ĐÓNG (RESOLVED)**.
 
 ---
 
@@ -131,28 +132,27 @@ Nhánh `feature/24-sprint5-database` (PR [#104](https://github.com/antondung/API
 
 **Mã tài liệu:** `DEV-S5-03`
 **Phân hệ:** Đo tải & Hiệu năng Gateway (`EN-12`)
-**Test Case bị ảnh hưởng:** `TC-PERF-01` (SLA P95 Gateway Overhead < 30ms).
-**Mức độ:** **High (đề xuất của QA, chờ Tech Lead xác nhận)**
+**Test Case bị ảnh hưởng:** `TC-PERF-01` (SLA P95 Gateway Overhead).
+**Mức độ:** **High (Đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead), Nguyễn Như Tùng Dương (`@Tungdota53` — Backend)**
-**Tình trạng:** `Open / Chờ đo đạc trên Staging và quyết định từ Tech Lead`
+**Tình trạng:** **FAIL (MỘT PHẦN) / CHẤP NHẬN CÓ ĐIỀU KIỆN** — Đã ghi nhận hạn chế kiến trúc tại [`docs/known-limitations.md`](file:///d:/Downloads/AAAAA/API-Market/docs/known-limitations.md), chờ Tech Lead xác nhận số đo $c=10$
 
 #### 1. Mô tả sự cố
-Theo tiêu chuẩn nghiệm thu tại [`docs/07-sprint5-demo-and-rc-checklist.md:66`](file:///d:/Downloads/AAAAA/API-Market/docs/07-sprint5-demo-and-rc-checklist.md#L66) và [`docs/test/Sprint5_AcceptanceCriteria.md`](file:///d:/Downloads/AAAAA/API-Market/docs/test/Sprint5_AcceptanceCriteria.md), độ trễ P95 Gateway Overhead phải đạt ngưỡng $< 30$ms. Tuy nhiên, kết quả đo kiểm thử tải cục bộ của Backend bàn giao tại PR [#106](https://github.com/antondung/API-Market/pull/106) ghi nhận mức overhead vượt ngưỡng khi tải đồng thời tăng lên.
+Theo tiêu chuẩn nghiệm thu ban đầu, độ trễ P95 Gateway Overhead được kỳ vọng $< 30$ms ở mọi mức tải. Khi đo kiểm tải cục bộ, độ trễ ở mức đồng thời $c=10$ và $c=25$ vượt ngưỡng này. Trước đây số liệu ban đầu do Dev tự ghi trong HANDOFF.md, QA chưa tự đo đạc độc lập.
 
-#### 2. Bằng chứng đã xác minh
-- **Nguồn số liệu:** Số liệu do dev tự ghi trong HANDOFF.md ([`backend/SPRINT-5-HANDOFF.md`](file:///d:/Downloads/AAAAA/API-Market/backend/SPRINT-5-HANDOFF.md#L45-L55)), QA chưa tự đo.
-- **Số liệu bàn giao trong HANDOFF.md:**
-  - Mức đồng thời $c=1$: P95 = **7ms** (Đạt chuẩn $< 30$ms).
-  - Mức đồng thời $c=10$: P95 = **38ms** (Vượt ngưỡng 30ms).
-  - Mức đồng thời $c=25$: P95 = **44ms** (Vượt ngưỡng 30ms).
-- **Hành vi runner đo tải:** Lệnh `npm run loadtest:gateway` tự động đối soát và trả về trạng thái `SLA_MISSED` kèm exit code 1 khi có bất kỳ mức tải nào vượt 30ms.
+#### 2. Kết quả đo thực nghiệm của QA tại phiên ngày 11/11/2026
+QA đã chạy đo đạc trực tiếp tải Gateway trên môi trường kiểm thử (Windows + Docker Desktop) với lệnh `npm run loadtest:gateway` và thu được kết quả:
+- **Mức tải đơn luồng ($c = 1$):** Overhead P95 = **11ms** ($< 30$ms, **PASS**).
+- **Mức tải đồng thời ($c = 10$):** Overhead P95 = **98ms** ($> 60$ms).
+- **Mức tải đồng thời ($c = 25$):** Overhead P95 = **162ms** ($> 60$ms).
 
-#### 3. Nghi ngờ, chưa xác minh
-- Nghi ngờ việc đo kiểm tải cục bộ trên máy phát triển cá nhân chịu tác động từ tài nguyên CPU chia sẻ, Docker Desktop virtualization overhead và tiến trình ghi ổ cứng đồng thời, chưa phản ánh đúng năng lực xử lý của hạ tầng staging/production chuyên dụng.
-
-#### 4. Gợi ý để dev xem xét
-- **Hướng 1 (Đo lại trên Staging):** Triển khai phiên bản backend lên máy chủ Staging có tài nguyên độc lập để chạy lại `npm run loadtest:gateway`.
-- **Hướng 2 (Deviation Report có điều kiện):** Nếu sau khi tối ưu hóa trên Staging số đo vẫn ở mức 35–45ms do chi phí tuần tự hóa khóa quota Redis của cùng subscription, Tech Lead xem xét ký chấp thuận nghiệm thu có điều kiện dựa trên hồ sơ sai lệch kỹ thuật này.
+#### 3. Đối chiếu với số liệu của Tech Lead & Kết luận chính thức
+- **Số liệu do Tech Lead công bố tại [`docs/known-limitations.md`](file:///d:/Downloads/AAAAA/API-Market/docs/known-limitations.md):**
+  - Đơn luồng $c = 1$: P95 overhead 13–19ms.
+  - Đồng thời $c = 10$: P95 overhead 38–59ms.
+  - Đồng thời $c = 25$: P95 overhead 84–150ms.
+- **Quyết định kiến trúc của Tech Lead:** Ở mức $c = 25$, việc độ trễ tăng cao là **đánh đổi có chủ đích của kiến trúc**: phương thức `GatewayEntitlement.reserve` mở transaction và sử dụng khóa dòng PostgreSQL `FOR UPDATE OF s` để đảm bảo quota không bị vượt (zero quota overdraft) dưới mọi mức tải đồng thời. Các request của cùng một Consumer xếp hàng tuần tự.
+- **Kết luận chính thức của QA:** **PASS ở c=1 (P95 11ms < 30ms); c=10 (98ms) và c=25 (162ms) vượt ngưỡng 60ms trên máy QA (Windows + Docker Desktop). Tech Lead đã chấp nhận có điều kiện c=25 theo DEV-S5-03; c=10 lệch so với số đo của Tech Lead (38–59ms), chờ Tech Lead xác nhận.** Tuyệt đối không ghi nhận là "đạt chuẩn phân tầng" một cách chung chung. Không hạ assertion để làm đẹp kết quả.
 
 ---
 
@@ -161,28 +161,22 @@ Theo tiêu chuẩn nghiệm thu tại [`docs/07-sprint5-demo-and-rc-checklist.md
 **Mã tài liệu:** `DEV-S5-04`
 **Phân hệ:** Provider Analytics & Bảo mật Cách ly Dữ liệu (`US-31`, `EN-11`)
 **Test Case bị ảnh hưởng:** `TC-ANL-06` (Bảo mật cách ly dữ liệu: Ngăn Provider A xem Analytics của Provider B).
-**Mức độ:** **Medium (đề xuất của QA, chờ Tech Lead xác nhận)**
+**Mức độ:** **Medium (Đề xuất của QA, chờ Tech Lead xác nhận)**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — Tech Lead), Nguyễn Như Tùng Dương (`@Tungdota53` — Backend)**
-**Tình trạng:** `Open / Đã đăng câu hỏi trên PR #108, chờ Tech Lead quyết định`
+**Tình trạng:** **ĐÃ KHẮC PHỤC (RESOLVED)** — Hoàn tất trong PR #112 (commit `e786a52`), đã chạy thực tế đạt PASS
 
 #### 1. Mô tả sự cố
-Khi Provider A đăng nhập và gửi request `GET /api/provider/analytics/overview` nhưng truyền tham số `apiId` thuộc quyền sở hữu của Provider B:
-- Yêu cầu đặc tả gốc (`backend/SPRINT-5-HANDOFF.md`) chỉ nêu: "chỉ tổng hợp API thuộc tài khoản" và "cô lập dữ liệu", chưa quy định rõ trả về mã HTTP `200` kèm dữ liệu rỗng hay mã lỗi `403 Forbidden`.
+Khi Provider A đăng nhập và gửi request `GET /api/provider/analytics/overview` nhưng truyền tham số `apiId` thuộc quyền sở hữu của Provider B: ban đầu khi đọc mã nguồn (chưa chạy thực tế), backend trả về HTTP 200 kèm báo cáo rỗng (`requestCount: "0"`), gây nguy cơ rò rỉ không gian định danh (ID space leak).
 
-#### 2. Bằng chứng đã xác minh
-- **Căn cứ xác minh:** Bằng chứng dựa trên việc đọc code backend (`backend/src/usage-analytics.ts:77`), QA chưa chạy thực tế với backend.
-- **Code hiện tại trong PR #106 (`backend/src/usage-analytics.ts:77`):**
-  Hệ thống lọc theo `provider_id` của tài khoản đăng nhập. Khi không có bản ghi nào khớp, backend trả về HTTP `200 OK` kèm `requestCount: "0"`, `errorCount: "0"`, và mảng rỗng `topEndpoints: []`. Không rò rỉ dữ liệu của Provider B.
-
-#### 3. Nghi ngờ, chưa xác minh
-- Phương án trả HTTP 200 dữ liệu rỗng tuân thủ triết lý bảo mật "Security by Obscurity" (ngăn kẻ tấn công dò quét xem một `apiId` ngẫu nhiên có tồn tại trong hệ thống hay không).
-- Tuy nhiên, một số chuẩn REST API chặt chẽ lại ưu tiên trả HTTP 403 Forbidden để client nhận biết rõ ràng lỗi vượt quyền.
-
-#### 4. Gợi ý để dev xem xét
-- Tech Lead chốt lựa chọn một trong hai phương án:
-  - **Phương án A:** Giữ HTTP `200` + dữ liệu rỗng (Bảo vệ thông tin tồn tại của ID).
-  - **Phương án B:** Trả HTTP `403 Forbidden` với mã lỗi `FORBIDDEN`.
-- QA sẽ đồng bộ kết quả mong đợi trong tài liệu kiểm thử theo phương án được chọn.
+#### 2. Quyết định chính thức & Kết quả khắc phục thực chứng
+- Tech Lead `@antondung` đã chốt phương án chuẩn: **Trả về HTTP 404 NOT_FOUND**.
+- **Triển khai code thực tế:**
+  1. [`backend/src/usage-analytics.ts:74-81`](file:///d:/Downloads/AAAAA/API-Market/backend/src/usage-analytics.ts#L74-L81): Bổ sung phương thức `ownsApi(user: string, apiId: string)` kiểm tra quyền sở hữu API qua bảng `api_providers`.
+  2. [`backend/src/usage-router.ts:47-49`](file:///d:/Downloads/AAAAA/API-Market/backend/src/usage-router.ts#L47-L49): Ném lỗi `new ApiError(404, "NOT_FOUND", "API not found")` nếu không sở hữu API.
+  3. [`backend/integration/usage.test.ts:250-252`](file:///d:/Downloads/AAAAA/API-Market/backend/integration/usage.test.ts#L250-L252): Bổ sung test tự động kiểm tra HTTP 404.
+- **Xác minh chạy thực tế trong phiên ngày 11/11/2026:**
+  - Bộ kiểm thử tích hợp backend chạy đạt 100% (trong `usage.test.ts`).
+  - Runner tự động `qa-scripts/sprint5-api-runner.cjs` chạy trực tiếp endpoint qua cổng 3000 đạt **PASS** với mã lỗi chuẩn `HTTP 404 NOT_FOUND` ('API not found'). Trạng thái: **ĐÃ ĐÓNG (RESOLVED)**.
 
 ---
 
@@ -191,20 +185,15 @@ Khi Provider A đăng nhập và gửi request `GET /api/provider/analytics/over
 **Mã tài liệu:** `DEV-S5-05`
 **Phân hệ:** Vận hành & Phục hồi Thảm họa (`EN-13`)
 **Test Case bị ảnh hưởng:** `TC-OPS-03` (Kế hoạch Rollback tức thì phiên bản ứng dụng và Database < 60 giây).
-**Mức độ:** **Medium (đề xuất của QA, chờ Tech Lead xác nhận)**
+**Mức độ:** **Medium**
 **Người phụ trách:** **Nguyễn Tấn Dũng (`@antondung` — DevOps Lead)**
-**Tình trạng:** `KHÔNG THỰC HIỆN ĐƯỢC trên local / Chờ staging diễn tập`
+**Tình trạng:** **GIỚI HẠN MÔI TRƯỜNG (ENVIRONMENTAL LIMITATION)** — Phụ thuộc diễn tập trên Staging/Production Linux
 
 #### 1. Mô tả sự cố
 Tiêu chí nghiệm thu `AC-EN13-03` yêu cầu chứng minh container ứng dụng quay về phiên bản cũ và endpoint `/health` phản hồi HTTP 200 trong thời gian $< 60$ giây khi kích hoạt quy trình rollback.
 
-#### 2. Bằng chứng đã xác minh
+#### 2. Bằng chứng thực tế
 - Script vận hành [`deploy.sh rollback`](file:///d:/Downloads/AAAAA/API-Market/deploy.sh) được thiết kế cho môi trường Linux, yêu cầu hạ tầng Registry container và tệp cấu hình `.last_image_tag`.
 - Trên máy kiểm thử Windows cục bộ chạy Docker Compose phát triển, không có tệp `.last_image_tag` và không có cơ chế Blue/Green deployment để đo đạc thời gian downtime thực tế.
 - Thao tác dry-run kiểm tra cú pháp script `deploy.sh` chạy thành công nhưng không đại diện cho số đo thời gian thực.
-
-#### 3. Nghi ngờ, chưa xác minh
-- Nghi ngờ quy trình rollback hoàn toàn có thể hoàn tất dưới 60 giây khi triển khai trên máy chủ Linux có lưu sẵn cache image của phiên bản trước.
-
-#### 4. Gợi ý để dev xem xét
-- Thiết lập kịch bản diễn tập khôi phục trên môi trường Linux Staging trước khi phát hành phiên bản Production Release Candidate để đo đạc số liệu thời gian thực chứng.
+- Kịch bản này được bảo lưu kiểm tra trên pipeline CD Production thực tế (`.github/workflows/cd-production.yml`).
