@@ -9,27 +9,30 @@ const date = z
       Number.isFinite(Date.parse(s)) &&
       new Date(s).toISOString().slice(0, 10) === s,
   );
-export const usageFilters = z
+const filterSchema = z
   .object({
     page: z.coerce.number().int().min(1).max(10000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
     apiId: marketplaceId.optional(),
     status: z.coerce.number().int().min(100).max(599).optional(),
-    from: date.optional(),
-    to: date.optional(),
+    from: date.default(() => new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)),
+    to: date.default(() => new Date().toISOString().slice(0, 10)),
   })
-  .strict()
-  .transform((q) => ({
-    ...q,
-    from:
-      q.from ?? new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10),
-    to: q.to ?? new Date().toISOString().slice(0, 10),
-  }))
-  .refine(
-    (q) =>
-      Date.parse(q.to) >= Date.parse(q.from) &&
-      Date.parse(q.to) - Date.parse(q.from) <= 365 * 86400000,
-  );
+  .strict();
+const validRange = (q: { from: string; to: string }) =>
+  Date.parse(q.to) >= Date.parse(q.from) &&
+  Date.parse(q.to) - Date.parse(q.from) <= 365 * 86400000;
+export const usageFilters = filterSchema.refine(validRange);
+export const providerUsageFilters = filterSchema
+  .extend({ endpointId: marketplaceId.optional() })
+  .refine(validRange);
+const errorCounts = `COUNT(*) FILTER(WHERE l.status_code>=400)::text AS "errorCount",
+  COUNT(*) FILTER(WHERE l.status_code BETWEEN 400 AND 499)::text AS "clientErrorCount",
+  COUNT(*) FILTER(WHERE l.status_code BETWEEN 500 AND 599)::text AS "serverErrorCount"`;
+const trafficMetrics = [50, 95, 99].flatMap(p => [
+  `percentile_disc(${p / 100}) WITHIN GROUP (ORDER BY l.latency_ms) AS "p${p}LatencyMs"`,
+  `percentile_disc(${p / 100}) WITHIN GROUP (ORDER BY l.gateway_overhead_ms) AS "p${p}OverheadMs"`,
+]).join(", ");
 type Filters = z.infer<typeof usageFilters>;
 export class UsageAnalytics {
   constructor(readonly pool: Pool) {}
@@ -68,25 +71,39 @@ export class UsageAnalytics {
     );
     return { items, total, page: q.page, pageSize: q.pageSize };
   }
-  async overview(user: string, q: Filters) {
+  async overview(user: string, q: Filters & { endpointId?: string }) {
     const params = [user, q.from, q.to, q.apiId ?? null];
     const scope =
       "a.provider_id IN (SELECT id FROM api_providers WHERE user_id=$1) AND ($4::integer IS NULL OR a.id=$4)";
+    const trafficParams = [...params, q.endpointId ?? null];
+    const trafficScope = `${scope} AND ($5::integer IS NULL OR l.endpoint_id=$5)
+      AND l.occurred_at >= ($2::date::timestamp AT TIME ZONE 'UTC')
+      AND l.occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'UTC')`;
     const requests = (
       await this.pool.query(
-        `SELECT COUNT(*)::text AS "requestCount",COUNT(*) FILTER(WHERE l.status_code<400)::text AS "successCount",COUNT(*) FILTER(WHERE l.status_code>=400)::text AS "errorCount",COALESCE(AVG(l.latency_ms),0)::float8 AS "averageLatencyMs" FROM usage_logs l JOIN apis a ON a.id=l.api_id WHERE ${scope} AND l.occurred_at >= $2::date AND l.occurred_at < $3::date+1`,
-        params,
+        `SELECT COUNT(*)::text AS "requestCount",
+           COUNT(*) FILTER(WHERE l.status_code<400)::text AS "successCount",
+           ${errorCounts},
+           COALESCE(100.0 * COUNT(*) FILTER(WHERE l.status_code>=400) / NULLIF(COUNT(*),0),0)::float8 AS "errorRatePercent",
+           COALESCE(AVG(l.latency_ms),0)::float8 AS "averageLatencyMs",
+           ${trafficMetrics}
+         FROM usage_logs l JOIN apis a ON a.id=l.api_id WHERE ${trafficScope}`,
+        trafficParams,
       )
     ).rows[0];
     const daily = (
       await this.pool.query(
-        `SELECT l.occurred_at::date AS date,COUNT(*)::text AS "requestCount" FROM usage_logs l JOIN apis a ON a.id=l.api_id WHERE ${scope} AND l.occurred_at >= $2::date AND l.occurred_at < $3::date+1 GROUP BY 1 ORDER BY 1`,
-        params,
+        `SELECT (l.occurred_at AT TIME ZONE 'UTC')::date::text AS date, COUNT(*)::text AS "requestCount"
+         FROM usage_logs l JOIN apis a ON a.id=l.api_id WHERE ${trafficScope} GROUP BY 1 ORDER BY 1`,
+        trafficParams,
       )
     ).rows;
     const revenue = (
       await this.pool.query(
-        `SELECT t.currency,SUM(t.amount)::text AS amount FROM transactions t JOIN subscriptions s ON s.id=t.subscription_id JOIN apis a ON a.id=s.api_id WHERE ${scope} AND t.type='Charge' AND t.status='Succeeded' AND t.occurred_at >= $2::date AND t.occurred_at < $3::date+1 GROUP BY t.currency ORDER BY t.currency`,
+        `SELECT t.currency,SUM(t.amount)::text AS amount FROM transactions t JOIN subscriptions s ON s.id=t.subscription_id JOIN apis a ON a.id=s.api_id WHERE ${scope} AND t.type='Charge' AND t.status='Succeeded'
+         AND t.occurred_at >= ($2::date::timestamp AT TIME ZONE 'UTC')
+         AND t.occurred_at < (($3::date+1)::timestamp AT TIME ZONE 'UTC')
+         GROUP BY t.currency ORDER BY t.currency`,
         params,
       )
     ).rows;
@@ -96,6 +113,26 @@ export class UsageAnalytics {
         [user, q.apiId ?? null],
       )
     ).rows[0].n;
-    return { requests, daily, revenue, activeSubscribers };
+    const topEndpoints = (
+      await this.pool.query(
+        `SELECT a.id::text AS "apiId", a.name AS "apiName", e.id::text AS "endpointId", e.method, e.path,
+                COUNT(*)::text AS "requestCount", ${errorCounts},
+                (100.0 * COUNT(*) FILTER (WHERE l.status_code>=400) / COUNT(*))::float8 AS "errorRatePercent",
+                ${trafficMetrics}
+         FROM usage_logs l JOIN apis a ON a.id=l.api_id JOIN api_endpoints e ON e.id=l.endpoint_id AND e.api_id=a.id
+         WHERE ${trafficScope} GROUP BY a.id,e.id ORDER BY COUNT(*) DESC, e.id LIMIT 10`,
+        trafficParams,
+      )
+    ).rows;
+    const apiBreakdown = (await this.pool.query(
+      `SELECT a.id::text AS "apiId", a.name AS "apiName", COUNT(*)::text AS "requestCount",
+              ${errorCounts},
+              (100.0 * COUNT(*) FILTER(WHERE l.status_code>=400) / COUNT(*))::float8 AS "errorRatePercent",
+              ${trafficMetrics}
+       FROM usage_logs l JOIN apis a ON a.id=l.api_id WHERE ${trafficScope}
+       GROUP BY a.id ORDER BY COUNT(*) DESC, a.id`,
+      trafficParams,
+    )).rows;
+    return { requests, daily, revenue, activeSubscribers, topEndpoints, apiBreakdown };
   }
 }

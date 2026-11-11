@@ -156,12 +156,19 @@ test('strips caller credentials and internal headers before forwarding', async (
   } finally { await f.close(); server.close(); }
 });
 
-test('rejects a missing, malformed or revoked API key', async () => {
+test('rejects a missing, malformed, out-of-scope or revoked API key', async () => {
   const { server, port: upPort } = await upstream();
   const f = await fixture(upPort);
   try {
     assert.equal((await fetch(url(f.port, `/api/gateway/${f.api}/weather/Hanoi`))).status, 401);
     assert.equal((await fetch(url(f.port, `/api/gateway/${f.api}/weather/Hanoi`), { headers: { 'x-api-key': 'ak_live_short' } })).status, 401);
+    const otherApi = (await f.store.pool.query(`INSERT INTO apis(provider_id,name,description,category,base_url)
+      SELECT provider_id,'Other API',description,category,base_url FROM apis WHERE id=$1 RETURNING id`, [f.api])).rows[0].id;
+    for (const state of ['Submitted', 'Under Review', 'Approved', 'Published'])
+      await f.store.pool.query('UPDATE apis SET status=$1 WHERE id=$2', [state, otherApi]);
+    const outOfScope = await fetch(url(f.port, `/api/gateway/${otherApi}/weather/Hanoi`), { headers: { 'x-api-key': f.key } });
+    assert.equal(outOfScope.status, 401);
+    assert.equal((await outOfScope.json()).error.code, 'INVALID_API_KEY');
 
     const list = await f.keys.list(f.consumer.user.id);
     await f.keys.revoke(f.consumer.user.id, list.items[0]!.id);

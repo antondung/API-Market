@@ -113,18 +113,19 @@ describe('usageApi service', () => {
       expect(buildUsageQueryString({})).toBe('');
     });
 
-    it('serializes all supported query parameters correctly', () => {
+    it('serializes all supported query parameters correctly including endpointId', () => {
       const qs = buildUsageQueryString({
         page: 2,
         pageSize: 50,
         apiId: '10',
+        endpointId: '12',
         status: 200,
         from: '2026-10-01',
         to: '2026-10-31',
       });
 
       expect(qs).toBe(
-        '?page=2&pageSize=50&apiId=10&status=200&from=2026-10-01&to=2026-10-31'
+        '?page=2&pageSize=50&apiId=10&endpointId=12&status=200&from=2026-10-01&to=2026-10-31'
       );
     });
 

@@ -7,6 +7,7 @@ export interface UsageRecord {
   apiId: string;
   endpointId: string;
   occurredAt: Date;
+  price?: { amount: string; currency: string; quota: string };
 }
 export interface UsageResult {
   statusCode: number;
@@ -21,10 +22,17 @@ export class UsageService {
   private timer?: NodeJS.Timeout;
   private pending = new Set<Promise<unknown>>();
   constructor(readonly pool: Pool) {}
-  async enqueue(c: PoolClient, r: UsageRecord) {
-    await c.query(
-      `INSERT INTO usage_outbox(occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
-      [
+  async enqueue(c: PoolClient, r: UsageRecord, reserveQuota = false) {
+    await c.query({
+      name: "usage-enqueue",
+      text: `WITH enqueued AS (
+        INSERT INTO usage_outbox(occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id,cost_currency,estimated_cost)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::numeric / $10::numeric)
+        ON CONFLICT DO NOTHING RETURNING subscription_id
+      )
+      UPDATE subscriptions SET quota_used=quota_used+1 FROM enqueued
+      WHERE $11::boolean AND subscriptions.id=enqueued.subscription_id`,
+      values: [
         r.occurredAt,
         r.requestId,
         r.apiKeyId,
@@ -32,8 +40,12 @@ export class UsageService {
         r.consumerId,
         r.apiId,
         r.endpointId,
+        r.price?.currency ?? null,
+        r.price?.amount ?? null,
+        r.price?.quota ?? null,
+        reserveQuota,
       ],
-    );
+    });
   }
   async complete(requestId: string, occurredAt: Date, r: UsageResult) {
     const errorCode =
@@ -62,7 +74,8 @@ export class UsageService {
       let inserted = 0;
       for (const r of batch.rows) {
         const result = await c.query(
-          `INSERT INTO usage_logs(occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id,status_code,error_code,latency_ms,upstream_latency_ms,response_bytes,gateway_overhead_ms,is_sandbox) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,false) ON CONFLICT(occurred_at,request_id) DO NOTHING`,
+          `INSERT INTO usage_logs(occurred_at,request_id,api_key_id,subscription_id,consumer_id,api_id,endpoint_id,status_code,error_code,latency_ms,upstream_latency_ms,response_bytes,gateway_overhead_ms,is_sandbox,cost_currency,estimated_cost)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,false,$14,$15) ON CONFLICT(occurred_at,request_id) DO NOTHING`,
           [
             r.occurred_at,
             r.request_id,
@@ -77,6 +90,8 @@ export class UsageService {
             r.completed ? r.upstream_latency_ms : 0,
             r.completed ? r.response_bytes : 0,
             r.completed ? r.gateway_overhead_ms : 0,
+            r.cost_currency,
+            r.estimated_cost,
           ],
         );
         inserted += result.rowCount ?? 0;
@@ -97,6 +112,7 @@ export class UsageService {
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => {
+      if (this.pending.size) return;
       const p = this.flush()
         .catch(() => {
           console.error("Usage writer retry pending");

@@ -1,6 +1,7 @@
 import { ApiError } from "./auth.js";
 export interface MeterInput {
   apiKeyId: string;
+  rateScope?: string;
   endpointId: string;
   subscriptionId: string;
   periodStart: string;
@@ -58,7 +59,7 @@ export class RedisMeter {
         await Promise.race([
           this.client.eval(script, {
             keys: [
-              `${this.prefix}:rl:${i.apiKeyId}:${i.endpointId}:${minute}`,
+              `${this.prefix}:rl:${i.rateScope ?? i.apiKeyId}:${i.endpointId}:${minute}`,
               `${this.prefix}:quota:${i.subscriptionId}:${i.periodStart}`,
             ],
             arguments: [

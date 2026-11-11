@@ -24,20 +24,29 @@ import {SubscriptionAdminService} from './subscription-admin-service.js';
 import {OperationsHealth} from './operations-router.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
+const production = process.env.NODE_ENV === 'production';
 if (!['postgres', 'memory'].includes(mode)) throw new Error('AUTH_STORE must be postgres or memory');
-if (mode === 'memory' && process.env.NODE_ENV === 'production') throw new Error('Memory storage cannot run in production');
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('replace-')) throw new Error('A random JWT_SECRET is required. Run npm run setup for local development.');
+if (mode === 'memory' && production) throw new Error('Memory storage cannot run in production');
+if (!process.env.JWT_SECRET?.trim() || process.env.JWT_SECRET.trim().startsWith('replace-')) throw new Error('A random JWT_SECRET is required. Run npm run setup for local development.');
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
 const dnsServers = parseDnsServers(process.env.DNS_SERVERS);
 const badDnsServers = invalidDnsServers(dnsServers);
 if (badDnsServers.length) throw new Error(`DNS_SERVERS must be a comma-separated list of IP or IP:port values: ${badDnsServers.join(', ')}`);
 const secret = process.env.JWT_SECRET;
+const sandboxSecret = resolveSandboxSecret(secret, process.env.SANDBOX_WEBHOOK_SECRET, production);
+const signingSecret = upstreamSecret(secret, process.env.GATEWAY_UPSTREAM_SECRET, production);
+if (production && Buffer.byteLength(secret.trim()) < 32) {
+  throw new Error('JWT_SECRET must contain at least 32 bytes in production');
+}
+if (production && new Set([secret.trim(), sandboxSecret, signingSecret]).size !== 3) {
+  throw new Error('JWT_SECRET, SANDBOX_WEBHOOK_SECRET and GATEWAY_UPSTREAM_SECRET must be distinct');
+}
 const store = mode === 'postgres' ? new PostgresAuthStore(process.env.DATABASE_URL ?? '') : new MemoryAuthStore();
 if (store instanceof PostgresAuthStore) await store.ready();
 const allowedOrigins = process.env.CORS_ORIGINS !== undefined
   ? process.env.CORS_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
-  : process.env.NODE_ENV === 'production' ? [] : localFrontendOrigins;
+  : production ? [] : localFrontendOrigins;
 const provider = store instanceof PostgresAuthStore ? new ProviderService(store.pool) : undefined;
 if (provider) await provider.ready();
 const audit = store instanceof PostgresAuthStore ? new AuditService(store.pool) : undefined;
@@ -45,16 +54,21 @@ if (audit) await audit.ready();
 const review = store instanceof PostgresAuthStore && audit ? new AdminReviewService(store.pool, audit) : undefined;
 if (review) await review.ready();
 const marketplace = store instanceof PostgresAuthStore ? new MarketplaceService(store.pool) : undefined;
+if (store instanceof PostgresAuthStore) {
+  await store.pool.query(`SELECT s.quota_limit, o.estimated_cost, l.estimated_cost, b.monthly_budget
+    FROM subscriptions s
+    LEFT JOIN usage_outbox o ON false
+    LEFT JOIN usage_logs l ON false
+    LEFT JOIN cost_guard_budgets b ON false LIMIT 0`);
+}
 const redis=store instanceof PostgresAuthStore?createClient({url:process.env.REDIS_URL??'redis://127.0.0.1:6379',socket:{connectTimeout:1000,reconnectStrategy:attempt=>Math.min(2000,100*(attempt+1))},disableOfflineQueue:true}):undefined;
 redis?.on('error',()=>{});
 void redis?.connect().catch(()=>console.error('Redis metering unavailable; Gateway fails closed'));
 const usage=store instanceof PostgresAuthStore?new UsageService(store.pool):undefined;
-if(store instanceof PostgresAuthStore)await store.pool.query('SELECT s.quota_limit,o.request_id FROM subscriptions s LEFT JOIN usage_outbox o ON false LIMIT 0');
 usage?.start();
-const sandboxSecret=resolveSandboxSecret(secret,process.env.SANDBOX_WEBHOOK_SECRET,process.env.NODE_ENV==='production');
 const billing=store instanceof PostgresAuthStore?new BillingService(store.pool,sandboxSecret):undefined;
 const analytics=store instanceof PostgresAuthStore?new UsageAnalytics(store.pool):undefined;
-const proxy=new SafeProxy({signingSecret:upstreamSecret(secret,process.env.GATEWAY_UPSTREAM_SECRET,process.env.NODE_ENV==='production')});
+const proxy=new SafeProxy({signingSecret});
 const gateway = store instanceof PostgresAuthStore&&redis&&usage ? new GatewayService(store.pool,undefined,proxy,new GatewayEntitlement(store.pool,new RedisMeter(redis),usage)) : undefined;
 const playground=store instanceof PostgresAuthStore?new PlaygroundService(store.pool,undefined,undefined,proxy):undefined;
 const worker=store instanceof PostgresAuthStore?new OperationsWorker(store.pool):undefined;

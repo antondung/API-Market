@@ -170,7 +170,9 @@ test("Admin subscription/payment ledger enforces JWT/RBAC, strict filters and at
       .expect(200);
     const rows = (
       await request(f.app)
-        .get("/api/admin/subscriptions?status=Active")
+        .get(
+          `/api/admin/subscriptions?status=Active&consumerId=${f.consumer.id}`,
+        )
         .set(auth)
         .expect(200)
     ).body.data.items;
@@ -622,8 +624,12 @@ test("Marketplace → Paid subscribe → sandbox settlement → key → signed H
     );
     await f.usage.flush();
     assert.equal(
-      (await f.store.pool.query("SELECT count(*) FROM usage_logs")).rows[0]
-        .count,
+      (
+        await f.store.pool.query(
+          "SELECT count(*) FROM usage_logs WHERE subscription_id=$1",
+          [sub.id],
+        )
+      ).rows[0].count,
       "2",
     );
     const summary = (
@@ -646,20 +652,30 @@ test("Marketplace → Paid subscribe → sandbox settlement → key → signed H
       2,
     );
     assert.equal(
-      (await f.store.pool.query("SELECT count(*) FROM transactions")).rows[0]
-        .count,
+      (
+        await f.store.pool.query(
+          "SELECT count(*) FROM transactions WHERE subscription_id=$1",
+          [sub.id],
+        )
+      ).rows[0].count,
       "1",
     );
     const payments = await f.admin.payments({
       page: 1,
       pageSize: 20,
       paymentStatus: "Succeeded",
+      consumerId: f.consumer.id,
     });
     assert.equal(payments.total, 1);
     assert.equal(JSON.stringify(payments).includes(checkout.token), false);
     assert.equal(
       JSON.stringify(
-        (await f.store.pool.query("SELECT * FROM usage_logs")).rows,
+        (
+          await f.store.pool.query(
+            "SELECT * FROM usage_logs WHERE subscription_id=$1",
+            [sub.id],
+          )
+        ).rows,
       ).includes(created.key),
       false,
     );

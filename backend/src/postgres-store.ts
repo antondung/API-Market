@@ -47,7 +47,7 @@ export class PostgresAuthStore implements AuthStore {
       await client.query('SELECT pg_advisory_xact_lock(913002)');
       await client.query('CREATE TABLE IF NOT EXISTS backend_schema_migrations (name TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)');
       const files = ['001_create_auth_schema.sql', ...(demoSeed ? ['002_seed_auth_data.sql'] : []),
-        ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : []), '005_provider_domain_privacy.sql', '006_fix_rejection_reason_null.sql', '006_create_marketplace_gateway_schema.sql', '007_provider_documentation_state.sql', '008_create_reports_moderation.sql', '009_create_sprint4_billing_usage.sql', '010_billing_snapshot.sql', '011_usage_outbox.sql', '012_usage_aggregate_fix.sql', '013_sprint4_operations.sql', '014_subscription_status_before_suspend.sql'] : [])];
+        ...(provider ? ['003_create_provider_schema.sql', ...(demoSeed ? ['004_seed_provider_demo_data.sql'] : []), '005_provider_domain_privacy.sql', '006_fix_rejection_reason_null.sql', '006_create_marketplace_gateway_schema.sql', '007_provider_documentation_state.sql', '008_create_reports_moderation.sql', '009_create_sprint4_billing_usage.sql', '010_billing_snapshot.sql', '011_usage_outbox.sql', '012_usage_aggregate_fix.sql', '013_sprint4_operations.sql', '014_subscription_status_before_suspend.sql', '015_sprint5_analytics_performance.sql', ...(demoSeed ? ['016_seed_sprint5_demo.sql'] : []), '017_sprint5_cost_guard.sql'] : [])];
       for (const name of files) {
         const source = readFileSync(resolve(migrationDir, name), 'utf8');
         const checksum = createHash('sha256').update(source.replace(/\r\n/g, '\n')).digest('hex');
@@ -56,7 +56,12 @@ export class PostgresAuthStore implements AuthStore {
           if (applied.rows[0].checksum !== checksum) throw new Error(`Applied migration changed: ${name}`);
           continue;
         }
-        await client.query(source.replace(/^\s*BEGIN;\s*/, '').replace(/\s*COMMIT;\s*$/, ''));
+        try {
+          await client.query(source.replace(/^\s*BEGIN;\s*/, '').replace(/\s*COMMIT;\s*$/, ''));
+        } catch (error) {
+          if (error instanceof Error) error.message = `Migration ${name} failed: ${error.message}`;
+          throw error;
+        }
         await client.query('INSERT INTO backend_schema_migrations (name,checksum) VALUES ($1,$2)', [name, checksum]);
       }
       // Roles are needed for signup; demo users from 002 are explicit local seed only.
