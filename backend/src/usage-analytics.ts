@@ -71,6 +71,14 @@ export class UsageAnalytics {
     );
     return { items, total, page: q.page, pageSize: q.pageSize };
   }
+  /** True when the API belongs to a provider account owned by this user. */
+  async ownsApi(user: string, apiId: string) {
+    const res = await this.pool.query(
+      "SELECT 1 FROM apis a JOIN api_providers p ON p.id=a.provider_id WHERE a.id=$1 AND p.user_id=$2",
+      [apiId, user],
+    );
+    return res.rowCount === 1;
+  }
   async overview(user: string, q: Filters & { endpointId?: string }) {
     const params = [user, q.from, q.to, q.apiId ?? null];
     const scope =
