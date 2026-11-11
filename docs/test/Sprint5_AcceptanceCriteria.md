@@ -207,7 +207,7 @@
 - **Phát biểu kiểm chứng:**
   1. Chạy lệnh kiểm thử tải Gateway tự động: `npm run loadtest:gateway`.
   2. Thực hiện đo qua 3 mức đồng thời: `c = 1`, `c = 10`, `c = 25` (20 warm-up, 200 samples/tier, tổng cộng 620 requests).
-  3. SLA Kỳ vọng: P95 Gateway Overhead $< 30\text{ ms}$ ở cả 3 mức tải. Tỷ lệ lỗi cho phép: 0/620 (0%). Đối soát ghi đủ 620/620 bản ghi `usage_logs`.
+  3. SLA Kỳ vọng: P95 Gateway Overhead $< 30\text{ ms}$ ở cả 3 mức tải. Tỷ lệ lỗi cho phép: 0/620 (0%). Đối soát ghi đủ 620/620 bản ghi `usage_logs`. *(Ghi chú: Tech Lead đã chuẩn hóa ngưỡng phân tầng (c=1: < 30 ms; c>1: < 60 ms) tại docs/known-limitations.md và DEV-S5-03; kết quả TC-PERF-01 được đánh giá và công bố theo cả tiêu chí gốc lẫn ngưỡng phân tầng.)*
   4. Nếu P95 Overhead $\ge 30\text{ ms}$: Runner trả mã lỗi `SLA_MISSED` và exit code 1. *(Lưu ý: Ghi nhận rủi ro P95 đạt 38ms/44ms tại c=10/25 ở bản đo local của Tùng Dương; cần đo kiểm lại trên staging đóng băng)*.
 - **Nguồn yêu cầu:** `docs/07-sprint5-demo-and-rc-checklist.md:66`; Issue #21, #22 (comment); `backend/SPRINT-5-HANDOFF.md` mục EN-12.
 - **Nguồn triển khai:** `backend/src/gateway-loadtest.ts:165, 173` (PR #103 đã merge).
