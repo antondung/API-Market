@@ -93,15 +93,16 @@ Container `api-market-weather` tiếp tục thoát ngay sau khi khởi động (
   ```
 - **Tác động kiểm thử ban đầu:** Khi mock container chưa khởi động được, các Test Case cần upstream mock phải chuyển trạng thái sang **KHÔNG THỰC HIỆN ĐƯỢC**. Không nới lỏng assertion để che lỗi.
 
-#### 5. Kết quả xác minh khắc phục thực tế (PR #115)
+#### 5. Kết quả xác minh khắc phục thực tế (PR #115) & Lưu ý Onboarding
 Tech Lead (@antondung) đã triển khai chính xác Phương án 1 được QA khuyến nghị: bổ sung `ENTRYPOINT ["node", "mock-services/server.mjs"]` và `CMD ["weather"]` vào `mock-services/Dockerfile:22-25` thông qua PR #115 (commit `6584064`, hợp nhất vào `develop` tại commit `540da4d`).
 - QA đã rebase nhánh `docs/25-sprint5-final-qa-signoff` lên `540da4d`, cấu hình `.env.docker` bổ sung `GATEWAY_UPSTREAM_SECRET` và build lại toàn bộ services (`docker compose --env-file .env.docker --profile demo up --build -d`).
 - Kiểm tra trạng thái runtime thực tế từ Docker daemon: cả 3 mock containers đều ở trạng thái `Up (healthy)`:
   - `api-market-weather` (port 4011): `GET http://127.0.0.1:4011/health` $\to$ `HTTP 200 {"status":"ok","service":"weather"}`
   - `api-market-currency` (port 4012): `GET http://127.0.0.1:4012/health` $\to$ `HTTP 200 {"status":"ok","service":"currency"}`
   - `api-market-catalog` (port 4013): `GET http://127.0.0.1:4013/health` $\to$ `HTTP 200 {"status":"ok","service":"catalog"}`
-- Toàn bộ 12 Test Cases phụ thuộc mock services (`TC-DEMO-03`, `TC-CST-03`..`08`, `TC-ANL-04`, `05`, `07`, `TC-SEC-03`, `05`) đã được kích hoạt chạy thật trên runner API và runner UI E2E, đạt 100% PASS (không nới lỏng bất kỳ assertion nào).
-- **Kết luận:** Sai lệch `DEV-S5-01` chính thức **ĐÃ KHẮC PHỤC (RESOLVED)**.
+- Toàn bộ 12 Test Cases phụ thuộc mock services (`TC-DEMO-03`, `TC-CST-03`..`08`, `TC-ANL-04`, `05`, `07`, `TC-SEC-03`, `05`) đã được kích hoạt chạy thật trên runner API và runner UI E2E.
+- **Lưu ý quan trọng về môi trường & biến `GATEWAY_UPSTREAM_SECRET`:** Sau khi PR #115 khắc phục entrypoint, mock-services vẫn yêu cầu bắt buộc phải có biến môi trường `GATEWAY_UPSTREAM_SECRET` trong tệp `.env.docker` khi khởi động (theo cơ chế xác thực upstream được đưa vào từ PR #112). Các tệp `.env.docker` cục bộ được tạo lập trước thời điểm PR #112 thường thiếu biến này, dẫn tới việc container mock-services thoát ngay lập tức khi kiểm tra xác thực. **Đề nghị Tech Lead (@antondung) bổ sung hướng dẫn onboarding và cập nhật tài liệu README** nhắc nhở nhà phát triển/kiểm thử viên đồng bộ tệp `.env.docker` từ `.env.docker.example` trước khi chạy `docker compose up`.
+- **Kết luận:** Sai lệch `DEV-S5-01` chính thức **ĐÃ KHẮC PHỤC (RESOLVED)** về mặt mã nguồn container image.
 
 ---
 
