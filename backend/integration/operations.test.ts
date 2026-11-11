@@ -170,7 +170,9 @@ test("Admin subscription/payment ledger enforces JWT/RBAC, strict filters and at
       .expect(200);
     const rows = (
       await request(f.app)
-        .get("/api/admin/subscriptions?status=Active")
+        .get(
+          `/api/admin/subscriptions?status=Active&consumerId=${f.consumer.id}`,
+        )
         .set(auth)
         .expect(200)
     ).body.data.items;
