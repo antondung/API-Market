@@ -34,6 +34,7 @@ const MySubscriptionsPage = React.lazy(() => import('./pages/consumer/MySubscrip
 const ApiKeysPage = React.lazy(() => import('./pages/consumer/ApiKeysPage').then(m => ({ default: m.ApiKeysPage })));
 const UsageQuotaPage = React.lazy(() => import('./pages/consumer/UsageQuotaPage').then(m => ({ default: m.UsageQuotaPage })));
 const CostGuardPage = React.lazy(() => import('./pages/consumer/CostGuardPage').then(m => ({ default: m.CostGuardPage })));
+const PersonalizedRecommendationsPage = React.lazy(() => import('./pages/consumer/PersonalizedRecommendationsPage').then(m => ({ default: m.PersonalizedRecommendationsPage })));
 const RequestHistoryPage = React.lazy(() => import('./pages/consumer/RequestHistoryPage').then(m => ({ default: m.RequestHistoryPage })));
 const ProfileSettingsPage = React.lazy(() => import('./pages/consumer/ProfileSettingsPage').then(m => ({ default: m.ProfileSettingsPage })));
 
@@ -136,6 +137,7 @@ export function App() {
                 <Route path="/dashboard/api-keys" element={<Navigate to="/dashboard/keys" replace />} />
                 <Route path="/dashboard/usage" element={<UsageQuotaPage />} />
                 <Route path="/dashboard/cost-guard" element={<CostGuardPage />} />
+                <Route path="/dashboard/recommendations" element={<PersonalizedRecommendationsPage />} />
                 <Route path="/dashboard/requests" element={<RequestHistoryPage />} />
                 <Route path="/dashboard/history" element={<Navigate to="/dashboard/requests" replace />} />
                 <Route path="/dashboard/settings" element={<ProfileSettingsPage />} />

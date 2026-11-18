@@ -338,6 +338,32 @@ export const ConsumerDashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Personalized Recommendations Banner */}
+      <div className="rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+            <span className="material-symbols-outlined text-[22px]">auto_awesome</span>
+          </div>
+          <div>
+            <h2 className="text-title-md font-bold text-on-surface">
+              {t('Smart Cost & Quality Advisor')}
+            </h2>
+            <p className="text-body-sm text-on-surface-variant mt-0.5">
+              {t('Phân tích lịch sử sử dụng API của bạn để tự động đề xuất các API cùng loại có Deal giảm giá, chi phí tối ưu hoặc độ trễ/độ ổn định vượt trội.')}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          icon="auto_awesome"
+          onClick={() => navigate('/dashboard/recommendations')}
+          className="shrink-0"
+        >
+          {t('Explore Deals & Alternatives')}
+        </Button>
+      </div>
+
       {/* Quick Launch Tools */}
       <div>
         <h2 className="text-headline-sm font-bold text-on-surface mb-4">{t('Quick Actions & Workspaces')}</h2>
