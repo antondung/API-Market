@@ -41,6 +41,9 @@ import { costGuardRouter } from './cost-guard-router.js';
 import {operationsRouter, type OperationsHealth} from './operations-router.js';
 import type {SubscriptionAdminService} from './subscription-admin-service.js';
 import {operationsPaths} from './operations-contract.js';
+import { RecommendationService } from './recommendation-service.js';
+import { recommendationRouter } from './recommendation-router.js';
+import { recommendationPaths } from './recommendation-contract.js';
 
 const email = z.string().trim().toLowerCase().email().max(254);
 const password = z.string().min(12).max(128);
@@ -68,7 +71,7 @@ const setActiveSchema = z.object({ active: z.boolean() }).strict();
 const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/, 'Invalid user id');
 export type LogEvent = { requestId: string; method: string; route: string; status: number; durationMs: number };
 export const localFrontendOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics; operations?:{admin:SubscriptionAdminService;health:OperationsHealth} }
+export interface AppOptions { allowedOrigins?: string[]; provider?: ProviderService; review?: AdminReviewService; audit?: AuditService; marketplace?: MarketplaceService; playground?: PlaygroundService; gateway?: GatewayService; reports?: ReportService; billing?:BillingService; usage?:UsageAnalytics; operations?:{admin:SubscriptionAdminService;health:OperationsHealth}; recommendations?: RecommendationService }
 
 export function createApp(auth: AuthService, log: (event: LogEvent) => void = () => {}, options: AppOptions = {}) {
   const allowedOrigins = new Set(options.allowedOrigins ?? localFrontendOrigins);
@@ -117,13 +120,14 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
     components: { securitySchemes: openapi.components.securitySchemes, schemas: { ...openapi.components.schemas, ...providerContract.components.schemas } },
     paths: { ...openapi.paths, ...providerContract.paths, ...(options.review && options.audit ? adminReviewPaths : {}) },
   } : openapi;
+  const recommendations = options.recommendations ?? (options.marketplace ? new RecommendationService(options.marketplace.pool, options.billing) : undefined);
   const document = { ...baseDocument,
     components: { ...baseDocument.components, securitySchemes: {
       ...baseDocument.components.securitySchemes, ...(options.gateway ? { gatewayApiKey } : {}),
     } },
     paths: { ...baseDocument.paths, ...(options.marketplace ? { ...marketplacePaths, ...consumerPaths } : {}),
       ...(options.reports ? reportPaths : {}),...(options.billing&&options.usage?sprint4Paths:{}),...(options.operations?operationsPaths:{}),
-      ...(options.usage ? costGuardPaths : {}), ...(options.gateway ? gatewayPaths : {}) } };
+      ...(options.usage ? costGuardPaths : {}), ...(recommendations ? recommendationPaths : {}), ...(options.gateway ? gatewayPaths : {}) } };
   app.get('/openapi.json', (_req, res) => { res.json(document); });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(document));
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -147,6 +151,7 @@ export function createApp(auth: AuthService, log: (event: LogEvent) => void = ()
   if(options.billing)app.use('/api/consumer/subscriptions',billingRouter(options.billing,requireAuth,requireBuyer));
   if(options.usage){app.use('/api/consumer/usage',usageConsumerRouter(options.usage,requireAuth,requireBuyer));app.use('/api/provider/analytics',usageProviderRouter(options.usage,requireAuth,requireRole('Provider')));}
   if (options.usage) app.use('/api/consumer/cost-guard', costGuardRouter(new CostGuard(options.usage.pool), requireAuth, requireBuyer));
+  if (recommendations) app.use('/api/consumer/recommendations', recommendationRouter(recommendations, requireAuth, requireBuyer));
   if(options.operations)app.use('/api/admin',operationsRouter(options.operations.admin,options.operations.health,requireAuth,requireRole('Admin')));
   if (options.marketplace) app.use('/api/marketplace', marketplaceRouter(options.marketplace));
   if (options.marketplace) app.use('/api/consumer', consumerRouter(new SandboxService(options.marketplace.pool), new ApiKeyService(options.marketplace.pool), requireAuth, requireBuyer));

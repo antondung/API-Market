@@ -73,6 +73,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children }) =>
     { label: t('API Keys'), path: '/dashboard/keys', icon: 'key' },
     { label: t('Usage & Quota'), path: '/dashboard/usage', icon: 'bar_chart' },
     { label: t('Cost Guard'), path: '/dashboard/cost-guard', icon: 'shield_with_heart' },
+    { label: t('Recommendations'), path: '/dashboard/recommendations', icon: 'auto_awesome' },
     { label: t('Request History'), path: '/dashboard/requests', icon: 'history' },
     { label: t('Account & Settings'), path: '/dashboard/settings', icon: 'settings' }
   ];

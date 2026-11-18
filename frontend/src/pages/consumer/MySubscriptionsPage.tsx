@@ -261,13 +261,22 @@ export const MySubscriptionsPage: React.FC = () => {
             {t('Manage subscribed endpoints, current quota periods, automated renewal cycles.')}
           </p>
         </div>
-        <Button
-          variant="primary"
-          icon="explore"
-          onClick={() => navigate('/marketplace')}
-        >
-          {t('Explore Marketplace')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            icon="auto_awesome"
+            onClick={() => navigate('/dashboard/recommendations')}
+          >
+            {t('Đề xuất tối ưu')}
+          </Button>
+          <Button
+            variant="primary"
+            icon="explore"
+            onClick={() => navigate('/marketplace')}
+          >
+            {t('Explore Marketplace')}
+          </Button>
+        </div>
       </div>
 
       {/* Honest Sprint 3 & Sprint 4 Status Banner */}
@@ -438,6 +447,16 @@ export const MySubscriptionsPage: React.FC = () => {
                         }
                       >
                         {t('Thanh toán ngay')}
+                      </Button>
+                    )}
+                    {isActive && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon="auto_awesome"
+                        onClick={() => navigate(`/dashboard/recommendations?sourceApiId=${sub.apiId}`)}
+                      >
+                        {t('Đề xuất tối ưu')}
                       </Button>
                     )}
                     {isActive && (

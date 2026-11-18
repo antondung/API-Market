@@ -22,6 +22,7 @@ import {upstreamSecret} from './upstream-signing.js';
 import {OperationsWorker} from './operations-worker.js';
 import {SubscriptionAdminService} from './subscription-admin-service.js';
 import {OperationsHealth} from './operations-router.js';
+import {RecommendationService} from './recommendation-service.js';
 
 const mode = process.env.AUTH_STORE ?? 'postgres';
 const production = process.env.NODE_ENV === 'production';
@@ -77,7 +78,8 @@ worker?.start();
 const operations=store instanceof PostgresAuthStore&&redis?{admin:new SubscriptionAdminService(store.pool),health:new OperationsHealth(store.pool,redis)}:undefined;
 const reports = store instanceof PostgresAuthStore ? new ReportService(store.pool) : undefined;
 if (reports) await reports.ready();
-const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace, gateway, playground, reports,billing,usage:analytics,operations });
+const recommendations = store instanceof PostgresAuthStore ? new RecommendationService(store.pool, billing) : undefined;
+const app = createApp(new AuthService(store, secret), event => console.log(JSON.stringify(event)), { allowedOrigins, provider, review, audit, marketplace, gateway, playground, reports,billing,usage:analytics,operations,recommendations });
 const server = app.listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`Backend listening on port ${port}; storage: ${mode}; Swagger: /docs.`);
 });
