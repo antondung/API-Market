@@ -61,6 +61,12 @@ jobs:
     needs: phat-hien
     if: needs.phat-hien.outputs.node == 'true'
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379/tcp
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
@@ -68,12 +74,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Install Redis for real metering integration tests
-        run: sudo apt-get update && sudo apt-get install -y redis-server
       - name: Validate staging Compose template
         run: docker compose --env-file .env.staging.example -f docker-compose.yml -f docker-compose.staging.yml --profile frontend config --quiet
       - run: npm run lint --if-present
       - run: npm test --if-present
+        env:
+          REDIS_TEST_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}
       - run: npm run build --if-present
 
   api-e2e:
@@ -157,7 +163,7 @@ jobs:
     name: Frontend Browser E2E Sprint 2
     needs: [phat-hien, frontend]
     if: needs.phat-hien.outputs.node == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:
@@ -198,7 +204,10 @@ jobs:
         run: |
           cd qa-scripts
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
+          if ! node -e "require('playwright').chromium.launch().then(browser => browser.close()).catch(error => { console.error(error); process.exitCode = 1; })"; then
+            npx playwright install-deps chromium
+          fi
       - name: Tao schema va du lieu seed
         run: node --import tsx backend/src/database-cli.ts --seed
       - name: Khoi dong backend

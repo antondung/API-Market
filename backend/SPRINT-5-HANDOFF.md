@@ -50,6 +50,10 @@ Gateway đã gộp tra route với endpoint, rút ngắn thời gian khóa quota
 
 Mỗi lượt không có lỗi và lưu đủ 620/620 bản ghi. Hai ca hồi quy chứng minh PostgreSQL vẫn giữ đúng lượt cuối nếu Redis cho nhiều yêu cầu đi tiếp, và không chuyển tiếp yêu cầu nếu thuê bao bị hủy giữa chừng. Các số đo dùng workload gói miễn phí cục bộ.
 
+### Đối soát bản đã merge ngày 17/11/2026
+
+PR #117 đã vào `develop`; bản phát hành #120 đưa cùng mã backend lên `main`. Chạy lại ba lần bằng runner mặc định trên Windows với PostgreSQL và Redis tạm, một thuê bao miễn phí. P95 ở 1/10/25 luồng lần lượt là 9/34/44 ms, 7/30/59 ms và 7/31/40 ms. Cả ba lượt đạt ngưỡng 30/60/60 ms, không có lỗi gọi và lưu đủ 620/620 usage logs mỗi lượt. Đây là kết quả tái kiểm thử backend, chờ QA đối chiếu với TC-PERF-01 trên staging.
+
 ## Migration và phát hành
 
 1. Trên môi trường triển khai, sao lưu theo [runbook](../docs/06-production-rollback-runbook.md) và chạy production preflight bằng `npm run preflight:prod` với cấu hình thật. Backend production cũng kiểm tra ba secret JWT, sandbox và upstream độc lập.
